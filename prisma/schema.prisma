@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Subject {
+  id                    Int        @id @default(autoincrement())
+  name                  String     @unique
+  prompt                String     @default("")
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  url                   String     @default("")
+  type                  String     @default("")
+  subtopicsCriterions   String     @default("")
+  subtopicsPrompt       String     @default("")
+  subtopicsRefinePrompt String     @default("")
+  sections              Section[]
+  subtopics             Subtopic[]
+  topics                Topic[]
+}
+
+model Section {
+  id                    Int        @id @default(autoincrement())
+  name                  String
+  subjectId             Int
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  partId                Int        @default(-1)
+  type                  String     @default("")
+  subtopicsCriterions   String     @default("")
+  subtopicsPrompt       String     @default("")
+  subtopicsRefinePrompt String     @default("")
+  subject               Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subtopics             Subtopic[]
+  topics                Topic[]
+}
+
+model Topic {
+  id        Int        @id @default(autoincrement())
+  name      String
+  sectionId Int
+  subjectId Int
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  partId    Int        @default(-1)
+  subtopics Subtopic[]
+  section   Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+}
+
+model Subtopic {
+  id        Int      @id @default(autoincrement())
+  name      String
+  sectionId Int
+  subjectId Int
+  topicId   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  percent   Int      @default(0)
+  section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+}
+
+model Text {
+  id          Int         @id @default(autoincrement())
+  text        String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  audioFiles  AudioFile[]
+}
+
+model AudioFile {
+  id        Int      @id @default(autoincrement())
+  url       String
+  part_id   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  textId    Int
+  text      Text     @relation(fields: [textId], references: [id])
+}
