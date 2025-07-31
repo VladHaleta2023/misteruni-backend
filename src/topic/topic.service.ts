@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { TopicUpdateRequest } from './dto/topic-request.dto';
 
 @Injectable()
 export class TopicService {
@@ -38,26 +39,32 @@ export class TopicService {
       }
 
       const resolvedSubtopicsPrompt =
-        !section.subtopicsPrompt || section.subtopicsPrompt.trim() === ''
+        section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
           ? subject.subtopicsPrompt ?? null
           : section.subtopicsPrompt;
 
-      const resolvedSubtopicsCriterions =
-        !section.subtopicsCriterions || section.subtopicsCriterions.trim() === ''
-          ? subject.subtopicsCriterions ?? null
-          : section.subtopicsCriterions;
+      const resolvedQuestionPrompt =
+        section.questionPrompt?.trim() === '' || !section.questionPrompt
+          ? subject.questionPrompt ?? null
+          : section.questionPrompt;
 
-      const resolvedSubtopicsRefinePrompt =
-        !section.subtopicsRefinePrompt || section.subtopicsRefinePrompt.trim() === ''
-          ? subject.subtopicsRefinePrompt ?? null
-          : section.subtopicsRefinePrompt;
+      const resolvedSolutionPrompt =
+        section.solutionPrompt?.trim() === '' || !section.solutionPrompt
+          ? subject.solutionPrompt ?? null
+          : section.solutionPrompt;
+
+      const resolvedAnswersPrompt =
+        section.answersPrompt?.trim() === '' || !section.answersPrompt
+          ? subject.answersPrompt ?? null
+          : section.answersPrompt;
 
       if (withSection) {
         response.section = {
           ...section,
           subtopicsPrompt: resolvedSubtopicsPrompt,
-          subtopicsRefinePrompt: resolvedSubtopicsRefinePrompt,
-          subtopicsCriterion: resolvedSubtopicsCriterions,
+          questionPrompt: resolvedQuestionPrompt,
+          solutionPrompt: resolvedSolutionPrompt,
+          answersPrompt: resolvedAnswersPrompt,
         };
       }
 
@@ -70,8 +77,18 @@ export class TopicService {
         return {
           ...topic,
           subtopicsPrompt: resolvedSubtopicsPrompt,
-          subtopicsRefinePrompt: resolvedSubtopicsRefinePrompt,
-          subtopicsCriterion: resolvedSubtopicsCriterions,
+          questionPrompt:
+            topic.questionPrompt?.trim() === '' || !topic.questionPrompt
+              ? resolvedQuestionPrompt
+              : topic.questionPrompt,
+          solutionPrompt:
+            topic.solutionPrompt?.trim() === '' || !topic.solutionPrompt
+              ? resolvedSolutionPrompt
+              : topic.solutionPrompt,
+          answersPrompt:
+            topic.answersPrompt?.trim() === '' || !topic.answersPrompt
+              ? resolvedAnswersPrompt
+              : topic.answersPrompt,
         };
       });
 
@@ -80,7 +97,6 @@ export class TopicService {
       return response;
     }
     catch (error) {
-      console.error('Nie udało się pobrać tematów:', error);
       throw new InternalServerErrorException('Nie udało się pobrać tematów');
     }
   }
@@ -118,27 +134,33 @@ export class TopicService {
         throw new BadRequestException('Dział nie został znaleziony');
       }
 
-            const resolvedSubtopicsPrompt =
-        !section.subtopicsPrompt || section.subtopicsPrompt.trim() === ''
+      const resolvedSubtopicsPrompt =
+        section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
           ? subject.subtopicsPrompt ?? null
           : section.subtopicsPrompt;
 
-      const resolvedSubtopicsCriterions =
-        !section.subtopicsCriterions || section.subtopicsCriterions.trim() === ''
-          ? subject.subtopicsCriterions ?? null
-          : section.subtopicsCriterions;
+      const resolvedQuestionPrompt =
+        section.questionPrompt?.trim() === '' || !section.questionPrompt
+          ? subject.questionPrompt ?? null
+          : section.questionPrompt;
 
-      const resolvedSubtopicsRefinePrompt =
-        !section.subtopicsRefinePrompt || section.subtopicsRefinePrompt.trim() === ''
-          ? subject.subtopicsRefinePrompt ?? null
-          : section.subtopicsRefinePrompt;
+      const resolvedSolutionPrompt =
+        section.solutionPrompt?.trim() === '' || !section.solutionPrompt
+          ? subject.solutionPrompt ?? null
+          : section.solutionPrompt;
+
+      const resolvedAnswersPrompt =
+        section.answersPrompt?.trim() === '' || !section.answersPrompt
+          ? subject.answersPrompt ?? null
+          : section.answersPrompt;
 
       if (withSection) {
         response.section = {
           ...section,
           subtopicsPrompt: resolvedSubtopicsPrompt,
-          subtopicsRefinePrompt: resolvedSubtopicsRefinePrompt,
-          subtopicsCriterion: resolvedSubtopicsCriterions,
+          questionPrompt: resolvedQuestionPrompt,
+          solutionPrompt: resolvedSolutionPrompt,
+          answersPrompt: resolvedAnswersPrompt,
         };
       }
 
@@ -153,15 +175,72 @@ export class TopicService {
       response.topic = {
         ...topic,
         subtopicsPrompt: resolvedSubtopicsPrompt,
-        subtopicsRefinePrompt: resolvedSubtopicsRefinePrompt,
-        subtopicsCriterion: resolvedSubtopicsCriterions,
+        questionPrompt:
+          topic.questionPrompt?.trim() === '' || !topic.questionPrompt
+            ? resolvedQuestionPrompt
+            : topic.questionPrompt,
+        solutionPrompt:
+          topic.solutionPrompt?.trim() === '' || !topic.solutionPrompt
+            ? resolvedSolutionPrompt
+            : topic.solutionPrompt,
+        answersPrompt:
+          topic.answersPrompt?.trim() === '' || !topic.answersPrompt
+            ? resolvedAnswersPrompt
+            : topic.answersPrompt,
       };
 
       return response;
     }
     catch (error) {
-      console.error('Nie udało się pobrać tematu:', error);
       throw new InternalServerErrorException('Nie udało się pobrać tematu');
     }
+  }
+
+  async updateTopic(
+    subjectId: number,
+    sectionId: number,
+    id: number,
+    data: TopicUpdateRequest
+  ) {
+    try {
+      const existingSubject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+      if (!existingSubject) {
+          return {
+              statusCode: 404,
+              message: `Przedmiot nie został znaleziony`,
+          };
+      }
+
+      const existingSection = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+      if (!existingSection) {
+          return {
+              statusCode: 404,
+              message: `Dział nie został znaleziony`,
+          };
+      }
+
+      const existingTopic = await this.prismaService.topic.findUnique({ where: { id } });
+      if (!existingTopic) {
+          return {
+              statusCode: 404,
+              message: `Temat nie został znaleziony`,
+          };
+      }
+
+      const updatedTopic = await this.prismaService.topic.update({
+          where: { id },
+          data,
+      });
+
+      return {
+          statusCode: 200,
+          message: 'Temat został pomyślnie zaktualizowany',
+          topic: updatedTopic,
+      };
+  }
+  catch (error) {
+      console.error(`Nie udało się zaktualizować dział:`, error);
+      throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
+  }
   }
 }

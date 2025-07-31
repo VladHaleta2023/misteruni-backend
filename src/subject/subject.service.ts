@@ -31,41 +31,10 @@ export class SubjectService {
         }
     }
 
-    async updateSubjectPrompt(id: number, prompt: string) {
-        try {
-            const existing = await this.prismaService.subject.findUnique({ where: { id } });
-            if (!existing) {
-                return {
-                    statusCode: 404,
-                    message: `Przedmiot nie został znaleziony`,
-                };
-            }
-
-            const updateData: { prompt: string } = {
-                prompt: prompt,
-            };
-
-            if (prompt === undefined || prompt === null || prompt.trim() === '') {
-                console.error(`Prompt jest pusty, nie aktualizuję.`);
-                return;
-            }
-
-            await this.prismaService.subject.update({
-                where: { id },
-                data: updateData,
-            });
-        }
-        catch (error) {
-            console.error(`Nie udało się zaktualizować prompt przedmiotu:`, error);
-        }
-    }
-
     async subjectAIPlanGenerate(id: number, prompt: string) {
         const url = `${this.fastAPIUrl}/admin/full-plan-generate`;
 
         try {
-            await this.updateSubjectPrompt(id, prompt);
-
             const response$ = this.httpService.post(url, { prompt });
             const response = await firstValueFrom(response$);
 
@@ -201,42 +170,9 @@ export class SubjectService {
                 };
             }
 
-            const updateData: Partial<{
-                name: string;
-                prompt: string;
-                type: string;
-                subtopicsPrompt: string;
-                subtopicsRefinePrompt: string;
-                subtopicsCriterions: string;
-            }> = {};
-
-            if (data.name !== undefined) {
-                updateData.name = data.name;
-            }
-
-            if (data.type !== undefined) {
-                updateData.type = data.type;
-            }
-
-            if (data.subtopicsPrompt !== undefined) {
-                updateData.subtopicsPrompt = data.subtopicsPrompt;
-            }
-
-            if (data.subtopicsRefinePrompt !== undefined) {
-                updateData.subtopicsRefinePrompt = data.subtopicsRefinePrompt;
-            }
-
-            if (data.prompt !== undefined) {
-                updateData.prompt = data.prompt;
-            }
-
-            if (data.subtopicsCriterions !== undefined) {
-                updateData.subtopicsCriterions = data.subtopicsCriterions;
-            }
-
             const updatedSubject = await this.prismaService.subject.update({
                 where: { id },
-                data: updateData,
+                data,
             });
 
             return {
@@ -362,6 +298,97 @@ export class SubjectService {
         } catch (error) {
             console.error('Błąd podczas uploadu pliku:', error);
             throw new InternalServerErrorException('Błąd podczas uploadu pliku');
+        }
+    }
+
+    async findAllTopics(
+        subjectId: number,
+        withSubject = true,
+        withSections = true,
+        withSubtopics = true,
+    ) {
+        try {
+            const response: any = {
+                statusCode: 200,
+                message: 'Pobrano listę tematów pomyślnie',
+            };
+
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            if (withSubject) {
+                response.subject = subject;
+            }
+
+            const sections = await this.prismaService.section.findMany({
+                where: { subjectId },
+            });
+
+            const sectionPromptMap = new Map<number, string>();
+            const sectionPartIdMap = new Map<number, number>();
+
+            for (const section of sections) {
+                const resolvedPrompt =
+                    !section.subtopicsPrompt || section.subtopicsPrompt.trim() === ''
+                        ? subject.subtopicsPrompt ?? null
+                        : section.subtopicsPrompt;
+
+                sectionPromptMap.set(section.id, resolvedPrompt);
+                sectionPartIdMap.set(section.id, section.partId);
+            }
+
+            const topics = await this.prismaService.topic.findMany({
+                where: {
+                    section: { subjectId },
+                },
+                include: {
+                    section: withSections,
+                    subtopics: withSubtopics,
+                },
+            });
+
+            const resolvedTopics = topics
+                .map(topic => {
+                    const sectionId = topic.sectionId;
+                    const subtopicsPrompt = sectionPromptMap.get(sectionId) ?? null;
+                    const sectionPartId = sectionPartIdMap.get(sectionId) ?? 0;
+
+                    const result = {
+                        ...topic,
+                        subtopicsPrompt,
+                        _sectionPartId: sectionPartId,
+                    };
+
+                    if (!withSections) {
+                        delete (result as any).section;
+                    }
+
+                    if (!withSubtopics) {
+                        delete (result as any).subtopics;
+                    }
+
+                    return result;
+                })
+                .sort((a, b) => {
+                    if (a._sectionPartId !== b._sectionPartId) {
+                        return a._sectionPartId - b._sectionPartId;
+                    }
+                    return a.partId - b.partId;
+                });
+
+            const finalTopics = resolvedTopics.map(({ _sectionPartId, ...rest }) => rest);
+
+            response.topics = finalTopics;
+            return response;
+
+        } catch (error) {
+            console.error('Nie udało się pobrać tematów:', error);
+            throw new InternalServerErrorException('Nie udało się pobrać tematów');
         }
     }
 }

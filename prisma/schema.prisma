@@ -12,13 +12,16 @@ model Subject {
   id                    Int        @id @default(autoincrement())
   name                  String     @unique
   prompt                String     @default("")
+  difficulty            Int        @default(0)
+  threshold             Int        @default(0)
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
   url                   String     @default("")
   type                  String     @default("")
-  subtopicsCriterions   String     @default("")
   subtopicsPrompt       String     @default("")
-  subtopicsRefinePrompt String     @default("")
+  questionPrompt        String     @default("")
+  solutionPrompt        String     @default("")
+  answersPrompt         String     @default("")
   sections              Section[]
   subtopics             Subtopic[]
   topics                Topic[]
@@ -32,9 +35,10 @@ model Section {
   updatedAt             DateTime   @updatedAt
   partId                Int        @default(-1)
   type                  String     @default("")
-  subtopicsCriterions   String     @default("")
   subtopicsPrompt       String     @default("")
-  subtopicsRefinePrompt String     @default("")
+  questionPrompt        String     @default("")
+  solutionPrompt        String     @default("")
+  answersPrompt         String     @default("")
   subject               Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subtopics             Subtopic[]
   topics                Topic[]
@@ -48,6 +52,9 @@ model Topic {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   partId    Int        @default(-1)
+  questionPrompt        String     @default("")
+  solutionPrompt        String     @default("")
+  answersPrompt         String     @default("")
   subtopics Subtopic[]
   section   Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)

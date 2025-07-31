@@ -9,6 +9,9 @@ export class SectionService {
     async findSections(
         subjectId: number,
         withSubject = false,
+        withTopics = false,
+        withSubtopics = false,
+        withPercent = false,
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -24,6 +27,27 @@ export class SectionService {
                 orderBy: { partId: 'asc' },
             });
 
+            const resolvePrompts = (section: any) => {
+                return {
+                    subtopicsPrompt:
+                        section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
+                            ? subject.subtopicsPrompt ?? null
+                            : section.subtopicsPrompt,
+                    questionPrompt:
+                        section.questionPrompt?.trim() === '' || !section.questionPrompt
+                            ? subject.questionPrompt ?? null
+                            : section.questionPrompt,
+                    solutionPrompt:
+                        section.solutionPrompt?.trim() === '' || !section.solutionPrompt
+                            ? subject.solutionPrompt ?? null
+                            : section.solutionPrompt,
+                    answersPrompt:
+                        section.answersPrompt?.trim() === '' || !section.answersPrompt
+                            ? subject.answersPrompt ?? null
+                            : section.answersPrompt,
+                };
+            };
+
             const response: any = {
                 statusCode: 200,
                 message: 'Dział został pomyślnie pobrany',
@@ -33,35 +57,93 @@ export class SectionService {
                 response.subject = subject;
             }
 
-            const enrichedSections = sections.map((section) => {
-                const resolvedSubtopicsPrompt =
-                    section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
-                        ? subject?.subtopicsPrompt ?? null
-                        : section.subtopicsPrompt;
+            if (withTopics) {
+                const topics = await this.prismaService.topic.findMany({
+                    where: { subjectId },
+                    orderBy: { partId: 'asc' },
+                });
 
-            const resolvedSubtopicsCriterions =
-                !section.subtopicsCriterions || section.subtopicsCriterions.trim() === ''
-                ? subject.subtopicsCriterions ?? null
-                : section.subtopicsCriterions;
+                let subtopicsGrouped: Record<number, any[]> = {};
 
-            const resolvedSubtopicsRefinePrompt =
-                section.subtopicsRefinePrompt?.trim() === '' || !section.subtopicsRefinePrompt
-                    ? subject?.subtopicsRefinePrompt ?? null
-                    : section.subtopicsRefinePrompt;
+                if (withSubtopics) {
+                    const topicIds = topics.map(t => t.id);
+                    const subtopics = await this.prismaService.subtopic.findMany({
+                        where: { topicId: { in: topicIds } },
+                        orderBy: { name: 'asc' },
+                        select: withPercent
+                            ? { id: true, topicId: true, name: true, percent: true }
+                            : { id: true, topicId: true, name: true },
+                    });
 
-            return {
-                ...section,
-                subtopicsPrompt: resolvedSubtopicsPrompt,
-                subtopicsRefinePrompt: resolvedSubtopicsRefinePrompt,
-                subtopicsCriterion: resolvedSubtopicsCriterions
-            };
-        });
+                    subtopicsGrouped = subtopics.reduce((acc, sub) => {
+                        if (!acc[sub.topicId]) acc[sub.topicId] = [];
+                        acc[sub.topicId].push(sub);
+                        return acc;
+                    }, {} as Record<number, any[]>);
+                }
 
-            response.sections = enrichedSections;
+                const topicsWithPercent = topics.map(topic => {
+                    const subtopicsForTopic = withSubtopics ? (subtopicsGrouped[topic.id] ?? []) : [];
+                    let topicPercent: number | null = null;
+
+                    if (withPercent && subtopicsForTopic.length > 0) {
+                        const sum = subtopicsForTopic.reduce((acc, st) => acc + (st.percent ?? 0), 0);
+                        topicPercent = sum / subtopicsForTopic.length;
+                    } else if (withPercent) {
+                        topicPercent = null;
+                    }
+
+                    return {
+                        ...topic,
+                        percent: topicPercent,
+                        subtopics: withSubtopics ? subtopicsForTopic : undefined,
+                    };
+                });
+
+                const topicsBySection = topicsWithPercent.reduce<Record<number, any[]>>((acc, topic) => {
+                    const secId = topic.sectionId;
+                    if (!acc[secId]) acc[secId] = [];
+                    acc[secId].push(topic);
+                    return acc;
+                }, {});
+
+                const enrichedSections = sections.map(section => {
+                    const prompts = resolvePrompts(section);
+
+                    const topicsForSection = topicsBySection[section.id] ?? [];
+                    let sectionPercent: number | null = null;
+
+                    if (withPercent && topicsForSection.length > 0) {
+                        const sum = topicsForSection.reduce((acc, t) => acc + (t.percent ?? 0), 0);
+                        sectionPercent = sum / topicsForSection.length;
+                    } else if (withPercent) {
+                        sectionPercent = null;
+                    }
+
+                    return {
+                        ...section,
+                        ...prompts,
+                        percent: sectionPercent,
+                        topics: topicsForSection,
+                    };
+                });
+
+                response.sections = enrichedSections;
+            } else {
+                const enrichedSections = sections.map(section => {
+                    const prompts = resolvePrompts(section);
+                    return {
+                        ...section,
+                        ...prompts,
+                        percent: withPercent ? null : undefined,
+                    };
+                });
+
+                response.sections = enrichedSections;
+            }
 
             return response;
-        }
-        catch (error) {
+        } catch (error) {
             console.error('Nie udało się pobrać działów:', error);
             throw new InternalServerErrorException('Nie udało się pobrać działów');
         }
@@ -71,6 +153,9 @@ export class SectionService {
         subjectId: number,
         id: number,
         withSubject = true,
+        withTopics = false,
+        withSubtopics = false,
+        withPercent = false,
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -94,22 +179,94 @@ export class SectionService {
                     ? subject?.subtopicsPrompt ?? null
                     : section.subtopicsPrompt;
 
-            const resolvedSubtopicsCriterions =
-                !section.subtopicsCriterions || section.subtopicsCriterions.trim() === ''
-                ? subject.subtopicsCriterions ?? null
-                : section.subtopicsCriterions;
+            const resolvedQuestionPrompt =
+                section.questionPrompt?.trim() === '' || !section.questionPrompt
+                    ? subject?.questionPrompt ?? null
+                    : section.questionPrompt;
 
-            const resolvedSubtopicsRefinePrompt =
-                section.subtopicsRefinePrompt?.trim() === '' || !section.subtopicsRefinePrompt
-                    ? subject?.subtopicsRefinePrompt ?? null
-                    : section.subtopicsRefinePrompt;
+            const resolvedSolutionPrompt =
+                section.solutionPrompt?.trim() === '' || !section.solutionPrompt
+                    ? subject?.solutionPrompt ?? null
+                    : section.solutionPrompt;
 
-            const enrichedSection = {
+            const resolvedAnswersPrompt =
+                section.answersPrompt?.trim() === '' || !section.answersPrompt
+                    ? subject?.answersPrompt ?? null
+                    : section.answersPrompt;
+
+            let enrichedSection: any = {
                 ...section,
                 subtopicsPrompt: resolvedSubtopicsPrompt,
-                subtopicsRefinePrompt: resolvedSubtopicsRefinePrompt,
-                subtopicsCriterion: resolvedSubtopicsCriterions
+                questionPrompt: resolvedQuestionPrompt,
+                solutionPrompt: resolvedSolutionPrompt,
+                answersPrompt: resolvedAnswersPrompt,
             };
+
+            if (withTopics) {
+                const topics = await this.prismaService.topic.findMany({
+                    where: { subjectId, sectionId: section.id },
+                    orderBy: { partId: 'asc' },
+                });
+
+                let subtopicsGrouped: Record<number, any[]> = {};
+
+                if (withSubtopics) {
+                    const topicIds = topics.map(t => t.id);
+                    const subtopics = await this.prismaService.subtopic.findMany({
+                        where: { topicId: { in: topicIds } },
+                        orderBy: { name: 'asc' },
+                        select: withPercent
+                            ? { id: true, topicId: true, name: true, percent: true }
+                            : { id: true, topicId: true, name: true }
+                    });
+
+                    subtopicsGrouped = subtopics.reduce((acc, sub) => {
+                        if (!acc[sub.topicId]) acc[sub.topicId] = [];
+                        acc[sub.topicId].push(sub);
+                        return acc;
+                    }, {} as Record<number, any[]>);
+                }
+
+                const topicsWithPercent = topics.map(topic => {
+                    const subtopicsForTopic = withSubtopics ? (subtopicsGrouped[topic.id] ?? []) : [];
+                    let topicPercent: number | null = null;
+
+                    if (withPercent && subtopicsForTopic.length > 0) {
+                        const sum = subtopicsForTopic.reduce((acc, st) => acc + (st.percent ?? 0), 0);
+                        topicPercent = sum / subtopicsForTopic.length;
+                    } else if (withPercent) {
+                        topicPercent = null;
+                    }
+
+                    return {
+                        ...topic,
+                        percent: topicPercent,
+                        subtopics: withSubtopics ? subtopicsForTopic : undefined,
+                    };
+                });
+
+                let sectionPercent: number | null = null;
+
+                if (withPercent && topicsWithPercent.length > 0) {
+                    const sum = topicsWithPercent.reduce((acc, t) => acc + (t.percent ?? 0), 0);
+                    sectionPercent = sum / topicsWithPercent.length;
+                }
+                else if (withPercent) {
+                    sectionPercent = null;
+                }
+
+                enrichedSection = {
+                    ...enrichedSection,
+                    percent: sectionPercent,
+                    topics: topicsWithPercent,
+                };
+            }
+            else {
+                enrichedSection = {
+                    ...enrichedSection,
+                    percent: withPercent ? null : undefined,
+                };
+            }
 
             const response: any = {
                 statusCode: 200,
@@ -122,7 +279,8 @@ export class SectionService {
             }
 
             return response;
-        } catch (error) {
+        }
+        catch (error) {
             console.error('Nie udało się pobrać dział:', error);
             throw new InternalServerErrorException('Nie udało się pobrać dział');
         }
@@ -150,43 +308,15 @@ export class SectionService {
                 };
             }
 
-            const updateData: Partial<{
-                name: string;
-                type: string;
-                subtopicsPrompt: string;
-                subtopicsRefinePrompt: string;
-                subtopicsCriterions: string;
-            }> = {};
-
-            if (data.name !== undefined) {
-                updateData.name = data.name;
-            }
-
-            if (data.type !== undefined) {
-                updateData.type = data.type;
-            }
-
-            if (data.subtopicsPrompt !== undefined) {
-                updateData.subtopicsPrompt = data.subtopicsPrompt;
-            }
-
-            if (data.subtopicsRefinePrompt !== undefined) {
-                updateData.subtopicsRefinePrompt = data.subtopicsRefinePrompt;
-            }
-
-            if (data.subtopicsCriterions !== undefined) {
-                updateData.subtopicsCriterions = data.subtopicsCriterions;
-            }
-
             const updatedSection = await this.prismaService.section.update({
                 where: { id },
-                data: updateData,
+                data,
             });
 
             return {
                 statusCode: 200,
                 message: 'Dział został pomyślnie zaktualizowany',
-                subject: updatedSection,
+                section: updatedSection,
             };
         }
         catch (error) {

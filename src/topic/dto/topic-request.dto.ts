@@ -1,13 +1,9 @@
 import { IsOptional, IsString } from 'class-validator';
 
-export class SectionUpdateRequest {
+export class TopicUpdateRequest {
   @IsOptional()
   @IsString()
   name?: string;
-
-  @IsOptional()
-  @IsString()
-  subtopicsPrompt?: string;
 
   @IsOptional()
   @IsString()
@@ -20,8 +16,4 @@ export class SectionUpdateRequest {
   @IsOptional()
   @IsString()
   answersPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  type?: string;
 }

@@ -10,9 +10,21 @@ export class SectionController {
   async findSections(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Query('withSubject') withSubject?: string,
+    @Query('withTopics') withTopics?: string,
+    @Query('withSubtopics') withSubtopics?: string,
+    @Query('withPercent') withPercent?: string
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
-    return this.sectionService.findSections(subjectId, withSubjectBool);
+    const withTopicsBool = !(withTopics?.toLowerCase() === 'false');
+    const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
+    const withPercentBool = !(withPercent?.toLowerCase() === 'false');
+    return this.sectionService.findSections(
+      subjectId,
+      withSubjectBool,
+      withTopicsBool,
+      withSubtopicsBool,
+      withPercentBool
+    );
   }
 
   @Get(':id')
@@ -20,9 +32,22 @@ export class SectionController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('id', ParseIntPipe) id: number,
     @Query('withSubject') withSubject?: string,
+    @Query('withTopics') withTopics?: string,
+    @Query('withSubtopics') withSubtopics?: string,
+    @Query('withPercent') withPercent?: string
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
-    return this.sectionService.findSectionById(subjectId, id, withSubjectBool);
+    const withTopicsBool = !(withTopics?.toLowerCase() === 'false');
+    const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
+    const withPercentBool = !(withPercent?.toLowerCase() === 'false');
+    return this.sectionService.findSectionById(
+      subjectId,
+      id,
+      withSubjectBool,
+      withTopicsBool,
+      withSubtopicsBool,
+      withPercentBool
+    );
  }
 
   @Put(':id')

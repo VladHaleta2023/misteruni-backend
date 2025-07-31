@@ -26,6 +26,20 @@ export class SubjectController {
     return this.subjectService.findSubjects(withSectionsBool);
   }
 
+  @Get(':id/topics')
+  async findAllTopics(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('withSubject') withSubject?: string,
+    @Query('withSections') withSections?: string,
+    @Query('withSubtopics') withSubtopics?: string
+  ) {
+    const withSectionsBool = !(withSections?.toLowerCase() === 'false');
+    const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
+    const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
+
+    return this.subjectService.findAllTopics(id, withSubjectBool, withSectionsBool, withSubtopicsBool);
+  }
+
   @Get(':id')
   async findSubjectById(
     @Param('id', ParseIntPipe) id: number

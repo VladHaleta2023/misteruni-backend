@@ -1,5 +1,6 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Put, Query } from '@nestjs/common';
 import { TopicService } from './topic.service';
+import { TopicUpdateRequest } from './dto/topic-request.dto';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics')
 export class TopicController {
@@ -28,5 +29,15 @@ export class TopicController {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withSectionBool = !(withSection?.toLowerCase() === 'false');
     return this.topicService.findTopicbyId(subjectId, sectionId, id, withSubjectBool, withSectionBool);
+  }
+
+  @Put(":id")
+  async updateTopic(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: TopicUpdateRequest
+  ) {
+    return this.topicService.updateTopic(subjectId, sectionId, id, data);
   }
 }
