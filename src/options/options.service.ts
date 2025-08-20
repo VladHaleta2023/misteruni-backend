@@ -7,11 +7,12 @@ import {
     Injectable,
     InternalServerErrorException
 } from '@nestjs/common';
-import { FASTAPI_URL } from './constans';
+import { FASTAPI_URL } from 'src/constans';
 import { SubjectService } from 'src/subject/subject.service';
 import { firstValueFrom } from 'rxjs';
 import * as FormData from 'form-data';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { SubtopicService } from 'src/subtopic/subtopic.service';
 
 interface AudioTranscribeParams {
   subjectId: number;
@@ -28,15 +29,22 @@ interface AudioTranscribeResponse {
   subject: string;
 }
 
-
 interface SplitIntoSentencesResponse {
     sentences: string[];
 }
+
+type Subtopic = {
+  topicId: number;
+  subjectId: number;
+  sectionId: number;
+  subtopics: [string, number][];
+};
 
 @Injectable()
 export class OptionsService {
     constructor (
         private readonly prismaService: PrismaService,
+        private readonly subtopicService: SubtopicService,
         private readonly subjectService: SubjectService,
         private readonly httpService: HttpService,
         @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
@@ -123,6 +131,41 @@ export class OptionsService {
         }
     }
 
+    async createSubtopicsTransaction(
+        subtopics: Subtopic[]
+    ) {
+        try {
+            return await this.prismaService.$transaction(async (prismaClient) => {
+                for (const subtopic of subtopics) {
+                    await this.subtopicService.deleteSubtopics(
+                        subtopic.subjectId,
+                        subtopic.sectionId,
+                        subtopic.topicId,
+                        prismaClient
+                    );
+
+                    await this.subtopicService.createSubtopics(
+                        subtopic.subjectId,
+                        subtopic.sectionId,
+                        subtopic.topicId,
+                        subtopic.subtopics,
+                        prismaClient
+                    );
+                }
+
+                return {
+                    statusCode: 201,
+                    message: 'Podtematy zostały dodane',
+                }
+            }, {
+                timeout: 900000,
+            });
+        } catch (error) {
+            throw new InternalServerErrorException(`Nie udało się zapisać podtematów: ${error}`);
+        }
+    }
+
+    /*
     async addTextOption(text: string) {
         try {
             const newText = await this.prismaService.text.create({
@@ -243,4 +286,5 @@ export class OptionsService {
             throw new InternalServerErrorException(`Błąd podczas pobrania wszystkich audioplików dla textId ${textId}`);
         }
     }
+    */
 }

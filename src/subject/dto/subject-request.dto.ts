@@ -39,6 +39,18 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  closedProblemsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  newProblemsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  closedSubtopicsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 
   @IsOptional()

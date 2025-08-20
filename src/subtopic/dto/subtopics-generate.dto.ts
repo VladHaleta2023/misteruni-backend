@@ -20,6 +20,9 @@ export class SubtopicsAIGenerate {
   attempt: number;
 
   @IsArray()
+  subtopics: [string, number][];
+
+  @IsArray()
   @IsString({ each: true })
-  subtopics: string[];
+  errors: string[];
 }

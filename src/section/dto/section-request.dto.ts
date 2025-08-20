@@ -23,5 +23,9 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  closedSubtopicsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 }

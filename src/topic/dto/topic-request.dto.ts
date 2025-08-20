@@ -16,4 +16,12 @@ export class TopicUpdateRequest {
   @IsOptional()
   @IsString()
   answersPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  closedSubtopicsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  subtopicsPrompt?: string;
 }

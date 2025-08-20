@@ -2,16 +2,126 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SectionUpdateRequest } from './dto/section-request.dto';
 
+type Status = 'blocked' | 'started' | 'progress' | 'completed';
+
+interface Subtopic extends Record<string, any> {
+    blocked: boolean;
+    percent: number;
+    status?: Status;
+}
+
+interface Topic extends Record<string, any> {
+    blocked: boolean;
+    subtopics: Subtopic[];
+    status?: Status;
+}
+
+interface Section extends Record<string, any> {
+    blocked: boolean;
+    topics: Topic[];
+    status?: Status;
+}
+
 @Injectable()
 export class SectionService {
     constructor(private readonly prismaService: PrismaService) {}
+
+    addStatusToSections(sections: Section[], threshold: number): Section[] {
+        return sections.map(section => {
+            const updatedTopics = section.topics.map(topic => {
+                if (topic.subtopics && topic.subtopics.length > 0) {
+                    const updatedSubtopics = topic.subtopics.map(subtopic => {
+                        let status: Status;
+
+                        if (subtopic.blocked === true) {
+                            status = 'blocked';
+                        } else if (subtopic.percent === 0) {
+                            status = 'started';
+                        } else if (subtopic.percent < threshold) {
+                            status = 'progress';
+                        } else {
+                            status = 'completed';
+                        }
+
+                        return { ...subtopic, status };
+                    });
+
+                    const activeSubtopics = updatedSubtopics.filter(st => st.status !== 'blocked');
+
+                    const allStarted = activeSubtopics.every(st => st.status === 'started');
+                    const allCompleted = activeSubtopics.every(st => st.status === 'completed');
+                    const anyStarted = activeSubtopics.some(st => st.status === 'started');
+                    const anyProgress = activeSubtopics.some(st => st.status === 'progress');
+                    const anyCompleted = activeSubtopics.some(st => st.status === 'completed');
+
+                    let topicStatus: Status;
+
+                    if (topic.blocked === true || activeSubtopics.length === 0) {
+                        topicStatus = 'blocked';
+                    } else if (allStarted) {
+                        topicStatus = 'started';
+                    } else if (anyProgress) {
+                        topicStatus = 'progress';
+                    } else if (anyStarted && anyCompleted) {
+                        topicStatus = 'progress';
+                    } else if (allCompleted) {
+                        topicStatus = 'completed';
+                    } else {
+                        topicStatus = 'started';
+                    }
+
+                    return { ...topic, subtopics: updatedSubtopics, status: topicStatus };
+                } else {
+                    const percent = topic.percent ?? 0;
+                    let topicStatus: Status;
+
+                    if (topic.blocked === true) {
+                        topicStatus = 'blocked';
+                    } else if (percent === 0) {
+                        topicStatus = 'started';
+                    } else if (percent < threshold) {
+                        topicStatus = 'progress';
+                    } else {
+                        topicStatus = 'completed';
+                    }
+
+                    return { ...topic, status: topicStatus };
+                }
+            });
+
+            const activeTopics = updatedTopics.filter(t => t.status !== 'blocked');
+
+            const allStarted = activeTopics.every(t => t.status === 'started');
+            const allCompleted = activeTopics.every(t => t.status === 'completed');
+            const anyStarted = activeTopics.some(t => t.status === 'started');
+            const anyProgress = activeTopics.some(t => t.status === 'progress');
+            const anyCompleted = activeTopics.some(t => t.status === 'completed');
+
+            let sectionStatus: Status;
+
+            if (section.blocked === true || activeTopics.length === 0) {
+                sectionStatus = 'blocked';
+            } else if (allStarted) {
+                sectionStatus = 'started';
+            } else if (anyProgress) {
+                sectionStatus = 'progress';
+            } else if (anyStarted && anyCompleted) {
+                sectionStatus = 'progress';
+            } else if (allCompleted) {
+                sectionStatus = 'completed';
+            } else {
+                sectionStatus = 'started';
+            }
+
+            return { ...section, topics: updatedTopics, status: sectionStatus };
+        });
+    }
 
     async findSections(
         subjectId: number,
         withSubject = false,
         withTopics = false,
         withSubtopics = false,
-        withPercent = false,
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -28,29 +138,33 @@ export class SectionService {
             });
 
             const resolvePrompts = (section: any) => {
+                const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
+                const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
+                const solutionPromptOwn = Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== "");
+                const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
+                const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
+
                 return {
-                    subtopicsPrompt:
-                        section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
-                            ? subject.subtopicsPrompt ?? null
-                            : section.subtopicsPrompt,
-                    questionPrompt:
-                        section.questionPrompt?.trim() === '' || !section.questionPrompt
-                            ? subject.questionPrompt ?? null
-                            : section.questionPrompt,
-                    solutionPrompt:
-                        section.solutionPrompt?.trim() === '' || !section.solutionPrompt
-                            ? subject.solutionPrompt ?? null
-                            : section.solutionPrompt,
-                    answersPrompt:
-                        section.answersPrompt?.trim() === '' || !section.answersPrompt
-                            ? subject.answersPrompt ?? null
-                            : section.answersPrompt,
+                    subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
+                    subtopicsPromptOwn: subtopicsPromptOwn,
+
+                    questionPrompt: questionPromptOwn ? section.questionPrompt.trim() : (subject.questionPrompt || ""),
+                    questionPromptOwn: questionPromptOwn,
+
+                    solutionPrompt: solutionPromptOwn ? section.solutionPrompt.trim() : (subject.solutionPrompt || ""),
+                    solutionPromptOwn: solutionPromptOwn,
+
+                    answersPrompt: answersPromptOwn ? section.answersPrompt.trim() : (subject.answersPrompt || ""),
+                    answersPromptOwn: answersPromptOwn,
+
+                    closedSubtopicsPrompt: closedSubtopicsPromptOwn ? section.closedSubtopicsPrompt.trim() : (subject.closedSubtopicsPrompt || ""),
+                    closedSubtopicsPromptOwn: closedSubtopicsPromptOwn,
                 };
             };
 
             const response: any = {
                 statusCode: 200,
-                message: 'Dział został pomyślnie pobrany',
+                message: 'Działy zostały pomyślnie pobrane',
             };
 
             if (withSubject) {
@@ -70,9 +184,13 @@ export class SectionService {
                     const subtopics = await this.prismaService.subtopic.findMany({
                         where: { topicId: { in: topicIds } },
                         orderBy: { name: 'asc' },
-                        select: withPercent
-                            ? { id: true, topicId: true, name: true, percent: true }
-                            : { id: true, topicId: true, name: true },
+                        select: {
+                            id: true,
+                            topicId: true,
+                            name: true,
+                            percent: true,
+                            blocked: true,
+                        },
                     });
 
                     subtopicsGrouped = subtopics.reduce((acc, sub) => {
@@ -83,63 +201,58 @@ export class SectionService {
                 }
 
                 const topicsWithPercent = topics.map(topic => {
-                    const subtopicsForTopic = withSubtopics ? (subtopicsGrouped[topic.id] ?? []) : [];
-                    let topicPercent: number | null = null;
-
-                    if (withPercent && subtopicsForTopic.length > 0) {
-                        const sum = subtopicsForTopic.reduce((acc, st) => acc + (st.percent ?? 0), 0);
-                        topicPercent = sum / subtopicsForTopic.length;
-                    } else if (withPercent) {
-                        topicPercent = null;
-                    }
+                    const subtopics = withSubtopics ? subtopicsGrouped[topic.id] || [] : [];
+                    const validSubtopics = subtopics.filter(s => !s.blocked);
+                    const percent =
+                        validSubtopics.length > 0
+                            ? validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) / validSubtopics.length
+                            : 0;
 
                     return {
                         ...topic,
-                        percent: topicPercent,
-                        subtopics: withSubtopics ? subtopicsForTopic : undefined,
+                        percent,
+                        subtopics,
                     };
                 });
 
                 const topicsBySection = topicsWithPercent.reduce<Record<number, any[]>>((acc, topic) => {
-                    const secId = topic.sectionId;
-                    if (!acc[secId]) acc[secId] = [];
-                    acc[secId].push(topic);
+                    const sectionId = topic.sectionId;
+                    if (!acc[sectionId]) acc[sectionId] = [];
+                    acc[sectionId].push(topic);
                     return acc;
                 }, {});
 
                 const enrichedSections = sections.map(section => {
                     const prompts = resolvePrompts(section);
+                    const topics = topicsBySection[section.id] || [];
 
-                    const topicsForSection = topicsBySection[section.id] ?? [];
-                    let sectionPercent: number | null = null;
-
-                    if (withPercent && topicsForSection.length > 0) {
-                        const sum = topicsForSection.reduce((acc, t) => acc + (t.percent ?? 0), 0);
-                        sectionPercent = sum / topicsForSection.length;
-                    } else if (withPercent) {
-                        sectionPercent = null;
-                    }
+                    const validTopics = topics.filter(t => t.subtopics.some(s => !s.blocked));
+                    const percent =
+                        validTopics.length > 0
+                            ? validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length
+                            : 0;
 
                     return {
                         ...section,
                         ...prompts,
-                        percent: sectionPercent,
-                        topics: topicsForSection,
+                        percent,
+                        topics,
                     };
                 });
 
-                response.sections = enrichedSections;
+                response.sections = this.addStatusToSections(enrichedSections, subject.threshold);
             } else {
                 const enrichedSections = sections.map(section => {
                     const prompts = resolvePrompts(section);
                     return {
                         ...section,
                         ...prompts,
-                        percent: withPercent ? null : undefined,
+                        percent: 0,
+                        topics: [],
                     };
                 });
 
-                response.sections = enrichedSections;
+                response.sections = this.addStatusToSections(enrichedSections, subject.threshold);
             }
 
             return response;
@@ -155,7 +268,6 @@ export class SectionService {
         withSubject = true,
         withTopics = false,
         withSubtopics = false,
-        withPercent = false,
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -174,32 +286,34 @@ export class SectionService {
                 throw new BadRequestException('Dział nie został znaleziony');
             }
 
-            const resolvedSubtopicsPrompt =
-                section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
-                    ? subject?.subtopicsPrompt ?? null
-                    : section.subtopicsPrompt;
+            const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
+            const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
+            const solutionPromptOwn = Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== "");
+            const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
+            const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
 
-            const resolvedQuestionPrompt =
-                section.questionPrompt?.trim() === '' || !section.questionPrompt
-                    ? subject?.questionPrompt ?? null
-                    : section.questionPrompt;
+            const prompts = {
+                subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
+                subtopicsPromptOwn: subtopicsPromptOwn,
 
-            const resolvedSolutionPrompt =
-                section.solutionPrompt?.trim() === '' || !section.solutionPrompt
-                    ? subject?.solutionPrompt ?? null
-                    : section.solutionPrompt;
+                questionPrompt: questionPromptOwn ? section.questionPrompt.trim() : (subject.questionPrompt || ""),
+                questionPromptOwn: questionPromptOwn,
 
-            const resolvedAnswersPrompt =
-                section.answersPrompt?.trim() === '' || !section.answersPrompt
-                    ? subject?.answersPrompt ?? null
-                    : section.answersPrompt;
+                solutionPrompt: solutionPromptOwn ? section.solutionPrompt.trim() : (subject.solutionPrompt || ""),
+                solutionPromptOwn: solutionPromptOwn,
+
+                answersPrompt: answersPromptOwn ? section.answersPrompt.trim() : (subject.answersPrompt || ""),
+                answersPromptOwn: answersPromptOwn,
+
+                closedSubtopicsPrompt: closedSubtopicsPromptOwn ? section.closedSubtopicsPrompt.trim() : (subject.closedSubtopicsPrompt || ""),
+                closedSubtopicsPromptOwn: closedSubtopicsPromptOwn,
+            };
 
             let enrichedSection: any = {
                 ...section,
-                subtopicsPrompt: resolvedSubtopicsPrompt,
-                questionPrompt: resolvedQuestionPrompt,
-                solutionPrompt: resolvedSolutionPrompt,
-                answersPrompt: resolvedAnswersPrompt,
+                ...prompts,
+                percent: 0,
+                topics: [],
             };
 
             if (withTopics) {
@@ -215,9 +329,13 @@ export class SectionService {
                     const subtopics = await this.prismaService.subtopic.findMany({
                         where: { topicId: { in: topicIds } },
                         orderBy: { name: 'asc' },
-                        select: withPercent
-                            ? { id: true, topicId: true, name: true, percent: true }
-                            : { id: true, topicId: true, name: true }
+                        select: {
+                            id: true,
+                            topicId: true,
+                            name: true,
+                            percent: true,
+                            blocked: true,
+                        },
                     });
 
                     subtopicsGrouped = subtopics.reduce((acc, sub) => {
@@ -228,49 +346,36 @@ export class SectionService {
                 }
 
                 const topicsWithPercent = topics.map(topic => {
-                    const subtopicsForTopic = withSubtopics ? (subtopicsGrouped[topic.id] ?? []) : [];
-                    let topicPercent: number | null = null;
-
-                    if (withPercent && subtopicsForTopic.length > 0) {
-                        const sum = subtopicsForTopic.reduce((acc, st) => acc + (st.percent ?? 0), 0);
-                        topicPercent = sum / subtopicsForTopic.length;
-                    } else if (withPercent) {
-                        topicPercent = null;
-                    }
+                    const subtopics = withSubtopics ? subtopicsGrouped[topic.id] || [] : [];
+                    const validSubtopics = subtopics.filter(s => !s.blocked);
+                    const percent =
+                        validSubtopics.length > 0
+                            ? validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) / validSubtopics.length
+                            : 0;
 
                     return {
                         ...topic,
-                        percent: topicPercent,
-                        subtopics: withSubtopics ? subtopicsForTopic : undefined,
+                        percent,
+                        subtopics,
                     };
                 });
 
-                let sectionPercent: number | null = null;
-
-                if (withPercent && topicsWithPercent.length > 0) {
-                    const sum = topicsWithPercent.reduce((acc, t) => acc + (t.percent ?? 0), 0);
-                    sectionPercent = sum / topicsWithPercent.length;
-                }
-                else if (withPercent) {
-                    sectionPercent = null;
-                }
+                const validTopics = topicsWithPercent.filter(t => t.subtopics.some(s => !s.blocked));
+                const percent =
+                    validTopics.length > 0
+                        ? validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length
+                        : 0;
 
                 enrichedSection = {
                     ...enrichedSection,
-                    percent: sectionPercent,
+                    percent,
                     topics: topicsWithPercent,
-                };
-            }
-            else {
-                enrichedSection = {
-                    ...enrichedSection,
-                    percent: withPercent ? null : undefined,
                 };
             }
 
             const response: any = {
                 statusCode: 200,
-                message: 'Pobrano listę działów pomyślnie',
+                message: 'Dział został pomyślnie pobrany',
                 section: enrichedSection,
             };
 
@@ -279,10 +384,9 @@ export class SectionService {
             }
 
             return response;
-        }
-        catch (error) {
-            console.error('Nie udało się pobrać dział:', error);
-            throw new InternalServerErrorException('Nie udało się pobrać dział');
+        } catch (error) {
+            console.error('Błąd przy pobieraniu działu:', error);
+            throw new InternalServerErrorException('Nie udało się pobrać działu');
         }
     }
 
@@ -308,9 +412,13 @@ export class SectionService {
                 };
             }
 
+            const filteredData = Object.fromEntries(
+                Object.entries(data).filter(([_, value]) => value !== undefined)
+            );
+
             const updatedSection = await this.prismaService.section.update({
                 where: { id },
-                data,
+                data: filteredData
             });
 
             return {
@@ -320,7 +428,75 @@ export class SectionService {
             };
         }
         catch (error) {
-            console.error(`Nie udało się zaktualizować dział:`, error);
+            throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
+        }
+    }
+
+    async sectionBlocked(
+        subjectId: number,
+        id: number
+    ) {
+        try {
+            const existingSubject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!existingSubject) {
+                return {
+                    statusCode: 404,
+                    message: `Przedmiot nie został znaleziony`,
+                };
+            }
+
+            const existingSection = await this.prismaService.section.findUnique({ where: { id } });
+            if (!existingSection) {
+                return {
+                    statusCode: 404,
+                    message: `Dział nie został znaleziony`,
+                };
+            }
+
+            if (existingSection.blocked) {
+                await this.prismaService.section.update({
+                    where: { id, subjectId },
+                    data: { blocked: false }
+                });
+
+                await this.prismaService.topic.updateMany({
+                    where: { sectionId: id, subjectId },
+                    data: { blocked: false }
+                });
+
+                await this.prismaService.subtopic.updateMany({
+                    where: { sectionId: id, subjectId },
+                    data: { blocked: false }
+                });
+
+                return {
+                    statusCode: 200,
+                    message: `Dział został pomyślnie odblokowany`,
+                };
+            }
+            else {
+                await this.prismaService.section.update({
+                    where: { id, subjectId },
+                    data: { blocked: true }
+                });
+
+                await this.prismaService.topic.updateMany({
+                    where: { sectionId: id, subjectId },
+                    data: { blocked: true }
+                });
+
+                await this.prismaService.subtopic.updateMany({
+                    where: { sectionId: id, subjectId },
+                    data: { blocked: true }
+                });
+
+                return {
+                    statusCode: 200,
+                    message: `Dział został pomyślnie zablokowany`,
+                };
+            }
+        }
+        catch (error) {
             throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
         }
     }

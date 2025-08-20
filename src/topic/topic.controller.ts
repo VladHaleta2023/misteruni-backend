@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { TopicService } from './topic.service';
 import { TopicUpdateRequest } from './dto/topic-request.dto';
 
@@ -7,7 +7,7 @@ export class TopicController {
   constructor(private readonly topicService: TopicService) {}
 
   @Get()
-  async findAllTopics(
+  async findTopics(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Query('withSubject') withSubject?: string,
@@ -15,7 +15,7 @@ export class TopicController {
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withSectionBool = !(withSection?.toLowerCase() === 'false');
-    return this.topicService.findAllTopics(subjectId, sectionId, withSubjectBool, withSectionBool);
+    return this.topicService.findTopics(subjectId, sectionId, withSubjectBool, withSectionBool);
   }
 
   @Get(':id')
@@ -39,5 +39,14 @@ export class TopicController {
     @Body() data: TopicUpdateRequest
   ) {
     return this.topicService.updateTopic(subjectId, sectionId, id, data);
+  }
+
+  @Post(":id/blocked")
+  async topicBlocked(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('id', ParseIntPipe) id: number
+  ) {
+    return this.topicService.topicBlocked(subjectId, sectionId, id);
   }
 }

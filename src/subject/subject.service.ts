@@ -1,8 +1,8 @@
-import { BadRequestException, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { HttpService } from '@nestjs/axios';
-import { FASTAPI_URL } from './constans';
+import { FASTAPI_URL } from 'src/constans';
 import { firstValueFrom } from 'rxjs';
 import { StorageService } from 'src/storage/storage.service';
 import axios from "axios";
@@ -42,42 +42,49 @@ export class SubjectService {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
 
-            await this.deleteAllSectionsBySubjectId(id);
-
-            for (let i = 0; i < response.data.sections.length; i++) {
-                const section = response.data.sections[i];
-
-                const createdSection = await this.prismaService.section.create({
-                    data: {
-                        name: section.section,
-                        subjectId: id,
-                        partId: i + 1,
-                    },
+            return await this.prismaService.$transaction(async (tx) => {
+                await tx.section.deleteMany({
+                    where: { subjectId: id },
                 });
 
-                if (section.topics && section.topics.length > 0) {
-                    const topicsData = section.topics.map((topicName: string, index: number) => ({
-                        name: topicName,
-                        sectionId: createdSection.id,
-                        subjectId: id,
-                        partId: index + 1,
-                    }));
+                for (let i = 0; i < response.data.sections.length; i++) {
+                    const section = response.data.sections[i];
 
-                    await this.prismaService.topic.createMany({
-                        data: topicsData,
+                    const createdSection = await tx.section.create({
+                        data: {
+                            name: section.section,
+                            subjectId: id,
+                            partId: i + 1,
+                        },
                     });
-                }
-            }
 
-            return {
-                statusCode: 201,
-                message: "Generacja treści przedmiotu udana",
-                sections: response.data.sections
-            };
+                    if (section.topics && section.topics.length > 0) {
+                        const topicsData = section.topics.map((topicName: string, index: number) => ({
+                            name: topicName,
+                            sectionId: createdSection.id,
+                            subjectId: id,
+                            partId: index + 1,
+                        }));
+
+                        await tx.topic.createMany({
+                            data: topicsData,
+                        });
+                    }
+                }
+
+                return {
+                    statusCode: 201,
+                    message: "Generacja treści przedmiotu udana",
+                    sections: response.data.sections
+                };
+            }, {
+                timeout: 900000
+            });
         }
         catch (error) {
             if (error.response && error.response.data) {
-                throw new BadRequestException(`Błąd API: ${JSON.stringify(error.response.data)}`);
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
             }
             throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
         }
@@ -131,7 +138,14 @@ export class SubjectService {
             return {
                 statusCode: 200,
                 message: "Przedmiot został pomyślnie pobrany",
-                subject,
+                subject: {
+                    ...subject,
+                    subtopicsPromptOwn: true,
+                    questionPromptOwn: true,
+                    solutionPromptOwn: true,
+                    answersPromptOwn: true,
+                    closedSubtopicsPromptOwn: true
+                }
             };
         } catch (error) {
             console.error(`Nie udało się pobrać przedmiotu:`, error);
@@ -170,9 +184,13 @@ export class SubjectService {
                 };
             }
 
+            const filteredData = Object.fromEntries(
+                Object.entries(data).filter(([_, value]) => value !== undefined)
+            );
+
             const updatedSubject = await this.prismaService.subject.update({
                 where: { id },
-                data,
+                data: filteredData
             });
 
             return {
@@ -387,8 +405,7 @@ export class SubjectService {
             return response;
 
         } catch (error) {
-            console.error('Nie udało się pobrać tematów:', error);
-            throw new InternalServerErrorException('Nie udało się pobrać tematów');
+            throw new InternalServerErrorException(`Nie udało się pobrać tematów: ${error}`);
         }
     }
 }

@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
-import { SubtopicCreateRequest } from 'src/subtopic/dto/subtopic-request.dto';
+import { SubtopicCreateRequest, SubtopicUpdateRequest } from 'src/subtopic/dto/subtopic-request.dto';
 import { SubtopicsAIGenerate } from './dto/subtopics-generate.dto';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics/:topicId/subtopics')
@@ -36,6 +36,27 @@ export class SubtopicController {
     return this.subtopicService.findSubtopicById(subjectId, sectionId, topicId, id);
   }
 
+  @Get('name/:name')
+  async findSubtopicByName(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('name') name: string,
+  ) {
+    return this.subtopicService.findSubtopicByName(subjectId, sectionId, topicId, name);
+  }
+
+  @Put(':id')
+  async updateSubtopic(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: SubtopicUpdateRequest
+  ) {
+    return this.subtopicService.updateSubtopic(subjectId, sectionId, topicId, id, data);
+  }
+
   @Post()
   async createSubtopic(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -51,7 +72,7 @@ export class SubtopicController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() body: { subtopics: string[] }
+    @Body() body: { subtopics: [string, number][] }
   ) {
     const subtopics = body.subtopics;
     return this.subtopicService.createSubtopics(subjectId, sectionId, topicId, subtopics);

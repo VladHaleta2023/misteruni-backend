@@ -9,6 +9,7 @@ import { SectionModule } from './section/section.module';
 import { TopicModule } from './topic/topic.module';
 import { OptionsModule } from './options/options.module';
 import { SubtopicModule } from './subtopic/subtopic.module';
+import { TaskModule } from './task/task.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SubtopicModule } from './subtopic/subtopic.module';
     TopicModule,
     OptionsModule,
     SubtopicModule,
+    TaskModule,
   ],
   controllers: [AppController],
   providers: [AppService],

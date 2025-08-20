@@ -6,7 +6,7 @@ import { TopicUpdateRequest } from './dto/topic-request.dto';
 export class TopicService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async findAllTopics(
+  async findTopics(
     subjectId: number,
     sectionId: number,
     withSubject = true,
@@ -58,6 +58,11 @@ export class TopicService {
           ? subject.answersPrompt ?? null
           : section.answersPrompt;
 
+      const resolvedClosedSubtopicsPrompt =
+        section.closedSubtopicsPrompt?.trim() === '' || !section.closedSubtopicsPrompt
+          ? subject.closedSubtopicsPrompt ?? null
+          : section.closedSubtopicsPrompt;
+
       if (withSection) {
         response.section = {
           ...section,
@@ -65,6 +70,12 @@ export class TopicService {
           questionPrompt: resolvedQuestionPrompt,
           solutionPrompt: resolvedSolutionPrompt,
           answersPrompt: resolvedAnswersPrompt,
+          closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
+          subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
+          questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
+          solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
+          answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
+          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "")
         };
       }
 
@@ -76,7 +87,6 @@ export class TopicService {
       const resolvedTopics = topics.map((topic) => {
         return {
           ...topic,
-          subtopicsPrompt: resolvedSubtopicsPrompt,
           questionPrompt:
             topic.questionPrompt?.trim() === '' || !topic.questionPrompt
               ? resolvedQuestionPrompt
@@ -89,6 +99,19 @@ export class TopicService {
             topic.answersPrompt?.trim() === '' || !topic.answersPrompt
               ? resolvedAnswersPrompt
               : topic.answersPrompt,
+          closedSubtopicsPrompt:
+            topic.closedSubtopicsPrompt?.trim() === '' || !topic.closedSubtopicsPrompt
+              ? resolvedClosedSubtopicsPrompt
+              : topic.closedSubtopicsPrompt,
+          subtopicsPrompt:
+            topic.subtopicsPrompt?.trim() === '' || !topic.subtopicsPrompt
+              ? resolvedSubtopicsPrompt
+              : topic.subtopicsPrompt,
+          subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
+          questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
+          solutionPromptOwn: Boolean(topic.solutionPrompt && topic.solutionPrompt.trim() !== ""),
+          answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
+          closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== "")
         };
       });
 
@@ -154,6 +177,11 @@ export class TopicService {
           ? subject.answersPrompt ?? null
           : section.answersPrompt;
 
+      const resolvedClosedSubtopicsPrompt =
+        section.closedSubtopicsPrompt?.trim() === '' || !section.closedSubtopicsPrompt
+          ? subject.closedSubtopicsPrompt ?? null
+          : section.closedSubtopicsPrompt;
+
       if (withSection) {
         response.section = {
           ...section,
@@ -161,6 +189,12 @@ export class TopicService {
           questionPrompt: resolvedQuestionPrompt,
           solutionPrompt: resolvedSolutionPrompt,
           answersPrompt: resolvedAnswersPrompt,
+          closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
+          subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
+          questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
+          solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
+          answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
+          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "")
         };
       }
 
@@ -174,7 +208,10 @@ export class TopicService {
 
       response.topic = {
         ...topic,
-        subtopicsPrompt: resolvedSubtopicsPrompt,
+        subtopicsPrompt:
+          topic.subtopicsPrompt?.trim() === '' || !topic.subtopicsPrompt
+              ? resolvedSubtopicsPrompt
+              : topic.subtopicsPrompt,
         questionPrompt:
           topic.questionPrompt?.trim() === '' || !topic.questionPrompt
             ? resolvedQuestionPrompt
@@ -187,6 +224,15 @@ export class TopicService {
           topic.answersPrompt?.trim() === '' || !topic.answersPrompt
             ? resolvedAnswersPrompt
             : topic.answersPrompt,
+        closedSubtopicsPrompt:
+          topic.closedSubtopicsPrompt?.trim() === '' || !topic.closedSubtopicsPrompt
+            ? resolvedClosedSubtopicsPrompt
+            : topic.closedSubtopicsPrompt,
+        subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
+        questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
+        solutionPromptOwn: Boolean(topic.solutionPrompt && topic.solutionPrompt.trim() !== ""),
+        answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
+        closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== "")
       };
 
       return response;
@@ -227,9 +273,13 @@ export class TopicService {
           };
       }
 
+      const filteredData = Object.fromEntries(
+        Object.entries(data).filter(([_, value]) => value !== undefined)
+      );
+
       const updatedTopic = await this.prismaService.topic.update({
           where: { id },
-          data,
+          data: filteredData
       });
 
       return {
@@ -242,5 +292,71 @@ export class TopicService {
       console.error(`Nie udało się zaktualizować dział:`, error);
       throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
   }
+  }
+
+  async topicBlocked(
+    subjectId: number,
+    sectionId: number,
+    id: number,
+  ) {
+    try {
+      const subject = await this.prismaService.subject.findUnique({
+        where: { id: subjectId },
+      });
+
+      if (!subject) {
+        throw new BadRequestException('Przedmiot nie został znaleziony');
+      }
+
+      const section = await this.prismaService.section.findUnique({
+        where: { id: sectionId },
+      });
+
+      if (!section) {
+        throw new BadRequestException('Dział nie został znaleziony');
+      }
+
+      const topic = await this.prismaService.topic.findFirst({
+        where: { id, sectionId },
+      });
+
+      if (!topic) {
+        throw new BadRequestException('Temat nie został znaleziony');
+      }
+
+      const newBlockedState = !topic.blocked;
+
+      await this.prismaService.topic.update({
+        where: { id, sectionId },
+        data: { blocked: newBlockedState },
+      });
+
+      await this.prismaService.subtopic.updateMany({
+        where: { topicId: id, sectionId },
+        data: { blocked: newBlockedState },
+      });
+
+      const otherTopics = await this.prismaService.topic.findMany({
+        where: { sectionId },
+        select: { blocked: true },
+      });
+
+      const allTopicsBlocked = otherTopics.every(t => t.blocked);
+
+      await this.prismaService.section.update({
+        where: { id: sectionId },
+        data: { blocked: allTopicsBlocked },
+      });
+
+      return {
+        statusCode: 200,
+        message: newBlockedState
+          ? 'Temat został pomyślnie zablokowany'
+          : 'Temat został pomyślnie odblokowany',
+      };
+    } catch (error) {
+      console.error(error);
+      throw new InternalServerErrorException('Nie udało się zaktualizować tematu');
+    }
   }
 }

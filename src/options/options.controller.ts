@@ -14,7 +14,6 @@ import { OptionsService } from './options.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AudioTranscribeDto } from './dto/audioTranscribe.dto';
 import { SplitIntoSentencesDto } from './dto/splitIntoSentences.dto';
-import { TextDto } from './dto/text.dto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -34,6 +33,13 @@ interface AudioTranscribeResponse {
   language_probability: number;
   subject: string;
 }
+
+type Subtopic = {
+  topicId: number;
+  subjectId: number;
+  sectionId: number;
+  subtopics: [string, number][];
+};
 
 @Controller('options')
 export class OptionsController {
@@ -79,7 +85,12 @@ export class OptionsController {
     return this.optionsService.textSplitIntoSentences(text, language);
   }
 
-  // Функции временные (опциональные!)
+  @Post('subtopics')
+  async createSubtopicsTransaction(@Body('subtopics') subtopics: Subtopic[]) {
+    return this.optionsService.createSubtopicsTransaction(subtopics);
+  }
+
+  /*
   @Post('text')
   async addTextOption(@Body() body: TextDto) {
     const { text } = body;
@@ -115,4 +126,5 @@ export class OptionsController {
   ) {
     return this.optionsService.findAllAudioFilesByTextId(id);
   }
+  */
 }

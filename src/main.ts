@@ -9,7 +9,7 @@ async function bootstrap() {
 
   const server = app.getHttpServer();
   const httpServer: http.Server = server;
-  httpServer.setTimeout(120 * 1000);
+  httpServer.setTimeout(900000);
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>("PORT");

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { SectionService } from './section.service';
 import { SectionUpdateRequest } from './dto/section-request.dto';
 
@@ -11,19 +11,16 @@ export class SectionController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Query('withSubject') withSubject?: string,
     @Query('withTopics') withTopics?: string,
-    @Query('withSubtopics') withSubtopics?: string,
-    @Query('withPercent') withPercent?: string
+    @Query('withSubtopics') withSubtopics?: string
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withTopicsBool = !(withTopics?.toLowerCase() === 'false');
     const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
-    const withPercentBool = !(withPercent?.toLowerCase() === 'false');
     return this.sectionService.findSections(
       subjectId,
       withSubjectBool,
       withTopicsBool,
-      withSubtopicsBool,
-      withPercentBool
+      withSubtopicsBool
     );
   }
 
@@ -33,20 +30,17 @@ export class SectionController {
     @Param('id', ParseIntPipe) id: number,
     @Query('withSubject') withSubject?: string,
     @Query('withTopics') withTopics?: string,
-    @Query('withSubtopics') withSubtopics?: string,
-    @Query('withPercent') withPercent?: string
+    @Query('withSubtopics') withSubtopics?: string
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withTopicsBool = !(withTopics?.toLowerCase() === 'false');
     const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
-    const withPercentBool = !(withPercent?.toLowerCase() === 'false');
     return this.sectionService.findSectionById(
       subjectId,
       id,
       withSubjectBool,
       withTopicsBool,
-      withSubtopicsBool,
-      withPercentBool
+      withSubtopicsBool
     );
  }
 
@@ -57,5 +51,13 @@ export class SectionController {
     @Body() data: SectionUpdateRequest
   ) {
     return this.sectionService.updateSection(subjectId, id, data);
+  }
+
+  @Post(':id/blocked')
+  async sectionBlocked(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('id', ParseIntPipe) id: number
+  ) {
+    return this.sectionService.sectionBlocked(subjectId, id);
   }
 }
