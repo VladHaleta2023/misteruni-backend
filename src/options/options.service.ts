@@ -13,6 +13,8 @@ import { firstValueFrom } from 'rxjs';
 import * as FormData from 'form-data';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SubtopicService } from 'src/subtopic/subtopic.service';
+import { StorageService } from 'src/storage/storage.service';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 interface AudioTranscribeParams {
   subjectId: number;
@@ -47,6 +49,7 @@ export class OptionsService {
         private readonly subtopicService: SubtopicService,
         private readonly subjectService: SubjectService,
         private readonly httpService: HttpService,
+        private readonly storageService: StorageService,
         @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
     ) {}
 
@@ -165,72 +168,26 @@ export class OptionsService {
         }
     }
 
-    /*
-    async addTextOption(text: string) {
+    async generateTTS(
+        id: number,
+        text: string,
+        partId: number,
+        language: string = "ru",
+        prismaClient?: PrismaClient | Prisma.TransactionClient
+    ) {
         try {
-            const newText = await this.prismaService.text.create({
-                data: {
-                    text: text
-                },
-            });
+            prismaClient = prismaClient || this.prismaService;
 
-            return {
-                statusCode: 201,
-                message: 'Tekst został pomyślnie dodany',
-                text: newText,
-            };
-        }
-        catch (error) {
-            console.error(`Nie udało się dodać zadania:`, error);
-            throw new InternalServerErrorException('Błąd podczas dodawania zadania');
-        }
-    }
-
-    async updateTextOption(id: number, text: string) {
-        try {
-            const existing = await this.prismaService.text.findUnique({ where: { id } });
-
-            if (!existing) {
-                throw new HttpException('Tekst nie został znaleziony', HttpStatus.NOT_FOUND);
-            }
-
-            try {
-                await this.prismaService.audioFile.deleteMany({
-                    where: { textId: id },
-                });
-            } catch (error) {
-                console.error('Nie udało się usunąć audiopliki:', error);
-                throw new HttpException('Błąd podczas usuwania audioplików', HttpStatus.INTERNAL_SERVER_ERROR);
-            }
-
-            const updatedText = await this.prismaService.text.update({
-                where: { id },
-                data: { text },
-            });
-
-            return {
-                statusCode: 200,
-                message: 'Tekst został pomyślnie zaktualizowany',
-                text: updatedText,
-            };
-        } catch (error) {
-            console.error('Nie udało się zaktualizować tekstu:', error);
-            throw new HttpException('Błąd podczas aktualizacji tekstu', HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    async generateTTS(id: number, text: string, part_id: number, language: string) {
-        try {
             const url = `${this.fastAPIUrl}/admin/tts`;
-            const existing = await this.prismaService.text.findUnique({ where: { id } });
+            const task = await prismaClient.task.findUnique({ where: { id } });
 
-            if (!existing) {
-                throw new HttpException('Tekst nie został znaleziony', HttpStatus.NOT_FOUND);
+            if (!task) {
+                throw new HttpException('Zadanie nie zostało znalezione', HttpStatus.NOT_FOUND);
             }
 
             const payload = {
                 id,
-                part_id,
+                part_id: partId,
                 language,
                 text,
             };
@@ -244,11 +201,11 @@ export class OptionsService {
 
             const audioUrl = response.data.url;
 
-            const audioFile = await this.prismaService.audioFile.create({
+            const audioFile = await prismaClient.audioFile.create({
                 data: {
                     url: audioUrl,
-                    part_id,
-                    textId: id,
+                    order: partId,
+                    taskId: id,
                 },
             });
 
@@ -264,27 +221,39 @@ export class OptionsService {
         }
     }
 
-    async findAllAudioFilesByTextId(textId: number) {
+    async deleteAudioFileByTaskId(
+        id: number,
+        prismaClient?: PrismaClient | Prisma.TransactionClient
+    ) {
         try {
-            const audioFiles = await this.prismaService.audioFile.findMany({
-                where: {
-                    textId
-                },
-                orderBy: {
-                    part_id: "asc"
-                }
+            prismaClient = prismaClient || this.prismaService;
+
+            const task = await prismaClient.task.findUnique({ where: { id } });
+
+            if (!task) {
+                throw new HttpException('Zadanie nie zostało znalezione', HttpStatus.NOT_FOUND);
+            }
+
+            const files = await prismaClient.audioFile.findMany({
+                where: { taskId: id },
+            });
+
+            for (const file of files) {
+                const key = file.url.split('.amazonaws.com/')[1];
+                await this.storageService.deleteFile(key);
+            }
+
+            await prismaClient.audioFile.deleteMany({
+                where: { taskId: id }
             });
 
             return {
                 statusCode: 200,
-                message: `Pobranie wszystkich audioplików dla textId ${textId} udane`,
-                audioFiles
+                message: 'Pliki zostały pomyślnie usunięte'
             };
         }
         catch (error) {
-            console.error(`Nie udało się pobrać wszystkie audiopliki dla textId ${textId}:`, error);
-            throw new InternalServerErrorException(`Błąd podczas pobrania wszystkich audioplików dla textId ${textId}`);
+            throw new InternalServerErrorException('Błąd podczas usuwania plików');
         }
     }
-    */
 }

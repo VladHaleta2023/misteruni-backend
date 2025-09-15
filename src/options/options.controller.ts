@@ -9,6 +9,7 @@ import {
   Get,
   UploadedFile,
   UseInterceptors,
+  Delete,
 } from '@nestjs/common';
 import { OptionsService } from './options.service';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -90,36 +91,22 @@ export class OptionsController {
     return this.optionsService.createSubtopicsTransaction(subtopics);
   }
 
-  /*
-  @Post('text')
-  async addTextOption(@Body() body: TextDto) {
-    const { text } = body;
-
-    return this.optionsService.addTextOption(text);
-  }
-
-  @Put('text/:id')
-  async updateTextOption(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: TextDto
-  ) {
-    const { text } = body;
-
-    return this.optionsService.updateTextOption(id, text);
-  }
-
-  @Post('text/:id/tss')
+  @Post('tasks/:id/tss')
   async generateTTS(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: TextDto & { part_id: number, language?: string }
+    @Body() body: { text: string, partId: number, language?: string }
   ) {
-    const { text, part_id } = body;
-    let { language } = body;
-    language = language ?? 'ru';
+    const { text, partId, language } = body;
 
-    return this.optionsService.generateTTS(id, text, part_id, language);
+    return this.optionsService.generateTTS(id, text, partId, language ?? "ru");
   }
 
+  @Delete('tasks/:id/audio')
+  async deleteAudioFileByTaskId(@Param('id', ParseIntPipe) id: number) {
+    return this.optionsService.deleteAudioFileByTaskId(id);
+  }
+
+  /*
   @Get('text/:id/audioFiles')
   async findAllAudioFilesByTextId(
     @Param('id', ParseIntPipe) id: number,

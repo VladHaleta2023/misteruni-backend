@@ -27,5 +27,13 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  subQuestionsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  vocabluaryPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 }

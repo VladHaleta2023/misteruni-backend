@@ -7,6 +7,8 @@ import { FASTAPI_URL } from 'src/constans';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 
+type Status = 'blocked' | 'started' | 'progress' | 'completed';
+
 @Injectable()
 export class SubtopicService {
     constructor(
@@ -15,7 +17,7 @@ export class SubtopicService {
         @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
     ) {}
 
-    async findAllSubtopics(
+    async findSubtopics(
         subjectId: number,
         sectionId: number,
         topicId: number
@@ -29,41 +31,67 @@ export class SubtopicService {
                 throw new BadRequestException('Przedmiot nie został znaleziony');
             }
 
-            const section = await this.prismaService.section.findUnique({
-                where: { id: sectionId },
+            let subtopics = await this.prismaService.subtopic.findMany({
+                where: { subjectId, sectionId, topicId },
+                orderBy: { name: 'asc' },
+                select: { id: true, name: true, percent: true, blocked: true }
             });
 
-            if (!section) {
-                throw new BadRequestException('Dział nie został znaleziony');
-            }
+            if (subtopics.length === 0) {
+                const topic = await this.prismaService.topic.findUnique({
+                    where: { id: topicId },
+                    select: { id: true, name: true, percent: true, blocked: true }
+                });
 
-            const topic = await this.prismaService.topic.findUnique({
-                where: { id: topicId },
-            });
-
-            if (!topic) {
-                throw new BadRequestException('Temat nie został znaleziony');
-            }
-
-            const subtopics = await this.prismaService.subtopic.findMany({
-                where: {
-                    subjectId,
-                    sectionId,
-                    topicId
-                },
-                orderBy: {
-                    name: 'asc'
+                if (!topic) {
+                    throw new BadRequestException('Temat nie został znaleziony');
                 }
+
+                subtopics = [topic];
+            }
+
+            const updatedSubtopics = subtopics.map(sub => {
+                const pct = sub.percent ?? 0;
+                let status: Status;
+
+                if (sub.blocked) status = 'blocked';
+                else if (pct === 0) status = 'started';
+                else if (pct < subject.threshold) status = 'progress';
+                else status = 'completed';
+
+                return { ...sub, status };
             });
+
+            const totalSubtopics = updatedSubtopics.length || 1;
+            const counts: Record<Status, number> = {
+                blocked: 0,
+                started: 0,
+                progress: 0,
+                completed: 0
+            };
+
+            updatedSubtopics.forEach(sub => {
+                counts[sub.status] += 1;
+            });
+
+            const totalPercentByStatus: Record<Status, number> = {
+                blocked: (counts.blocked / totalSubtopics) * 100,
+                started: (counts.started / totalSubtopics) * 100,
+                progress: (counts.progress / totalSubtopics) * 100,
+                completed: (counts.completed / totalSubtopics) * 100
+            };
 
             return {
                 statusCode: 200,
                 message: 'Pobrano listę podtematów pomyślnie',
-                subtopics
-            }
-        }
-        catch (error) {
-            throw new InternalServerErrorException(`Nie udało się pobrać podtematów: ${error}`);
+                subtopics: updatedSubtopics,
+                total: totalPercentByStatus
+            };
+
+        } catch (error) {
+            throw new InternalServerErrorException(
+                `Nie udało się pobrać podtematów: ${error}`
+            );
         }
     }
 
@@ -452,7 +480,8 @@ export class SubtopicService {
         subjectId: number,
         sectionId: number,
         topicId: number,
-        data: SubtopicsAIGenerate
+        data: SubtopicsAIGenerate,
+        signal?: AbortSignal
     ) {
         const url = `${this.fastAPIUrl}/admin/subtopics-generate`;
 
@@ -483,7 +512,7 @@ export class SubtopicService {
                 throw new BadRequestException('Errors musi być listą stringów');
             }
 
-            const response$ = this.httpService.post(url, data);
+            const response$ = this.httpService.post(url, data, { signal });
             const response = await firstValueFrom(response$);
             const r = response.data;
 

@@ -23,5 +23,13 @@ export class TopicUpdateRequest {
 
   @IsOptional()
   @IsString()
+  subQuestionsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  vocabluaryPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   subtopicsPrompt?: string;
 }

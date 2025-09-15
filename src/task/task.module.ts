@@ -5,6 +5,7 @@ import { HttpModule } from '@nestjs/axios';
 import { FASTAPI_URL } from 'src/constans';
 import { ConfigService } from '@nestjs/config';
 import { SubtopicModule } from 'src/subtopic/subtopic.module';
+import { OptionsModule } from 'src/options/options.module';
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { SubtopicModule } from 'src/subtopic/subtopic.module';
       timeout: 900000,
       maxRedirects: 5,
     }),
-    SubtopicModule
+    SubtopicModule,
+    OptionsModule
   ],
   controllers: [TaskController],
   providers: [

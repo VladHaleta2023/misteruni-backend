@@ -20,9 +20,11 @@ model Subject {
   type                    String      @default("")
   subtopicsPrompt         String      @default("")
   questionPrompt          String      @default("")
+  subQuestionsPrompt      String      @default("")
   solutionPrompt          String      @default("")
   answersPrompt           String      @default("")
   closedSubtopicsPrompt   String      @default("")
+  vocabluaryPrompt        String      @default("")
 
   sections                Section[]
   subtopics               Subtopic[]
@@ -40,9 +42,11 @@ model Section {
   type                    String      @default("")
   subtopicsPrompt         String      @default("")
   questionPrompt          String      @default("")
+  subQuestionsPrompt      String      @default("")
   solutionPrompt          String      @default("")
   answersPrompt           String      @default("")
   closedSubtopicsPrompt   String      @default("")
+  vocabluaryPrompt        String      @default("")
 
   subtopics               Subtopic[]
   topics                  Topic[]
@@ -54,6 +58,7 @@ model Topic {
   id                      Int         @id @default(autoincrement())
   name                    String
   blocked                 Boolean     @default(false)
+  percent                 Int         @default(0)
   sectionId               Int
   subjectId               Int
   createdAt               DateTime    @default(now())
@@ -61,9 +66,11 @@ model Topic {
   partId                  Int         @default(-1)
   subtopicsPrompt         String      @default("")
   questionPrompt          String      @default("")
+  subQuestionsPrompt      String      @default("")
   solutionPrompt          String      @default("")
   answersPrompt           String      @default("")
   closedSubtopicsPrompt   String      @default("")
+  vocabluaryPrompt        String      @default("")
 
   subtopics               Subtopic[]
   tasks                   Task[]
@@ -112,6 +119,9 @@ model Task {
   userSolution        String      @default("")
   userOptionIndex     Int         @default(0)
   order               Int         @default(0)
+  percent             Int         @default(0)
+  stage               Int         @default(0)
+  answered            Boolean     @default(false)
   finished            Boolean     @default(false)
 
   createdAt           DateTime    @default(now())
@@ -124,4 +134,17 @@ model Task {
   parentTask          Task?       @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
   subTasks            Task[]      @relation("SubTasks")
   progresses          SubtopicProgress[]
+  audioFiles          AudioFile[]
+}
+
+model AudioFile {
+  id      Int     @id @default(autoincrement())
+  url     String  @default("")
+  order   Int     @default(0)
+  
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  taskId    Int
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }

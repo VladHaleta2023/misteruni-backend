@@ -1,19 +1,20 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Req } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from 'src/subtopic/dto/subtopic-request.dto';
 import { SubtopicsAIGenerate } from './dto/subtopics-generate.dto';
+import { Request } from 'express';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics/:topicId/subtopics')
 export class SubtopicController {
   constructor(private readonly subtopicService: SubtopicService) {}
 
   @Get()
-  async findAllSubtopics(
+  async findSubtopics(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
   ) {
-    return this.subtopicService.findAllSubtopics(subjectId, sectionId, topicId);
+    return this.subtopicService.findSubtopics(subjectId, sectionId, topicId);
   }
 
   @Post('generate')
@@ -21,9 +22,22 @@ export class SubtopicController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: SubtopicsAIGenerate
+    @Body() data: SubtopicsAIGenerate,
+    @Req() req: Request
   ) {
-    return this.subtopicService.subtopicsAIGenerate(subjectId, sectionId, topicId, data);
+    const controller = new AbortController();
+    
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.subtopicService.subtopicsAIGenerate(subjectId, sectionId, topicId, data);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @Get(':id')

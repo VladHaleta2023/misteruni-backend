@@ -63,6 +63,16 @@ export class TopicService {
           ? subject.closedSubtopicsPrompt ?? null
           : section.closedSubtopicsPrompt;
 
+      const resolvedSubQuestionsPrompt =
+        section.subQuestionsPrompt?.trim() === '' || !section.subQuestionsPrompt
+          ? subject.subQuestionsPrompt ?? null
+          : section.subQuestionsPrompt;
+
+      const resolvedVocabluaryPrompt =
+        section.vocabluaryPrompt?.trim() === '' || !section.vocabluaryPrompt
+          ? subject.vocabluaryPrompt ?? null
+          : section.vocabluaryPrompt;
+
       if (withSection) {
         response.section = {
           ...section,
@@ -71,11 +81,15 @@ export class TopicService {
           solutionPrompt: resolvedSolutionPrompt,
           answersPrompt: resolvedAnswersPrompt,
           closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
+          subQuestionsPrompt: resolvedSubQuestionsPrompt,
+          vocabluaryPrompt: resolvedVocabluaryPrompt,
           subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
           questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
           solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
           answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
-          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "")
+          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
+          subQuestionsPromptOwn: Boolean(section.subQuestionsPrompt && section.subQuestionsPrompt.trim() !== ""),
+          vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== ""),
         };
       }
 
@@ -107,11 +121,21 @@ export class TopicService {
             topic.subtopicsPrompt?.trim() === '' || !topic.subtopicsPrompt
               ? resolvedSubtopicsPrompt
               : topic.subtopicsPrompt,
+          subQuestionsPrompt:
+            topic.subQuestionsPrompt?.trim() === '' || !topic.subQuestionsPrompt
+              ? resolvedSubQuestionsPrompt
+              : topic.subQuestionsPrompt,
+          vocabluaryPrompt:
+            topic.vocabluaryPrompt?.trim() === '' || !topic.vocabluaryPrompt
+              ? resolvedVocabluaryPrompt
+              : topic.vocabluaryPrompt,
           subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
           questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
           solutionPromptOwn: Boolean(topic.solutionPrompt && topic.solutionPrompt.trim() !== ""),
           answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
-          closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== "")
+          closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
+          subQuestionsPromptOwn: Boolean(topic.subQuestionsPrompt && topic.subQuestionsPrompt.trim() !== ""),
+          vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== "")
         };
       });
 
@@ -182,6 +206,16 @@ export class TopicService {
           ? subject.closedSubtopicsPrompt ?? null
           : section.closedSubtopicsPrompt;
 
+      const resolvedSubQuestionsPrompt =
+        section.subQuestionsPrompt?.trim() === '' || !section.subQuestionsPrompt
+          ? subject.subQuestionsPrompt ?? null
+          : section.subQuestionsPrompt;
+
+      const resolvedVocabluaryPrompt =
+        section.vocabluaryPrompt?.trim() === '' || !section.vocabluaryPrompt
+          ? subject.vocabluaryPrompt ?? null
+          : section.vocabluaryPrompt;
+
       if (withSection) {
         response.section = {
           ...section,
@@ -190,11 +224,15 @@ export class TopicService {
           solutionPrompt: resolvedSolutionPrompt,
           answersPrompt: resolvedAnswersPrompt,
           closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
+          subQuestionsPrompt: resolvedSubQuestionsPrompt,
+          vocabluaryPrompt: resolvedVocabluaryPrompt,
           subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
           questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
           solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
           answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
-          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "")
+          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
+          subQuestionsPromptOwn: Boolean(section.subQuestionsPrompt && section.subQuestionsPrompt.trim() !== ""),
+          vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "")
         };
       }
 
@@ -228,11 +266,21 @@ export class TopicService {
           topic.closedSubtopicsPrompt?.trim() === '' || !topic.closedSubtopicsPrompt
             ? resolvedClosedSubtopicsPrompt
             : topic.closedSubtopicsPrompt,
+        subQuestionsPrompt:
+          topic.subQuestionsPrompt?.trim() === '' || !topic.subQuestionsPrompt
+            ? resolvedSubQuestionsPrompt
+            : topic.subQuestionsPrompt,
+        vocabluaryPrompt:
+          topic.vocabluaryPrompt?.trim() === '' || !topic.vocabluaryPrompt
+            ? resolvedVocabluaryPrompt
+            : topic.vocabluaryPrompt,
         subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
         questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
         solutionPromptOwn: Boolean(topic.solutionPrompt && topic.solutionPrompt.trim() !== ""),
         answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
-        closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== "")
+        closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
+        subQuestionsPromptOwn: Boolean(topic.subQuestionsPrompt && topic.subQuestionsPrompt.trim() !== ""),
+        vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== "")
       };
 
       return response;
@@ -287,11 +335,11 @@ export class TopicService {
           message: 'Temat został pomyślnie zaktualizowany',
           topic: updatedTopic,
       };
-  }
-  catch (error) {
-      console.error(`Nie udało się zaktualizować dział:`, error);
-      throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
-  }
+    }
+    catch (error) {
+        console.error(`Nie udało się zaktualizować dział:`, error);
+        throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
+    }
   }
 
   async topicBlocked(

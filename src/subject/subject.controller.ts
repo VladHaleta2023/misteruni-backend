@@ -27,7 +27,7 @@ export class SubjectController {
   }
 
   @Get(':id/topics')
-  async findAllTopics(
+  async findTopics(
     @Param('id', ParseIntPipe) id: number,
     @Query('withSubject') withSubject?: string,
     @Query('withSections') withSections?: string,
@@ -37,7 +37,7 @@ export class SubjectController {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
 
-    return this.subjectService.findAllTopics(id, withSubjectBool, withSectionsBool, withSubtopicsBool);
+    return this.subjectService.findTopics(id, withSubjectBool, withSectionsBool, withSubtopicsBool);
   }
 
   @Get(':id')
@@ -77,5 +77,12 @@ export class SubjectController {
     @Body() body?: SubjectUploadDto,
   ) {
     return this.subjectService.uploadFileSubject(id, file, body?.url);
+  }
+
+  @Get(':id/tasks')
+  async findTasks(
+    @Param('id', ParseIntPipe) id: number
+  ) {
+    return this.subjectService.findTasks(id);
   }
 }

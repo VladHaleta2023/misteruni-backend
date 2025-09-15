@@ -117,6 +117,44 @@ export class SectionService {
         });
     }
 
+    async calculateSubtopicsPercent(
+        subjectId: number,
+        sectionId?: number,
+        topicId?: number,
+    ) {
+        const whereClause: any = { subjectId };
+        if (sectionId) whereClause.sectionId = sectionId;
+        if (topicId) whereClause.topicId = topicId;
+
+        const subtopics = await this.prismaService.subtopic.findMany({
+            where: whereClause,
+            include: {
+                progresses: {
+                    where: { task: { finished: true } },
+                },
+            },
+        });
+
+        const updatedSubtopics = await Promise.all(
+            subtopics.map(async (subtopic) => {
+                const progresses = subtopic.progresses || [];
+                const percent =
+                    progresses.length > 0
+                        ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
+                        : 0;
+
+                await this.prismaService.subtopic.update({
+                    where: { id: subtopic.id },
+                    data: { percent },
+                });
+
+                return { ...subtopic, percent };
+            }),
+        );
+
+        return updatedSubtopics;
+    }
+
     async findSections(
         subjectId: number,
         withSubject = false,
@@ -137,41 +175,35 @@ export class SectionService {
                 orderBy: { partId: 'asc' },
             });
 
-            const resolvePrompts = (section: any) => {
-                const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
-                const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
-                const solutionPromptOwn = Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== "");
-                const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
-                const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
+            const resolvePrompts = (section: any) => ({
+                subtopicsPrompt: section.subtopicsPrompt?.trim() || subject.subtopicsPrompt || "",
+                subtopicsPromptOwn: Boolean(section.subtopicsPrompt?.trim()),
 
-                return {
-                    subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
-                    subtopicsPromptOwn: subtopicsPromptOwn,
+                questionPrompt: section.questionPrompt?.trim() || subject.questionPrompt || "",
+                questionPromptOwn: Boolean(section.questionPrompt?.trim()),
 
-                    questionPrompt: questionPromptOwn ? section.questionPrompt.trim() : (subject.questionPrompt || ""),
-                    questionPromptOwn: questionPromptOwn,
+                solutionPrompt: section.solutionPrompt?.trim() || subject.solutionPrompt || "",
+                solutionPromptOwn: Boolean(section.solutionPrompt?.trim()),
 
-                    solutionPrompt: solutionPromptOwn ? section.solutionPrompt.trim() : (subject.solutionPrompt || ""),
-                    solutionPromptOwn: solutionPromptOwn,
+                answersPrompt: section.answersPrompt?.trim() || subject.answersPrompt || "",
+                answersPromptOwn: Boolean(section.answersPrompt?.trim()),
 
-                    answersPrompt: answersPromptOwn ? section.answersPrompt.trim() : (subject.answersPrompt || ""),
-                    answersPromptOwn: answersPromptOwn,
+                closedSubtopicsPrompt: section.closedSubtopicsPrompt?.trim() || subject.closedSubtopicsPrompt || "",
+                closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt?.trim()),
 
-                    closedSubtopicsPrompt: closedSubtopicsPromptOwn ? section.closedSubtopicsPrompt.trim() : (subject.closedSubtopicsPrompt || ""),
-                    closedSubtopicsPromptOwn: closedSubtopicsPromptOwn,
-                };
-            };
+                subQuestionsPrompt: section.subQuestionsPrompt?.trim() || subject.subQuestionsPrompt || "",
+                subQuestionsPromptOwn: Boolean(section.subQuestionsPrompt?.trim()),
 
-            const response: any = {
-                statusCode: 200,
-                message: 'Działy zostały pomyślnie pobrane',
-            };
+                vocabluaryPrompt: section.vocabluaryPrompt?.trim() || subject.vocabluaryPrompt || "",
+                vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt?.trim()),
+            });
 
-            if (withSubject) {
-                response.subject = subject;
-            }
+            const allTopics: any[] = [];
+            let enrichedSections: any[] = [];
 
             if (withTopics) {
+                await this.calculateSubtopicsPercent(subjectId);
+
                 const topics = await this.prismaService.topic.findMany({
                     where: { subjectId },
                     orderBy: { partId: 'asc' },
@@ -187,6 +219,7 @@ export class SectionService {
                         select: {
                             id: true,
                             topicId: true,
+                            sectionId: true,
                             name: true,
                             percent: true,
                             blocked: true,
@@ -200,60 +233,95 @@ export class SectionService {
                     }, {} as Record<number, any[]>);
                 }
 
-                const topicsWithPercent = topics.map(topic => {
+                for (const topic of topics) {
                     const subtopics = withSubtopics ? subtopicsGrouped[topic.id] || [] : [];
                     const validSubtopics = subtopics.filter(s => !s.blocked);
-                    const percent =
-                        validSubtopics.length > 0
-                            ? validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) / validSubtopics.length
-                            : 0;
 
-                    return {
-                        ...topic,
-                        percent,
-                        subtopics,
-                    };
-                });
+                    let percent: number;
+                    if (validSubtopics.length > 0) {
+                        percent =
+                            validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) /
+                            validSubtopics.length;
 
-                const topicsBySection = topicsWithPercent.reduce<Record<number, any[]>>((acc, topic) => {
+                        await this.prismaService.topic.update({
+                            where: { id: topic.id },
+                            data: { percent },
+                        });
+                    } else if (topic.percent !== undefined && topic.percent !== null) {
+                        percent = topic.percent;
+                    } else {
+                        percent = 0;
+                    }
+
+                    allTopics.push({ ...topic, subtopics, percent });
+                }
+
+                const topicsBySection = allTopics.reduce<Record<number, any[]>>((acc, topic) => {
                     const sectionId = topic.sectionId;
                     if (!acc[sectionId]) acc[sectionId] = [];
                     acc[sectionId].push(topic);
                     return acc;
                 }, {});
 
-                const enrichedSections = sections.map(section => {
+                enrichedSections = sections.map(section => {
                     const prompts = resolvePrompts(section);
                     const topics = topicsBySection[section.id] || [];
-
                     const validTopics = topics.filter(t => t.subtopics.some(s => !s.blocked));
-                    const percent =
-                        validTopics.length > 0
-                            ? validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length
-                            : 0;
 
-                    return {
-                        ...section,
-                        ...prompts,
-                        percent,
-                        topics,
-                    };
+                    let percent: number;
+                    if (validTopics.length > 0) {
+                        percent = validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length;
+                    } else if (topics.length > 0) {
+                        const topicWithPercent = topics.find(
+                            t => t.percent !== undefined && t.percent !== null,
+                        );
+                        percent = topicWithPercent ? topicWithPercent.percent : 0;
+                    } else {
+                        percent = 0;
+                    }
+
+                    return { ...section, ...prompts, topics, percent };
                 });
-
-                response.sections = this.addStatusToSections(enrichedSections, subject.threshold);
             } else {
-                const enrichedSections = sections.map(section => {
-                    const prompts = resolvePrompts(section);
-                    return {
-                        ...section,
-                        ...prompts,
-                        percent: 0,
-                        topics: [],
-                    };
-                });
-
-                response.sections = this.addStatusToSections(enrichedSections, subject.threshold);
+                enrichedSections = sections.map(section => ({
+                    ...section,
+                    ...resolvePrompts(section),
+                    topics: [],
+                    percent: 0,
+                }));
             }
+
+            const response: any = {
+                statusCode: 200,
+                message: 'Działy zostały pomyślnie pobrane',
+                sections: this.addStatusToSections(enrichedSections, subject.threshold),
+            };
+
+            if (withSubject) {
+                response.subject = subject;
+            }
+
+            const totalTopics = allTopics.length || 1;
+            const counts: Record<Status, number> = { blocked: 0, started: 0, progress: 0, completed: 0 };
+
+            allTopics.forEach(topic => {
+                const pct = topic.percent ?? 0;
+                let status: Status;
+                if (topic.subtopics.length > 0 && topic.subtopics.every(s => s.blocked)) status = 'blocked';
+                else if (pct === 0) status = 'started';
+                else if (pct < subject.threshold) status = 'progress';
+                else status = 'completed';
+                counts[status] += 1;
+            });
+
+            const totalPercent: Record<Status, number> = {
+                blocked: (counts.blocked / totalTopics) * 100,
+                started: (counts.started / totalTopics) * 100,
+                progress: (counts.progress / totalTopics) * 100,
+                completed: (counts.completed / totalTopics) * 100,
+            };
+
+            response.total = totalPercent;
 
             return response;
         } catch (error) {
@@ -291,6 +359,8 @@ export class SectionService {
             const solutionPromptOwn = Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== "");
             const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
             const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
+            const subQuestionsPromptOwn = Boolean(section.subQuestionsPrompt && section.subQuestionsPrompt.trim() !== "");
+            const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
 
             const prompts = {
                 subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
@@ -307,6 +377,12 @@ export class SectionService {
 
                 closedSubtopicsPrompt: closedSubtopicsPromptOwn ? section.closedSubtopicsPrompt.trim() : (subject.closedSubtopicsPrompt || ""),
                 closedSubtopicsPromptOwn: closedSubtopicsPromptOwn,
+
+                subQuestionsPrompt: subQuestionsPromptOwn ? section.subQuestionsPrompt.trim() : (subject.subQuestionsPrompt || ""),
+                subQuestionsPromptOwn: subQuestionsPromptOwn,
+
+                vocabluaryPrompt: vocabluaryPromptOwn ? section.vocabluaryPrompt.trim() : (subject.vocabluaryPrompt || ""),
+                vocabluaryPromptOwn: vocabluaryPromptOwn,
             };
 
             let enrichedSection: any = {

@@ -4,7 +4,7 @@ import { OptionsController } from './options.controller';
 import { HttpModule } from '@nestjs/axios';
 import { FASTAPI_URL } from 'src/constans';
 import { ConfigService } from '@nestjs/config';
-import { SubjectModule } from 'src/subject/subject.module';
+import { StorageModule, SubjectModule } from 'src/subject/subject.module';
 import { SubtopicModule } from 'src/subtopic/subtopic.module';
 
 @Module({
@@ -14,7 +14,8 @@ import { SubtopicModule } from 'src/subtopic/subtopic.module';
       maxRedirects: 5,
     }),
     SubjectModule,
-    SubtopicModule
+    SubtopicModule,
+    StorageModule
   ],
   controllers: [OptionsController],
   providers: [
@@ -25,5 +26,6 @@ import { SubtopicModule } from 'src/subtopic/subtopic.module';
       inject: [ConfigService],
     },
   ],
+  exports: [OptionsService],
 })
 export class OptionsModule {}

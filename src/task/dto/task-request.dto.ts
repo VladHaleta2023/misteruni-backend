@@ -1,7 +1,16 @@
-import { IsArray, IsInt, IsString } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TaskCreateRequest {
+  @IsOptional()
+  @IsInt()
+  id?: number;
+
+  @IsOptional()
+  @IsInt()
+  stage: number;
+
   @IsString()
+  @IsOptional()
   text: string;
 
   @IsArray()
@@ -17,4 +26,25 @@ export class TaskCreateRequest {
 
   @IsString()
   solution: string
+}
+
+export class TaskUserSolutionRequest {
+  @IsString()
+  userSolution: string;
+
+  @IsInt()
+  userOptionIndex: number;
+}
+
+export class Subtopic {
+  @IsString()
+  name: string;
+
+  @IsInt()
+  percent: number;
+}
+
+export class SubtopicsProgressUpdateRequest {
+  @IsArray()
+  subtopics: Subtopic[]
 }

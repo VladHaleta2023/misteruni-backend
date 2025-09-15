@@ -1,28 +1,63 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, Param, ParseIntPipe, Post, Put, Req } from '@nestjs/common';
 import { TaskService } from './task.service';
-import { OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
-import { TaskCreateRequest } from './dto/task-request.dto';
+import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
+import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { Request } from 'express';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics/:topicId/tasks')
 export class TaskController {
   constructor(private readonly taskService: TaskService) {}
 
   @Get()
-  async findAllTasks(
+  async findTasks(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
+    @Req() req: Request
   ) {
-    return this.taskService.findAllTasks(subjectId, sectionId, topicId);
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.findTasks(subjectId, sectionId, topicId);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
   }
 
   @Get('pending')
   async findPendingTask(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('topicId', ParseIntPipe) topicId: number
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Req() req: Request
   ) {
-    return this.taskService.findPendingTask(subjectId, sectionId, topicId);
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.findPendingTask(subjectId, sectionId, topicId);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
   }
 
   @Get(':id')
@@ -30,9 +65,82 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Param('id', ParseIntPipe) id: number
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request
   ) {
-    return this.taskService.findTaskById(subjectId, sectionId, topicId, id);
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.findTaskById(subjectId, sectionId, topicId, id);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @Put(':id/user-solution')
+  async updateTaskUserSolution(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: TaskUserSolutionRequest,
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.updateTaskUserSolution(subjectId, sectionId, topicId, id, data);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @Put(':id/percents')
+  async updatePercents(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body('userOptions') userOptions: number[],
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.updatePercents(subjectId, sectionId, topicId, id, userOptions);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
   }
 
   @Post('task-generate')
@@ -40,9 +148,68 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: TaskAIGenerate
+    @Body() data: TaskAIGenerate,
+    @Req() req: Request
   ) {
-    return this.taskService.taskAIGenerate(subjectId, sectionId, topicId, data);
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.taskAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @Post('interactive-task-generate')
+  async interactiveTaskAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Body() data: InteractiveTaskAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.interactiveTaskAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @Post('questions-task-generate')
+  async questionsTaskAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Body() data: QuestionsTaskAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.questionsTaskAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @Post('solution-generate')
@@ -50,9 +217,22 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: SolutionAIGenerate
+    @Body() data: SolutionAIGenerate,
+    @Req() req: Request
   ) {
-    return this.taskService.solutionAIGenerate(subjectId, sectionId, topicId, data);
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.solutionAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @Post('options-generate')
@@ -60,9 +240,22 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: OptionsAIGenerate
+    @Body() data: OptionsAIGenerate,
+    @Req() req: Request
   ) {
-    return this.taskService.optionsAIGenerate(subjectId, sectionId, topicId, data);
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.optionsAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @Post('problems-generate')
@@ -70,18 +263,134 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: ProblemsAIGenerate
+    @Body() data: ProblemsAIGenerate,
+    @Req() req: Request
   ) {
-    return this.taskService.problemsAIGenerate(subjectId, sectionId, topicId, data);
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.problemsAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @Post('task-transaction')
-  async createTaskTransaction(
+  async upsertTaskTransaction(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() taskData: TaskCreateRequest
+    @Body() taskData: TaskCreateRequest,
+    @Req() req: Request
   ) {
-    return this.taskService.createTaskTransaction(subjectId, sectionId, topicId, taskData);
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.createTaskTransaction(subjectId, sectionId, topicId, taskData);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @Post(':taskId/questions-task-transaction')
+  async upsertQuestionsTaskTransaction(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('taskId', ParseIntPipe) taskId: number,
+    @Body('tasks') taskData: TaskCreateRequest[],
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.createSubTasksTransaction(subjectId, sectionId, topicId, taskId, taskData);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @Post(':taskId/subtopicsProgress-transaction')
+  async subtopicsProgressTaskTransaction(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('taskId', ParseIntPipe) taskId: number,
+    @Body() data: SubtopicsProgressUpdateRequest,
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.subtopicsProgressTaskTransaction(subjectId, sectionId, topicId, taskId, data);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @Post(':taskId/audio-transaction')
+  async audioTaskTransaction(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('taskId', ParseIntPipe) taskId: number,
+    @Body('text') text: string,
+    @Body('stage') stage: number,
+    @Body('language') language: string,
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const result = await this.taskService.audioTaskTransaction(subjectId, sectionId, topicId, taskId, text, stage, language);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
   }
 }

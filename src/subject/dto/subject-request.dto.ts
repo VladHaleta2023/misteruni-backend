@@ -43,7 +43,11 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
-  newProblemsPrompt?: string;
+  subQuestionsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  vocabluaryPrompt?: string;
 
   @IsOptional()
   @IsString()

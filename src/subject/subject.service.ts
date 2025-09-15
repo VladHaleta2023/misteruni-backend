@@ -8,6 +8,8 @@ import { StorageService } from 'src/storage/storage.service';
 import axios from "axios";
 import * as path from 'path';
 
+type Status = 'blocked' | 'started' | 'progress' | 'completed';
+
 @Injectable()
 export class SubjectService {
     constructor(
@@ -144,7 +146,9 @@ export class SubjectService {
                     questionPromptOwn: true,
                     solutionPromptOwn: true,
                     answersPromptOwn: true,
-                    closedSubtopicsPromptOwn: true
+                    closedSubtopicsPromptOwn: true,
+                    subQuestionsPromptOwn: true,
+                    vocabluaryPromptOwn: true
                 }
             };
         } catch (error) {
@@ -319,7 +323,7 @@ export class SubjectService {
         }
     }
 
-    async findAllTopics(
+    async findTopics(
         subjectId: number,
         withSubject = true,
         withSections = true,
@@ -406,6 +410,107 @@ export class SubjectService {
 
         } catch (error) {
             throw new InternalServerErrorException(`Nie udało się pobrać tematów: ${error}`);
+        }
+    }
+
+    async findTasks(id: number) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const tasks = await this.prismaService.task.findMany({
+                where: {
+                    topic: {
+                        subjectId: id,
+                    },
+                    parentTaskId: null,
+                },
+                include: {
+                    topic: {
+                        select: {
+                            id: true,
+                            name: true,
+                            partId: true,
+                            section: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    type: true,
+                                    partId: true,
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: [
+                    { updatedAt: 'desc' },
+                    { order: 'asc' },
+                    { topic: { partId: 'asc' } },
+                    { topic: { section: { partId: 'asc' } } },
+                ],
+            });
+
+            const tasksWithPercent = await Promise.all(
+                tasks.map(async task => {
+                    let status: Status = "started";
+
+                    if (task.percent === 0) {
+                        status = 'started';
+                    } else if (task.percent < subject.threshold) {
+                        status = 'progress';
+                    } else {
+                        status = 'completed';
+                    }
+
+                    return {
+                        ...task,
+                        status,
+                        topic: {
+                            id: task.topic.id,
+                            name: task.topic.name,
+                            partId: task.topic.partId,
+                        },
+                        section: {
+                            id: task.topic.section.id,
+                            name: task.topic.section.name,
+                            partId: task.topic.section.partId,
+                            type: task.topic.section.type,
+                        },
+                    };
+                }),
+            );
+
+            const groupedTasksMap: Record<string, typeof tasksWithPercent> = {};
+            tasksWithPercent.forEach(task => {
+            const updated = task.updatedAt;
+            const day = String(updated.getDate()).padStart(2, '0');
+            const month = String(updated.getMonth() + 1).padStart(2, '0');
+            const year = updated.getFullYear();
+            const dateKey = `${day}-${month}-${year}`;
+
+            if (!groupedTasksMap[dateKey]) groupedTasksMap[dateKey] = [];
+                groupedTasksMap[dateKey].push(task);
+            });
+
+            const groupedTasks = Object.entries(groupedTasksMap).map(([dateKey, tasks]) => {
+            const [day, month, year] = dateKey.split('-');
+                return {
+                    date: { day, month, year },
+                    tasks,
+                };
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Pobrano listę zadań pomyślnie',
+                elements: groupedTasks,
+            };
+        }
+        catch (error) {
+            throw new InternalServerErrorException('Nie udało się pobrać listę zadań');
         }
     }
 }
