@@ -20,6 +20,44 @@ export class TaskService {
         @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
     ) {}
 
+    async calculateSubtopicsPercent(
+        subjectId: number,
+        sectionId?: number,
+        topicId?: number,
+    ) {
+        const whereClause: any = { subjectId };
+        if (sectionId) whereClause.sectionId = sectionId;
+        if (topicId) whereClause.topicId = topicId;
+
+        const subtopics = await this.prismaService.subtopic.findMany({
+            where: whereClause,
+            include: {
+                progresses: {
+                    where: { task: { finished: true } },
+                },
+            },
+        });
+
+        const updatedSubtopics = await Promise.all(
+            subtopics.map(async (subtopic) => {
+                const progresses = subtopic.progresses || [];
+                const percent =
+                    progresses.length > 0
+                        ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
+                        : 0;
+
+                await this.prismaService.subtopic.update({
+                    where: { id: subtopic.id },
+                    data: { percent },
+                });
+
+                return { ...subtopic, percent };
+            }),
+        );
+
+        return updatedSubtopics;
+    }
+
     async findTasks(
         subjectId: number,
         sectionId: number,
@@ -1366,101 +1404,79 @@ export class TaskService {
     }
 
     async updatePercents(
-        subjectId: number,
-        sectionId: number,
-        topicId: number,
-        id: number,
-        userOptions: number[]
+    subjectId: number,
+    sectionId: number,
+    topicId: number,
+    id: number,
+    userOptions: number[]
     ) {
         try {
             const existingSubject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
             if (!existingSubject) {
-                return {
-                    statusCode: 404,
-                    message: `Przedmiot nie został znaleziony`,
-                };
+                return { statusCode: 404, message: `Przedmiot nie został znaleziony` };
             }
 
             const existingSection = await this.prismaService.section.findUnique({ where: { id: sectionId } });
             if (!existingSection) {
-                return {
-                    statusCode: 404,
-                    message: `Dział nie został znaleziony`,
-                };
+                return { statusCode: 404, message: `Dział nie został znaleziony` };
             }
 
             const existingTopic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
             if (!existingTopic) {
-                return {
-                    statusCode: 404,
-                    message: `Temat nie został znaleziony`,
-                };
-            }
-
-            const task = await this.prismaService.task.findFirst({
-                where: { id },
-                include: {
-                    subTasks: {
-                        orderBy: { order: 'asc' }
-                    },
-                },
-                orderBy: { order: 'asc' }
-            });
-
-            if (!task) {
-                return {
-                    statusCode: 404,
-                    message: `Zadanie nie zostało znalezione`,
-                };
-            }
-
-            if (userOptions.length != task.subTasks.length) {
-                return {
-                    statusCode: 404,
-                    message: `Liczba wariantów się nie zgadza`,
-                };
+                return { statusCode: 404, message: `Temat nie został znaleziony` };
             }
 
             return await this.prismaService.$transaction(async (prismaClient) => {
+                const task = await prismaClient.task.findFirst({
+                    where: { id },
+                    include: {
+                    subTasks: { orderBy: { order: 'asc' } },
+                    },
+                    orderBy: { order: 'asc' },
+                });
+
+                if (!task) {
+                    return { statusCode: 404, message: `Zadanie nie zostało znalezione` };
+                }
+
+                if (userOptions.length !== task.subTasks.length) {
+                    return { statusCode: 400, message: `Liczba wariantów się nie zgadza` };
+                }
+
                 await prismaClient.task.update({
                     where: { id: task.id },
-                    data: {
-                        answered: true,
-                        finished: true
-                    }
+                    data: { answered: true, finished: true },
                 });
 
                 let percentsTotal = 0;
-                let index = 0;
-                for (const subTask of task.subTasks) {
+                for (let i = 0; i < task.subTasks.length; i++) {
+                    const subTask = task.subTasks[i];
+                    const userOption = userOptions[i];
+
                     await prismaClient.task.update({
                         where: { id: subTask.id },
                         data: {
-                            userOptionIndex: userOptions[index],
+                            userOptionIndex: userOption,
                             answered: true,
-                            finished: true
+                            finished: true,
                         },
                     });
 
-                    if (subTask.correctOptionIndex === userOptions[index])
+                    if (subTask.correctOptionIndex === userOption) {
                         percentsTotal += 100;
-                    index += 1;
+                    }
                 }
 
                 percentsTotal /= task.subTasks.length;
 
                 await prismaClient.task.update({
                     where: { id: task.id },
-                    data: {
-                        percent: percentsTotal
-                    }
-                })
+                    data: { percent: percentsTotal },
+                });
 
                 await prismaClient.topic.update({
                     where: { id: topicId },
-                    data: {
-                        percent: (existingTopic.percent + percentsTotal) / 2
-                    }
+                    data: { percent: (existingTopic.percent + percentsTotal) / 2 },
                 });
 
                 return {
@@ -1468,10 +1484,211 @@ export class TaskService {
                     message: 'Procenty zostały pomyślnie zaktualizowane',
                 };
             });
-        }
-        catch (error) {
+        } catch (error) {
             console.error(`Nie udało się zaktualizować procentów:`, error);
             throw new InternalServerErrorException('Błąd podczas aktualizacji procentów');
+        }
+    }
+
+    async deleteTask(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            await this.prismaService.task.delete({
+                where: { id }
+            });
+
+            await this.calculateSubtopicsPercent(subjectId, sectionId, topicId);
+
+            return {
+                statusCode: 200,
+                message: 'Usuwanie zadania zostało udane'
+            };
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się usunąć zadanie');
+        }
+    }
+
+    // Words
+    async findWords(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const task = await this.prismaService.task.findUnique({
+                where: { id },
+            });
+
+            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
+
+            const words = await this.prismaService.word.findMany({
+                where: {
+                    taskId: id,
+                    finished: false
+                },
+                orderBy: {
+                    text: "asc"
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Pobranie słów lub wyrazów udane',
+                words
+            };
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się pobrać słów lub wyrazów');
+        }
+    }
+
+    async createWord(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+        text: string,
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const task = await this.prismaService.task.findUnique({
+                where: { id },
+            });
+
+            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
+
+            const existingWord = await this.prismaService.word.findUnique({
+                where: { text },
+            });
+
+            let word;
+
+            if (existingWord) {
+                word = await this.prismaService.word.update({
+                    where: { id: existingWord.id },
+                    data: { finished: false, taskId: id },
+                });
+            } else {
+                word = await this.prismaService.word.create({
+                    data: {
+                    taskId: id,
+                    text,
+                    },
+                });
+            }
+
+            return {
+                statusCode: 200,
+                message: 'Słowo zostało dodane pomyślnie',
+                word,
+            };
+        }
+        catch (error) {
+            throw new InternalServerErrorException('Nie udało się dodać słowa');
+        }
+    }
+
+    async deleteWord(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+        wordId: number
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const task = await this.prismaService.task.findUnique({
+                where: { id },
+            });
+
+            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
+
+            await this.prismaService.word.delete({
+                where: {
+                    id: wordId
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Usuwanie słowa lub wyrazu udane'
+            };
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się usunąć słowa lub wyrazu');
         }
     }
 }

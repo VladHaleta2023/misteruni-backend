@@ -19,6 +19,44 @@ export class SubjectService {
         private readonly storageService: StorageService
     ) {}
 
+    async calculateSubtopicsPercent(
+        subjectId: number,
+        sectionId?: number,
+        topicId?: number,
+    ) {
+        const whereClause: any = { subjectId };
+        if (sectionId) whereClause.sectionId = sectionId;
+        if (topicId) whereClause.topicId = topicId;
+
+        const subtopics = await this.prismaService.subtopic.findMany({
+            where: whereClause,
+            include: {
+                progresses: {
+                    where: { task: { finished: true } },
+                },
+            },
+        });
+
+        const updatedSubtopics = await Promise.all(
+            subtopics.map(async (subtopic) => {
+                const progresses = subtopic.progresses || [];
+                const percent =
+                    progresses.length > 0
+                        ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
+                        : 0;
+
+                await this.prismaService.subtopic.update({
+                    where: { id: subtopic.id },
+                    data: { percent },
+                });
+
+                return { ...subtopic, percent };
+            }),
+        );
+
+        return updatedSubtopics;
+    }
+
     async deleteAllSectionsBySubjectId(id: number) {
         try {
             await this.prismaService.section.deleteMany({
@@ -511,6 +549,33 @@ export class SubjectService {
         }
         catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać listę zadań');
+        }
+    }
+
+    async deleteTask(
+        subjectId: number,
+        id: number
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            await this.prismaService.task.delete({
+                where: { id }
+            });
+
+            await this.calculateSubtopicsPercent(subjectId);
+
+            return {
+                statusCode: 200,
+                message: 'Usuwanie zadania zostało udane',
+            };
+        }
+        catch (error) {
+            throw new InternalServerErrorException('Nie udało się usunąć zadanie');
         }
     }
 }

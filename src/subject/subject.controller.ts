@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { SubjectService } from './subject.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SubjectUploadDto } from './dto/subject-upload.dto';
 import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { FullPlanRequestDto } from './dto/full-plan-request.dto';
+import { Request } from 'express';
 
 @Controller('subjects')
 export class SubjectController {
@@ -84,5 +85,26 @@ export class SubjectController {
     @Param('id', ParseIntPipe) id: number
   ) {
     return this.subjectService.findTasks(id);
+  }
+
+  @Delete(':id/tasks/:taskId')
+  async deleteTask(
+    @Param('id', ParseIntPipe) subjectId: number,
+    @Param('taskId', ParseIntPipe) id: number,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.subjectService.deleteTask(subjectId, id);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 }

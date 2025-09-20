@@ -238,20 +238,35 @@ export class SectionService {
                     const validSubtopics = subtopics.filter(s => !s.blocked);
 
                     let percent: number;
+
                     if (validSubtopics.length > 0) {
                         percent =
                             validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) /
                             validSubtopics.length;
-
-                        await this.prismaService.topic.update({
-                            where: { id: topic.id },
-                            data: { percent },
-                        });
-                    } else if (topic.percent !== undefined && topic.percent !== null) {
-                        percent = topic.percent;
                     } else {
-                        percent = 0;
+                        const tasks = await this.prismaService.task.findMany({
+                            where: {
+                                topicId: topic.id,
+                                finished: true,
+                                parentTaskId: null
+                            },
+                            select: { percent: true },
+                        });
+
+                        if (tasks.length > 0) {
+                            percent =
+                                tasks.reduce((acc, t) => acc + (t.percent ?? 0), 0) /
+                                tasks.length;
+                        }
+                        else {
+                            percent = 0;
+                        }
                     }
+
+                    await this.prismaService.topic.update({
+                        where: { id: topic.id },
+                        data: { percent },
+                    });
 
                     allTopics.push({ ...topic, subtopics, percent });
                 }
@@ -266,16 +281,10 @@ export class SectionService {
                 enrichedSections = sections.map(section => {
                     const prompts = resolvePrompts(section);
                     const topics = topicsBySection[section.id] || [];
-                    const validTopics = topics.filter(t => t.subtopics.some(s => !s.blocked));
-
+                    
                     let percent: number;
-                    if (validTopics.length > 0) {
-                        percent = validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length;
-                    } else if (topics.length > 0) {
-                        const topicWithPercent = topics.find(
-                            t => t.percent !== undefined && t.percent !== null,
-                        );
-                        percent = topicWithPercent ? topicWithPercent.percent : 0;
+                    if (topics.length > 0) {
+                        percent = topics.reduce((acc, t) => acc + t.percent, 0) / topics.length;
                     } else {
                         percent = 0;
                     }

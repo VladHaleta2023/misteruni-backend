@@ -256,4 +256,14 @@ export class OptionsService {
             throw new InternalServerErrorException('Błąd podczas usuwania plików');
         }
     }
+
+    async resetAnswer() {
+        await this.prismaService.task.update({
+            where: { id: 97 },
+            data: {
+                answered: false,
+                finished: false
+            }
+        })
+    }
 }

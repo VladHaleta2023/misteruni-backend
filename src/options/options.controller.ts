@@ -91,6 +91,11 @@ export class OptionsController {
     return this.optionsService.createSubtopicsTransaction(subtopics);
   }
 
+  @Post('reset')
+  async resetAnswer() {
+    return this.optionsService.resetAnswer();
+  }
+
   @Post('tasks/:id/tss')
   async generateTTS(
     @Param('id', ParseIntPipe) id: number,

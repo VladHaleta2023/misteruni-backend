@@ -135,6 +135,7 @@ model Task {
   subTasks            Task[]      @relation("SubTasks")
   progresses          SubtopicProgress[]
   audioFiles          AudioFile[]
+  words               Word[]
 }
 
 model AudioFile {
@@ -147,4 +148,18 @@ model AudioFile {
 
   taskId    Int
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model Word {
+  id        Int     @id @default(autoincrement())
+  text      String
+  finished  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  taskId    Int
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([text])
 }
