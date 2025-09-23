@@ -21,7 +21,7 @@ async function bootstrap() {
   }));
 
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://misteruni-frontend-admin.vercel.app'],
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://misteruni-frontend-admin.vercel.app', 'https://misteruni-frontend-client.vercel.app'],
     methods: 'GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS',
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
