@@ -12,7 +12,7 @@ async function bootstrap() {
   httpServer.setTimeout(900000);
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>("PORT");
+  const port = configService.get<number>("PORT") || 5000;
 
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
@@ -21,13 +21,13 @@ async function bootstrap() {
   }));
 
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://misteruni-frontend-admin.vercel.app'],
     methods: 'GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS',
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
 
-  await app.listen(port ?? 4000);
+  await app.listen(port);
   console.log(`🚀 Server running on port: ${port}`);
 }
 
