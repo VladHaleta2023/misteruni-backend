@@ -55,7 +55,7 @@ export class OptionsService {
 
     async audioTranscribePart(params: AudioTranscribeParams)
         : Promise<AudioTranscribeResponse & { statusCode: number; message: string }> {
-        const url = `${this.fastAPIUrl}/admin/audio-transcribe-part`;
+        const url = `https://misteruni-fastapi.onrender.com/admin/audio-transcribe-part`;//`${this.fastAPIUrl}/admin/audio-transcribe-part`;
         const { subjectId, file, part_id, language } = params;
 
         try {
@@ -110,7 +110,7 @@ export class OptionsService {
     async textSplitIntoSentences(text: string, language: string = "ru")
         : Promise<SplitIntoSentencesResponse & { statusCode: number; message: string }> {
         try {
-            const url = `${this.fastAPIUrl}/admin/split-into-sentences`;
+            const url = `https://misteruni-fastapi.onrender.com/admin/split-into-sentences`;
             
             const response$ = this.httpService.post(url, { text, language });
             const response = await firstValueFrom(response$);
@@ -178,7 +178,7 @@ export class OptionsService {
         try {
             prismaClient = prismaClient || this.prismaService;
 
-            const url = `${this.fastAPIUrl}/admin/tts`;
+            const url = `https://misteruni-fastapi.onrender.com/admin/tts`;
             const task = await prismaClient.task.findUnique({ where: { id } });
 
             if (!task) {

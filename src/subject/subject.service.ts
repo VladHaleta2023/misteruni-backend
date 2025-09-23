@@ -72,7 +72,7 @@ export class SubjectService {
     }
 
     async subjectAIPlanGenerate(id: number, prompt: string) {
-        const url = `${this.fastAPIUrl}/admin/full-plan-generate`;
+        const url = `https://misteruni-fastapi.onrender.com/admin/full-plan-generate`;
 
         try {
             const response$ = this.httpService.post(url, { prompt });
