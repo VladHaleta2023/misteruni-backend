@@ -2,7 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { FASTAPI_URL } from 'src/constans';
-import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
+import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate, WordAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from 'src/subtopic/subtopic.service';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
@@ -99,9 +99,22 @@ export class TaskService {
                         status = 'completed';
                     }
 
+                    const words = await this.prismaService.word.findMany({
+                        where: {
+                            taskId: task.id,
+                            finished: false
+                        }
+                    })
+
+                    let vocabluary = false;
+
+                    if (words.length !== 0)
+                        vocabluary = true
+
                     return {
                         ...task,
                         status,
+                        vocabluary,
                         topic: {
                             id: topic.id,
                             name: topic.name,
@@ -372,6 +385,17 @@ export class TaskService {
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
+
+            let filtered = subtopics
+                .filter(s => s.percent < (data.threshold ?? subject.threshold))
+                .map(s => [s.name, s.percent] as [string, number]);
+
+            if (filtered.length === 0) {
+                filtered = subtopics.map(s => [s.name, s.percent] as [string, number]);
+            }
+
+            data.subtopics = filtered;
+
             data.subtopics = data.subtopics ?? subtopics.map(s => [s.name, s.percent]);
             data.tasks = data.tasks ?? taskTexts;
             data.difficulty = data.difficulty ?? subject.difficulty;
@@ -1564,12 +1588,11 @@ export class TaskService {
 
             const words = await this.prismaService.word.findMany({
                 where: {
-                    taskId: id,
-                    finished: false
+                    taskId: id
                 },
-                orderBy: {
-                    text: "asc"
-                }
+                orderBy: [
+                    { finished: "desc" }
+                ]
             });
 
             return {
@@ -1636,14 +1659,68 @@ export class TaskService {
 
             return {
                 statusCode: 200,
-                message: 'Słowo zostało dodane pomyślnie',
+                message: 'Wyraz został dodany pomyślnie',
                 word,
             };
         }
         catch (error) {
-            throw new InternalServerErrorException('Nie udało się dodać słowa');
+            throw new InternalServerErrorException('Nie udało się dodać wyrazu');
         }
     }
+
+    async updateWords(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+        outputWords: string[],
+        outputText: string
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const task = await this.prismaService.task.findUnique({ where: { id } });
+            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
+
+            await this.prismaService.task.update({
+                where: { id },
+                data: { wordsDescription: outputText },
+            });
+
+            if (outputWords.length > 0) {
+                await this.prismaService.word.updateMany({
+                    where: {
+                        taskId: id,
+                        text: { in: outputWords },
+                    },
+                    data: { finished: false },
+                });
+            }
+
+            await this.prismaService.word.updateMany({
+                where: {
+                    taskId: id,
+                    NOT: { text: { in: outputWords } },
+                },
+                data: { finished: true },
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Wyrazy zostały zaktualizowane pomyślnie',
+            };
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się zaktualizować wyrazów');
+        }
+    }
+
 
     async deleteWord(
         subjectId: number,
@@ -1689,6 +1766,122 @@ export class TaskService {
             };
         } catch (error) {
             throw new InternalServerErrorException('Nie udało się usunąć słowa lub wyrazu');
+        }
+    }
+
+    async wordsAIGenerate(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        taskId: number,
+        data: WordAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastAPIUrl}/admin/words-generate`;
+        
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) {
+                throw new BadRequestException('Dział nie został znaleziony');
+            }
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) {
+                throw new BadRequestException('Temat nie został znaleziony');
+            }
+
+            const task = await this.prismaService.task.findFirst({
+                where: { id: taskId }
+            });
+
+            if (!task) {
+                throw new BadRequestException('Zadnaie nie zostało znalezione');
+            }
+
+            data.text = data.text ?? task.text;
+
+            const resolvedVocabliaryPrompt =
+                topic.vocabluaryPrompt?.trim()
+                    ? topic.vocabluaryPrompt
+                    : section.vocabluaryPrompt?.trim()
+                    ? section.vocabluaryPrompt
+                    : subject.vocabluaryPrompt ?? null;
+            
+            data.prompt = resolvedVocabliaryPrompt;
+
+            if (!Array.isArray(data.words) || !data.words.every(item =>
+                Array.isArray(item) &&
+                item.length === 2 &&
+                typeof item[0] === 'string' &&
+                typeof item[1] === 'string'
+            )) {
+                throw new BadRequestException('Words musi być listą par [string, string]');
+            }
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                typeof r.prompt !== 'string' ||
+                typeof r.changed !== 'string' ||
+                typeof r.outputText !== 'string' ||
+                typeof r.text !== 'string' ||
+                !Array.isArray(r.words) ||
+                !Array.isArray(r.errors) ||
+                !Array.isArray(r.outputWords) ||
+                typeof r.attempt !== 'number'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.words.every((item: any) =>
+                Array.isArray(item) &&
+                item.length === 2 &&
+                typeof item[0] === 'string' &&
+                typeof item[1] === 'string'
+            )) {
+                throw new BadRequestException('Words musi być listą par [string, string]');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            if (!r.outputWords.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('OutputSubtopics musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Weryfikacja słów lub wyrazów zadania udane",
+                ...r
+            };
+        }
+        catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
         }
     }
 }

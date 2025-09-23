@@ -123,6 +123,7 @@ model Task {
   stage               Int         @default(0)
   answered            Boolean     @default(false)
   finished            Boolean     @default(false)
+  wordsDescription    String      @default("")
 
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
@@ -151,15 +152,15 @@ model AudioFile {
 }
 
 model Word {
-  id        Int     @id @default(autoincrement())
-  text      String
-  finished  Boolean @default(false)
+  id          Int     @id @default(autoincrement())
+  text        String
+  finished    Boolean @default(false)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  taskId    Int
-  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId      Int
+  task        Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([text])
 }

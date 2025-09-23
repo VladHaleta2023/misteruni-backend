@@ -247,3 +247,34 @@ export class ProblemsAIGenerate {
   @IsArray()
   outputSubtopics: [string, number][]
 }
+
+export class WordAIGenerate {
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsString()
+  @IsOptional()
+  text?: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsArray()
+  @IsOptional()
+  words?: [string, string][];
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  outputWords: string[];
+
+  @IsString()
+  outputText: string;
+}

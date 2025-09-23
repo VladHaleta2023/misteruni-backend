@@ -503,9 +503,22 @@ export class SubjectService {
                         status = 'completed';
                     }
 
+                    const words = await this.prismaService.word.findMany({
+                        where: {
+                            taskId: task.id,
+                            finished: false
+                        }
+                    })
+
+                    let vocabluary = false;
+
+                    if (words.length !== 0)
+                        vocabluary = true
+
                     return {
                         ...task,
                         status,
+                        vocabluary,
                         topic: {
                             id: task.topic.id,
                             name: task.topic.name,
