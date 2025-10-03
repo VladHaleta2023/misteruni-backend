@@ -7,7 +7,8 @@
   "license": "UNLICENSED",
   "scripts": {
     "prisma:generate": "prisma generate",
-    "build": "npm run prisma:generate && nest build",
+    "build:nest": "nest build",
+    "build": "npm run prisma:generate && npm run build:nest",
     "start": "npx nest start",
     "start:dev": "npx nest start --watch",
     "start:debug": "npx nest start --debug --watch",
