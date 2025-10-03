@@ -82,9 +82,11 @@ export class SubjectController {
 
   @Get(':id/tasks')
   async findTasks(
-    @Param('id', ParseIntPipe) id: number
+    @Param('id', ParseIntPipe) id: number,
+    @Query('weekOffset') weekOffset?: string,
   ) {
-    return this.subjectService.findTasks(id);
+    const weekOffsetInt = Number(weekOffset) || 0;
+    return this.subjectService.findTasks(id, weekOffsetInt);
   }
 
   @Delete(':id/tasks/:taskId')

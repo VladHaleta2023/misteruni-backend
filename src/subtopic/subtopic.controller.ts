@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from 'src/subtopic/dto/subtopic-request.dto';
 import { SubtopicsAIGenerate } from './dto/subtopics-generate.dto';
@@ -13,8 +13,10 @@ export class SubtopicController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
+    @Query('weekOffset') weekOffset?: string,
   ) {
-    return this.subtopicService.findSubtopics(subjectId, sectionId, topicId);
+    const weekOffsetInt = Number(weekOffset) || 0;
+    return this.subtopicService.findSubtopics(subjectId, sectionId, topicId, weekOffsetInt);
   }
 
   @Post('generate')

@@ -31,6 +31,9 @@ export class TaskAIGenerate {
   @IsString()
   text: string;
 
+  @IsString()
+  note: string;
+
   @IsInt()
   @IsOptional()
   difficulty?: number;
@@ -38,11 +41,6 @@ export class TaskAIGenerate {
   @IsInt()
   @IsOptional()
   threshold?: number;
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  tasks?: string[];
 
   @IsArray()
   @IsString({ each: true })
@@ -246,6 +244,9 @@ export class ProblemsAIGenerate {
 
   @IsArray()
   outputSubtopics: [string, number][]
+
+  @IsString()
+  explanation: string
 }
 
 export class WordAIGenerate {

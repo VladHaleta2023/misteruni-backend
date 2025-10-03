@@ -91,9 +91,9 @@ export class OptionsController {
     return this.optionsService.createSubtopicsTransaction(subtopics);
   }
 
-  @Post('reset')
-  async resetAnswer() {
-    return this.optionsService.resetAnswer();
+  @Post('rang')
+  async randRang() {
+    return this.optionsService.randRang();
   }
 
   @Post('tasks/:id/tss')

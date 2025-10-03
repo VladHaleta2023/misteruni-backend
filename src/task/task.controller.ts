@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req } from '@nestjs/common';
 import { TaskService } from './task.service';
 import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate, WordAIGenerate } from './dto/task-generate.dto';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
@@ -13,7 +13,8 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Req() req: Request
+    @Req() req: Request,
+    @Query('weekOffset') weekOffset?: string
   ) {
     let aborted = false;
 
@@ -25,7 +26,8 @@ export class TaskController {
       throw new HttpException('Client aborted', 499);
     }
 
-    const result = await this.taskService.findTasks(subjectId, sectionId, topicId);
+    const weekOffsetInt = Number(weekOffset) || 0;
+    const result = await this.taskService.findTasks(subjectId, sectionId, topicId, weekOffsetInt);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);

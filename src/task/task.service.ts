@@ -61,7 +61,8 @@ export class TaskService {
     async findTasks(
         subjectId: number,
         sectionId: number,
-        topicId: number
+        topicId: number,
+        weekOffset: number = 0
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -79,11 +80,39 @@ export class TaskService {
             });
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
+            const now = new Date();
+            let startOfWeek: Date;
+            let endOfWeek: Date;
+
+            if (weekOffset === 0) {
+                startOfWeek = new Date(0);
+                endOfWeek = new Date(now);
+            } else {
+                const day = now.getDay();
+                const currentMonday = new Date(now);
+                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+                currentMonday.setHours(0, 0, 0, 0);
+
+                startOfWeek = new Date(currentMonday);
+                startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
+
+                endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+                endOfWeek.setHours(23, 59, 59, 999);
+            }
+
             const tasks = await this.prismaService.task.findMany({
-                where: { topicId, parentTaskId: null },
+                where: {
+                    topicId,
+                    parentTaskId: null,
+                    updatedAt: {
+                        gte: startOfWeek,
+                        lte: endOfWeek,
+                    },
+                },
                 orderBy: [
                     { updatedAt: 'desc' },
-                    { order: 'asc' }
+                    { order: 'asc' },
                 ],
             });
 
@@ -343,7 +372,7 @@ export class TaskService {
         data: TaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/task-generate`;
+        const url = `http://localhost:4200/admin/task-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -375,13 +404,6 @@ export class TaskService {
                 select: { name: true, percent: true }
             });
 
-            const tasks = await this.prismaService.task.findMany({
-                where: { topicId, parentTaskId: null },
-                select: { text: true }
-            });
-
-            const taskTexts = tasks.map(task => task.text);
-
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
@@ -397,7 +419,6 @@ export class TaskService {
             data.subtopics = filtered;
 
             data.subtopics = data.subtopics ?? subtopics.map(s => [s.name, s.percent]);
-            data.tasks = data.tasks ?? taskTexts;
             data.difficulty = data.difficulty ?? subject.difficulty;
             data.threshold = data.threshold ?? subject.threshold;
 
@@ -437,7 +458,8 @@ export class TaskService {
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.outputSubtopics) ||
                 typeof r.attempt !== 'number' ||
-                typeof r.text !== 'string'
+                typeof r.text !== 'string' ||
+                typeof r.note !== 'string'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
@@ -481,7 +503,7 @@ export class TaskService {
         data: InteractiveTaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/interactive-task-generate`;
+        const url = `http://localhost:4200/admin/interactive-task-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -615,7 +637,7 @@ export class TaskService {
         data: QuestionsTaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/questions-task-generate`;
+        const url = `http://localhost:4200/admin/questions-task-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -710,7 +732,7 @@ export class TaskService {
         data: SolutionAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/solution-generate`;
+        const url = `http://localhost:4200/admin/solution-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -791,7 +813,7 @@ export class TaskService {
         data: OptionsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/options-generate`;
+        const url = `http://localhost:4200/admin/options-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -883,7 +905,7 @@ export class TaskService {
         data: ProblemsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/problems-generate`;
+        const url = `http://localhost:4200/admin/problems-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -962,7 +984,8 @@ export class TaskService {
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||
-                typeof r.solution !== 'string'
+                typeof r.solution !== 'string' ||
+                typeof r.explanation !== 'string'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
@@ -1025,6 +1048,7 @@ export class TaskService {
                     const updateData: any = {};
 
                     if (taskData.text !== undefined) updateData.text = taskData.text;
+                    if (taskData.note !== undefined) updateData.note = taskData.note;
                     if (taskData.solution !== undefined) updateData.solution = taskData.solution;
                     if (taskData.options !== undefined) updateData.options = taskData.options;
                     if (taskData.correctOptionIndex !== undefined) updateData.correctOptionIndex = taskData.correctOptionIndex;
@@ -1076,6 +1100,7 @@ export class TaskService {
                     const newTask = await prismaClient.task.create({
                         data: {
                             text: taskData.text,
+                            note: taskData.note,
                             solution: taskData.solution,
                             options: taskData.options,
                             correctOptionIndex: taskData.correctOptionIndex,
@@ -1353,6 +1378,7 @@ export class TaskService {
                 await prismaClient.task.update({
                     where: { id: taskId },
                     data: {
+                        explanation: data.explanation,
                         finished: true,
                         percent: averagePercent._avg.percent || 0
                     }
@@ -1428,11 +1454,11 @@ export class TaskService {
     }
 
     async updatePercents(
-    subjectId: number,
-    sectionId: number,
-    topicId: number,
-    id: number,
-    userOptions: number[]
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+        userOptions: number[]
     ) {
         try {
             const existingSubject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
@@ -1507,7 +1533,7 @@ export class TaskService {
                     statusCode: 200,
                     message: 'Procenty zostały pomyślnie zaktualizowane',
                 };
-            });
+            }, { timeout: 900000 });
         } catch (error) {
             console.error(`Nie udało się zaktualizować procentów:`, error);
             throw new InternalServerErrorException('Błąd podczas aktualizacji procentów');
@@ -1702,25 +1728,30 @@ export class TaskService {
                     },
                     data: { finished: false },
                 });
-            }
 
-            await this.prismaService.word.updateMany({
-                where: {
-                    taskId: id,
-                    NOT: { text: { in: outputWords } },
-                },
-                data: { finished: true },
-            });
+                await this.prismaService.word.updateMany({
+                    where: {
+                        taskId: id,
+                        NOT: { text: { in: outputWords } },
+                    },
+                    data: { finished: true },
+                });
+            } else {
+                await this.prismaService.word.updateMany({
+                    where: { taskId: id },
+                    data: { finished: true },
+                });
+            }
 
             return {
                 statusCode: 200,
                 message: 'Wyrazy zostały zaktualizowane pomyślnie',
             };
         } catch (error) {
+            console.error(error);
             throw new InternalServerErrorException('Nie udało się zaktualizować wyrazów');
         }
     }
-
 
     async deleteWord(
         subjectId: number,
@@ -1777,7 +1808,7 @@ export class TaskService {
         data: WordAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/words-generate`;
+        const url = `http://localhost:4200/admin/words-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({

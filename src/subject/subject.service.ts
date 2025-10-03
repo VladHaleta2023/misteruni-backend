@@ -72,7 +72,7 @@ export class SubjectService {
     }
 
     async subjectAIPlanGenerate(id: number, prompt: string) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/full-plan-generate`;
+        const url = `http://localhost:4200/admin/full-plan-generate`;
 
         try {
             const response$ = this.httpService.post(url, { prompt });
@@ -451,7 +451,9 @@ export class SubjectService {
         }
     }
 
-    async findTasks(id: number) {
+    async findTasks(
+        id: number, weekOffset: number = 0
+    ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
                 where: { id },
@@ -459,12 +461,37 @@ export class SubjectService {
 
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
+            const now = new Date();
+            let startOfWeek: Date;
+            let endOfWeek: Date;
+
+            if (weekOffset === 0) {
+                startOfWeek = new Date(0);
+                endOfWeek = new Date(now);
+            } else {
+                const day = now.getDay();
+                const currentMonday = new Date(now);
+                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+                currentMonday.setHours(0, 0, 0, 0);
+
+                startOfWeek = new Date(currentMonday);
+                startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
+
+                endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+                endOfWeek.setHours(23, 59, 59, 999);
+            }
+
             const tasks = await this.prismaService.task.findMany({
                 where: {
                     topic: {
                         subjectId: id,
                     },
                     parentTaskId: null,
+                    updatedAt: {
+                        gte: startOfWeek,
+                        lte: endOfWeek,
+                    },
                 },
                 include: {
                     topic: {

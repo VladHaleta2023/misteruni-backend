@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
     HttpModule.register({
       timeout: 900000,
       maxRedirects: 5,
-    }),
+    })
   ],
   controllers: [SubtopicController],
   providers: [

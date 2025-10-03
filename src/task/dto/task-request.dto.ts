@@ -13,6 +13,10 @@ export class TaskCreateRequest {
   @IsOptional()
   text: string;
 
+  @IsString()
+  @IsOptional()
+  note: string;
+
   @IsArray()
   @IsString({ each: true })
   options: string[]
@@ -47,4 +51,7 @@ export class Subtopic {
 export class SubtopicsProgressUpdateRequest {
   @IsArray()
   subtopics: Subtopic[]
+
+  @IsString()
+  explanation: string
 }

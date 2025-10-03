@@ -20,7 +20,8 @@ export class SubtopicService {
     async findSubtopics(
         subjectId: number,
         sectionId: number,
-        topicId: number
+        topicId: number,
+        weekOffset: number = 0
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -34,7 +35,7 @@ export class SubtopicService {
             let subtopics = await this.prismaService.subtopic.findMany({
                 where: { subjectId, sectionId, topicId },
                 orderBy: { name: 'asc' },
-                select: { id: true, name: true, percent: true, blocked: true }
+                select: { id: true, name: true, percent: true, blocked: true, importance: true }
             });
 
             if (subtopics.length === 0) {
@@ -47,7 +48,7 @@ export class SubtopicService {
                     throw new BadRequestException('Temat nie został znaleziony');
                 }
 
-                subtopics = [topic];
+                subtopics = [{ ...topic, importance: 0 }];
             }
 
             const updatedSubtopics = subtopics.map(sub => {
@@ -81,11 +82,82 @@ export class SubtopicService {
                 completed: (counts.completed / totalSubtopics) * 100
             };
 
+            const now = new Date();
+            let startOfWeek: Date;
+            let endOfWeek: Date;
+
+            if (weekOffset === 0) {
+                startOfWeek = new Date(0);
+                endOfWeek = new Date(now);
+            } else {
+                const day = now.getDay();
+                const currentMonday = new Date(now);
+                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+                currentMonday.setHours(0, 0, 0, 0);
+
+                startOfWeek = new Date(currentMonday);
+                startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
+
+                endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+                endOfWeek.setHours(23, 59, 59, 999);
+            }
+
+            const solvedTasksCount = await this.prismaService.task.count({
+                where: {
+                    topicId,
+                    finished: true,
+                    parentTaskId: null,
+                    updatedAt: {
+                        gte: startOfWeek,
+                        lte: endOfWeek,
+                    },
+                },
+            });
+
+            const solvedTasksCountCompleted = await this.prismaService.task.count({
+                where: {
+                    topicId,
+                    finished: true,
+                    parentTaskId: null,
+                    percent: {
+                        gte: subject.threshold,
+                    },
+                    updatedAt: {
+                        gte: startOfWeek,
+                        lte: endOfWeek,
+                    },
+                },
+            });
+
+            let weekLabel = "bieżący" 
+            if (weekOffset < 0)
+                weekLabel = `${weekOffset} tydz.`
+
+            const formatDate = (date: Date) => {
+                const dd = String(date.getDate()).padStart(2, '0');
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                return `${dd}.${mm}`;
+            };
+
+            const startDateStr = formatDate(startOfWeek);
+            const endDateStr = formatDate(endOfWeek);
+
             return {
                 statusCode: 200,
                 message: 'Pobrano listę podtematów pomyślnie',
                 subtopics: updatedSubtopics,
-                total: totalPercentByStatus
+                total: totalPercentByStatus,
+                statistics: {
+                    solvedTasksCountCompleted,
+                    solvedTasksCount,
+                    closedSubtopicsCount: null,
+                    closedTopicsCount: null,
+                    startDateStr,
+                    weekLabel,
+                    endDateStr,
+                    prediction: null
+                }
             };
 
         } catch (error) {
@@ -483,7 +555,7 @@ export class SubtopicService {
         data: SubtopicsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/subtopics-generate`;
+        const url = `http://localhost:4200/admin/subtopics-generate`;
 
         try {
             const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });

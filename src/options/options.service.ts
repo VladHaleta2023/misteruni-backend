@@ -55,7 +55,7 @@ export class OptionsService {
 
     async audioTranscribePart(params: AudioTranscribeParams)
         : Promise<AudioTranscribeResponse & { statusCode: number; message: string }> {
-        const url = `https://misteruni-fastapi.onrender.com/admin/audio-transcribe-part`;//`${this.fastAPIUrl}/admin/audio-transcribe-part`;
+        const url = `http://localhost:4200/admin/audio-transcribe-part`;//`${this.fastAPIUrl}/admin/audio-transcribe-part`;
         const { subjectId, file, part_id, language } = params;
 
         try {
@@ -110,7 +110,7 @@ export class OptionsService {
     async textSplitIntoSentences(text: string, language: string = "ru")
         : Promise<SplitIntoSentencesResponse & { statusCode: number; message: string }> {
         try {
-            const url = `https://misteruni-fastapi.onrender.com/admin/split-into-sentences`;
+            const url = `http://localhost:4200/admin/split-into-sentences`;
             
             const response$ = this.httpService.post(url, { text, language });
             const response = await firstValueFrom(response$);
@@ -178,7 +178,7 @@ export class OptionsService {
         try {
             prismaClient = prismaClient || this.prismaService;
 
-            const url = `https://misteruni-fastapi.onrender.com/admin/tts`;
+            const url = `http://localhost:4200/admin/tts`;
             const task = await prismaClient.task.findUnique({ where: { id } });
 
             if (!task) {
@@ -257,13 +257,22 @@ export class OptionsService {
         }
     }
 
-    async resetAnswer() {
-        await this.prismaService.task.update({
-            where: { id: 97 },
-            data: {
-                answered: false,
-                finished: false
-            }
-        })
+    async randRang() {
+        const subtopics = await this.prismaService.subtopic.count({
+            where: { subjectId: 6 }
+        });
+
+        console.log(subtopics);
+
+        const result = await this.prismaService.subtopic.aggregate({
+            where: { subjectId: 6 },
+            _sum: {
+                importance: true,
+            },
+            });
+
+            const totalImportance = result._sum.importance ?? 0;
+
+            console.log("Сумма importance:", totalImportance);
     }
 }

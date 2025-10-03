@@ -112,7 +112,9 @@ model SubtopicProgress {
 
 model Task {
   id                  Int         @id @default(autoincrement())
+  note                String      @default("")
   text                String      @default("")
+  explanation         String      @default("")
   options             String[]    @default([])
   correctOptionIndex  Int         @default(0)
   solution            String      @default("")

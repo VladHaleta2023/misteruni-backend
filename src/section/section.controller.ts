@@ -9,18 +9,21 @@ export class SectionController {
   @Get()
   async findSections(
     @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Query('weekOffset') weekOffset?: string,
     @Query('withSubject') withSubject?: string,
     @Query('withTopics') withTopics?: string,
-    @Query('withSubtopics') withSubtopics?: string
+    @Query('withSubtopics') withSubtopics?: string,
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withTopicsBool = !(withTopics?.toLowerCase() === 'false');
     const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
+    const weekOffsetInt = Number(weekOffset) || 0;
     return this.sectionService.findSections(
       subjectId,
       withSubjectBool,
       withTopicsBool,
-      withSubtopicsBool
+      withSubtopicsBool,
+      weekOffsetInt
     );
   }
 

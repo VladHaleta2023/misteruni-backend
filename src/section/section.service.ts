@@ -119,12 +119,10 @@ export class SectionService {
 
     async calculateSubtopicsPercent(
         subjectId: number,
-        sectionId?: number,
-        topicId?: number,
+        weekOffset: number = 0,
+        updated: boolean = true
     ) {
         const whereClause: any = { subjectId };
-        if (sectionId) whereClause.sectionId = sectionId;
-        if (topicId) whereClause.topicId = topicId;
 
         const subtopics = await this.prismaService.subtopic.findMany({
             where: whereClause,
@@ -135,18 +133,32 @@ export class SectionService {
             },
         });
 
+        const now = new Date();
+        const day = now.getDay();
+        const currentSunday = new Date(now);
+        currentSunday.setDate(now.getDate() + (7 - day) + 7 * weekOffset);
+        currentSunday.setHours(23, 59, 59, 999);
+
+        const startOfRange = new Date(0);
+        const endOfRange = currentSunday;
+
         const updatedSubtopics = await Promise.all(
             subtopics.map(async (subtopic) => {
-                const progresses = subtopic.progresses || [];
+                const progresses = subtopic.progresses?.filter(
+                    p => p.updatedAt <= endOfRange
+                ) || [];
+
                 const percent =
                     progresses.length > 0
                         ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
                         : 0;
 
-                await this.prismaService.subtopic.update({
-                    where: { id: subtopic.id },
-                    data: { percent },
-                });
+                if (updated) {
+                    await this.prismaService.subtopic.update({
+                        where: { id: subtopic.id },
+                        data: { percent },
+                    });
+                }
 
                 return { ...subtopic, percent };
             }),
@@ -155,11 +167,80 @@ export class SectionService {
         return updatedSubtopics;
     }
 
+    async calculatePrediction(now: Date, currentMonday: Date, endOfWeek: Date, subjectId: number, subject: any) {
+        const endOfWeekFullTime: Date = new Date(now);
+
+        const startOfWeekThenPrediction = new Date(currentMonday);
+        startOfWeekThenPrediction.setDate(currentMonday.getDate() - 14);
+
+        const endOfWeekThenPrediction = new Date(startOfWeekThenPrediction);
+        endOfWeekThenPrediction.setDate(startOfWeekThenPrediction.getDate() + 6);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        const daysPrediction = Math.floor(
+            (endOfWeekFullTime.getTime() - endOfWeekThenPrediction.getTime()) 
+            / (1000 * 60 * 60 * 24)
+        );
+
+        const countImportanceFullTimeResult = await this.prismaService.subtopic.aggregate({
+            where: { subjectId },
+            _sum: {
+                importance: true,
+            },
+        });
+
+        const countImportanceFullTime = (countImportanceFullTimeResult._sum.importance ?? 0) * subject.threshold / 100;
+
+        const subtopicsThenPrediction = await this.calculateSubtopicsPercent(subjectId, -2, false);
+        let countImportanceThenPrediction = 0;
+
+        for (const subtopic of subtopicsThenPrediction) {
+            const percent = subtopic.percent >= subject.threshold ? subject.threshold : subtopic.percent;
+            countImportanceThenPrediction += subtopic.importance * percent / 100;
+        }
+
+        const countLeftImportance = countImportanceFullTime - countImportanceThenPrediction;
+
+        let countDeltaImportance = 0;
+
+        const subtopicsFullTime = await this.calculateSubtopicsPercent(subjectId, 0, false);
+
+        for (let i = 0; i < subtopicsFullTime.length; i++) {
+            let diff = subtopicsFullTime[i].percent - subtopicsThenPrediction[i].percent;
+
+            if (diff >= subject.threshold)
+                diff = subject.threshold;
+
+            countDeltaImportance += countImportanceFullTime * diff / 100;
+        }
+
+        let prediction: number | undefined = undefined;
+
+        if (countDeltaImportance != 0)
+            prediction = countLeftImportance / countDeltaImportance * daysPrediction;
+
+        const predictionDate = new Date(endOfWeekFullTime);
+
+        const predictionResult = prediction
+            ? (() => {
+                const date = new Date(predictionDate);
+                date.setDate(date.getDate() + Math.ceil(prediction));
+                const dd = String(date.getDate()).padStart(2, '0');
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const yyyy = date.getFullYear();
+                return `${dd}.${mm}.${yyyy}`;
+            })()
+            : "Nieskończoność";
+
+        return predictionResult;
+    }
+
     async findSections(
         subjectId: number,
         withSubject = false,
         withTopics = false,
         withSubtopics = false,
+        weekOffset: number = 0
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -202,7 +283,34 @@ export class SectionService {
             let enrichedSections: any[] = [];
 
             if (withTopics) {
-                await this.calculateSubtopicsPercent(subjectId);
+                let updatedSubtopics = await this.calculateSubtopicsPercent(subjectId, weekOffset);
+
+                if (weekOffset !== 0) {
+                    const previousSubtopics = await this.calculateSubtopicsPercent(subjectId, weekOffset - 1, false);
+
+                    const previousMap = new Map<number, typeof previousSubtopics[0]>();
+                    previousSubtopics.forEach(sub => previousMap.set(sub.id, sub));
+
+                    updatedSubtopics = updatedSubtopics
+                        .map(sub => {
+                            const prev = previousMap.get(sub.id);
+                            const delta = prev ? sub.percent - prev.percent : 0;
+                            return {
+                                ...sub,
+                                delta
+                            };
+                        });
+                }
+                else {
+                    updatedSubtopics = updatedSubtopics
+                    .map(sub => {
+                        const delta = 0;
+                        return {
+                            ...sub,
+                            delta
+                        };
+                    });
+                }
 
                 const topics = await this.prismaService.topic.findMany({
                     where: { subjectId },
@@ -212,21 +320,7 @@ export class SectionService {
                 let subtopicsGrouped: Record<number, any[]> = {};
 
                 if (withSubtopics) {
-                    const topicIds = topics.map(t => t.id);
-                    const subtopics = await this.prismaService.subtopic.findMany({
-                        where: { topicId: { in: topicIds } },
-                        orderBy: { name: 'asc' },
-                        select: {
-                            id: true,
-                            topicId: true,
-                            sectionId: true,
-                            name: true,
-                            percent: true,
-                            blocked: true,
-                        },
-                    });
-
-                    subtopicsGrouped = subtopics.reduce((acc, sub) => {
+                    subtopicsGrouped = updatedSubtopics.reduce((acc, sub) => {
                         if (!acc[sub.topicId]) acc[sub.topicId] = [];
                         acc[sub.topicId].push(sub);
                         return acc;
@@ -235,31 +329,74 @@ export class SectionService {
 
                 for (const topic of topics) {
                     const subtopics = withSubtopics ? subtopicsGrouped[topic.id] || [] : [];
-                    const validSubtopics = subtopics.filter(s => !s.blocked);
 
-                    let percent: number;
+                    let percent: number = 0;
+                    let delta: number = 0;
 
-                    if (validSubtopics.length > 0) {
+                    if (subtopics.length > 0) {
                         percent =
-                            validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) /
-                            validSubtopics.length;
+                            subtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) /
+                            subtopics.length;
+                        const nonZeroDeltas = subtopics.filter(s => (s.delta ?? 0) !== 0);
+                        delta =
+                        nonZeroDeltas.length > 0
+                            ? nonZeroDeltas.reduce((acc, s) => acc + (s.delta ?? 0), 0) / subtopics.length
+                            : 0;
                     } else {
+                        const now = new Date();
+                        const day = now.getDay();
+                        const currentSunday = new Date(now);
+                        currentSunday.setDate(now.getDate() + (7 - day) + 7 * weekOffset);
+                        currentSunday.setHours(23, 59, 59, 999);
+
+                        const startOfRange = new Date(0);
+                        const endOfRange = currentSunday;
+
+                        const previousSunday = new Date(now);
+                        previousSunday.setDate(now.getDate() + (7 - day) + 7 * (weekOffset - 1));
+                        previousSunday.setHours(23, 59, 59, 999);
+
+                        const startOfRangePrevious = new Date(0);
+                        const endOfRangePrevious = previousSunday;
+
                         const tasks = await this.prismaService.task.findMany({
                             where: {
                                 topicId: topic.id,
                                 finished: true,
-                                parentTaskId: null
+                                parentTaskId: null,
+                                updatedAt: {
+                                    gte: startOfRange,
+                                    lte: endOfRange,
+                                },
                             },
                             select: { percent: true },
                         });
+
+                        const previousTasks = await this.prismaService.task.findMany({
+                            where: {
+                                topicId: topic.id,
+                                finished: true,
+                                parentTaskId: null,
+                                updatedAt: {
+                                    gte: startOfRangePrevious,
+                                    lte: endOfRangePrevious,
+                                },
+                            },
+                            select: { percent: true },
+                        });
+
+                        const previousPercent = previousTasks.length > 0
+                            ? previousTasks.reduce((acc, t) => acc + (t.percent ?? 0), 0) / previousTasks.length
+                            : 0;
 
                         if (tasks.length > 0) {
                             percent =
                                 tasks.reduce((acc, t) => acc + (t.percent ?? 0), 0) /
                                 tasks.length;
-                        }
-                        else {
+                            delta = percent - previousPercent
+                        } else {
                             percent = 0;
+                            delta = 0;
                         }
                     }
 
@@ -268,7 +405,7 @@ export class SectionService {
                         data: { percent },
                     });
 
-                    allTopics.push({ ...topic, subtopics, percent });
+                    allTopics.push({ ...topic, subtopics, percent, delta });
                 }
 
                 const topicsBySection = allTopics.reduce<Record<number, any[]>>((acc, topic) => {
@@ -278,51 +415,86 @@ export class SectionService {
                     return acc;
                 }, {});
 
-                enrichedSections = sections.map(section => {
-                    const prompts = resolvePrompts(section);
-                    const topics = topicsBySection[section.id] || [];
-                    
-                    let percent: number;
-                    if (topics.length > 0) {
-                        percent = topics.reduce((acc, t) => acc + t.percent, 0) / topics.length;
-                    } else {
-                        percent = 0;
-                    }
+                enrichedSections = sections
+                    .map(section => {
+                        const topics = topicsBySection[section.id] || [];
+                        if (topics.length === 0) return null;
 
-                    return { ...section, ...prompts, topics, percent };
-                });
+                        const prompts = resolvePrompts(section);
+
+                        const percent =
+                            topics.reduce((acc, t) => acc + t.percent, 0) / topics.length;
+
+                        const nonZeroDeltas = topics.filter(t => (t.delta ?? 0) !== 0);
+                        const delta =
+                        nonZeroDeltas.length > 0
+                            ? nonZeroDeltas.reduce((acc, t) => acc + (t.delta ?? 0), 0) / topics.length
+                            : 0;
+
+                        return { ...section, ...prompts, topics, percent, delta };
+                    });
             } else {
                 enrichedSections = sections.map(section => ({
                     ...section,
                     ...resolvePrompts(section),
                     topics: [],
                     percent: 0,
+                    delta: 0
                 }));
             }
 
-            const response: any = {
-                statusCode: 200,
-                message: 'Działy zostały pomyślnie pobrane',
-                sections: this.addStatusToSections(enrichedSections, subject.threshold),
-            };
+            const threshold = Number(subject.threshold) || 0;
 
-            if (withSubject) {
-                response.subject = subject;
-            }
-
-            const totalTopics = allTopics.length || 1;
-            const counts: Record<Status, number> = { blocked: 0, started: 0, progress: 0, completed: 0 };
-
-            allTopics.forEach(topic => {
-                const pct = topic.percent ?? 0;
+            const allTopicsWithStatus = allTopics.map(topic => {
                 let status: Status;
-                if (topic.subtopics.length > 0 && topic.subtopics.every(s => s.blocked)) status = 'blocked';
-                else if (pct === 0) status = 'started';
-                else if (pct < subject.threshold) status = 'progress';
-                else status = 'completed';
-                counts[status] += 1;
+                const pct = topic.percent ?? 0;
+
+                if (topic.subtopics.length > 0 && topic.subtopics.every(s => s.blocked)) {
+                    status = 'blocked';
+                } else if (pct === 0) {
+                    status = 'started';
+                } else {
+                    const elements = topic.subtopics.length > 0 ? topic.subtopics : [{ percent: pct }];
+                    const allCompleted = elements.every(el => (el.percent ?? 0) >= threshold);
+
+                    if (allCompleted) {
+                        status = 'completed';
+                    } else {
+                        status = 'progress';
+                    }
+                }
+                return { ...topic, status };
             });
 
+            const sectionsWithStatus = enrichedSections.map(section => {
+                const topics = section.topics.map((t: any) =>
+                    allTopicsWithStatus.find(at => at.id === t.id) || t
+                );
+
+                const anyCompleted = topics.some(t => t.status === 'completed');
+                const allCompleted = topics.length > 0 && topics.every(t => t.status === 'completed');
+                const allBlocked = topics.length > 0 && topics.every(t => t.status === 'blocked');
+                const anyInProgress = topics.some(t => t.status === 'progress');
+
+                let status: Status;
+                if (allBlocked) status = 'blocked';
+                else if (anyCompleted) status = 'completed';
+                else if (anyInProgress || anyCompleted) status = 'progress';
+                else status = 'started';
+
+                let process: Status;
+                if (allCompleted) process = 'completed';
+                else if (anyCompleted || anyInProgress) process = 'progress';
+                else if (allBlocked) process = 'blocked';
+                else process = 'started';
+
+                return { ...section, topics, status, process };
+            });
+
+            const counts: Record<Status, number> = { blocked: 0, started: 0, progress: 0, completed: 0 };
+            allTopicsWithStatus.forEach(t => counts[t.status]++);
+
+            const totalTopics = allTopicsWithStatus.length || 1;
             const totalPercent: Record<Status, number> = {
                 blocked: (counts.blocked / totalTopics) * 100,
                 started: (counts.started / totalTopics) * 100,
@@ -330,12 +502,180 @@ export class SectionService {
                 completed: (counts.completed / totalTopics) * 100,
             };
 
-            response.total = totalPercent;
+            if (totalPercent.blocked == 0 &&
+                totalPercent.started == 0 &&
+                totalPercent.progress == 0 &&
+                totalPercent.completed == 0)
+                totalPercent.started = 100;
+
+            const response: any = {
+                statusCode: 200,
+                message: 'Działy zostały pomyślnie pobrane',
+                sections: sectionsWithStatus,
+                total: totalPercent,
+                statistics: await this.calculateStatSections(subjectId, weekOffset),
+            };
+
+            if (withSubject) {
+                response.subject = subject;
+            }
 
             return response;
         } catch (error) {
-            console.error('Nie udało się pobrać działów:', error);
             throw new InternalServerErrorException('Nie udało się pobrać działów');
+        }
+    }
+
+    async calculateStatSections(subjectId: number, weekOffset: number = 0) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            if (weekOffset > 0)
+                weekOffset = 0;
+
+            const topics = await this.prismaService.topic.findMany({
+                where: { subjectId },
+                orderBy: { partId: 'asc' },
+            });
+
+            const now = new Date();
+            const day = now.getDay();
+            const currentMonday = new Date(now);
+            currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+            currentMonday.setHours(0, 0, 0, 0);
+
+            const startOfWeek = new Date(currentMonday);
+            startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
+
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 6);
+            endOfWeek.setHours(23, 59, 59, 999);
+
+            const subtopicsNow = await this.calculateSubtopicsPercent(subjectId, weekOffset, false);
+            const subtopicsThen = await this.calculateSubtopicsPercent(subjectId, weekOffset - 1, false);
+
+            const groupByTopic = (subtopics: any[]) =>
+                subtopics.reduce<Record<number, any[]>>((acc, sub) => {
+                    if (!acc[sub.topicId]) acc[sub.topicId] = [];
+                    acc[sub.topicId].push(sub);
+                    return acc;
+                }, {});
+
+            const subtopicsNowByTopic = groupByTopic(subtopicsNow);
+            const subtopicsThenByTopic = groupByTopic(subtopicsThen);
+
+            let totalSubtopicsNow = 0;
+            let totalSubtopicsThen = 0;
+            let totalTopicsNow = 0;
+            let totalTopicsThen = 0;
+
+            for (const topic of topics) {
+                const nowSubs = subtopicsNowByTopic[topic.id] || [];
+                const thenSubs = subtopicsThenByTopic[topic.id] || [];
+
+                const closedNowSubs = nowSubs.filter(sub => sub.percent >= subject.threshold);
+                const closedThenSubs = thenSubs.filter(sub => sub.percent >= subject.threshold);
+
+                totalSubtopicsNow += closedNowSubs.length;
+                totalSubtopicsThen += closedThenSubs.length;
+
+                if (nowSubs.length > 0 && closedNowSubs.length === nowSubs.length) totalTopicsNow += 1;
+                if (thenSubs.length > 0 && closedThenSubs.length === thenSubs.length) totalTopicsThen += 1;
+            }
+
+            const formatDate = (date: Date) => {
+                const dd = String(date.getDate()).padStart(2, '0');
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                return `${dd}.${mm}`;
+            };
+
+            const startDateStr = formatDate(startOfWeek);
+            const endDateStr = formatDate(endOfWeek);
+
+            let startOfWeekTask: Date;
+            let endOfWeekTask: Date;
+            let predictionResult: string | null = null;
+
+            if (weekOffset === 0) {
+                predictionResult = await this.calculatePrediction(now, currentMonday, endOfWeek, subjectId, subject);
+                startOfWeekTask = new Date(0);
+                endOfWeekTask = new Date(now);
+            } else {
+                const day = now.getDay();
+                const currentMonday = new Date(now);
+                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+                currentMonday.setHours(0, 0, 0, 0);
+
+                startOfWeekTask = new Date(currentMonday);
+                startOfWeekTask.setDate(currentMonday.getDate() + 7 * weekOffset);
+
+                endOfWeekTask = new Date(startOfWeekTask);
+                endOfWeekTask.setDate(startOfWeekTask.getDate() + 6);
+                endOfWeekTask.setHours(23, 59, 59, 999);
+            }
+
+            const solvedTasksCount = await this.prismaService.task.count({
+                where: {
+                    finished: true,
+                    parentTaskId: null,
+                    updatedAt: {
+                        gte: startOfWeekTask,
+                        lte: endOfWeekTask,
+                    },
+                    topic: {
+                        subjectId: subjectId,
+                    },
+                },
+            });
+
+            const solvedTasksCountCompleted = await this.prismaService.task.count({
+                where: {
+                    finished: true,
+                    parentTaskId: null,
+                    updatedAt: {
+                        gte: startOfWeekTask,
+                        lte: endOfWeekTask,
+                    },
+                    percent: {
+                        gte: subject.threshold,
+                    },
+                    topic: {
+                        subjectId: subjectId,
+                    },
+                },
+            });
+
+            let weekLabel = "bieżący" 
+            if (weekOffset < 0)
+                weekLabel = `${weekOffset} tydz.`
+
+            return {
+                solvedTasksCount,
+                solvedTasksCountCompleted,
+                closedSubtopicsCount: totalSubtopicsNow - totalSubtopicsThen,
+                closedTopicsCount: totalTopicsNow - totalTopicsThen,
+                startDateStr,
+                weekLabel,
+                endDateStr,
+                prediction: predictionResult
+            };
+        } catch (error) {
+            return {
+                solvedTasksCountCompleted: 0,
+                solvedTasksCount: 0,
+                closedSubtopicsCount: 0,
+                closedTopicsCount: 0,
+                startDateStr: '',
+                endDateStr: '',
+                weekLabel: '',
+                prediction: null
+            };
         }
     }
 
@@ -470,7 +810,6 @@ export class SectionService {
 
             return response;
         } catch (error) {
-            console.error('Błąd przy pobieraniu działu:', error);
             throw new InternalServerErrorException('Nie udało się pobrać działu');
         }
     }
