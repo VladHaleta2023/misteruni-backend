@@ -18,7 +18,7 @@ export class SubtopicService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService
     ) {
-        const node_env = this.configService.get<string>('NODE_ENV') || 'development';
+        const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
         if (node_env === 'development') {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL_LOCAL') || undefined;
