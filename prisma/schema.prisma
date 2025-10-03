@@ -110,6 +110,7 @@ model SubtopicProgress {
   updatedAt  DateTime @updatedAt
 }
 
+
 model Task {
   id                  Int         @id @default(autoincrement())
   note                String      @default("")
