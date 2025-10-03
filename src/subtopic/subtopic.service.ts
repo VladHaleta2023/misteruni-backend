@@ -555,7 +555,7 @@ export class SubtopicService {
         data: SubtopicsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `http://localhost:4200/admin/subtopics-generate`;
+        const url = `https://misteruni-fastapi.onrender.com/admin/subtopics-generate`;
 
         try {
             const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
