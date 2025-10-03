@@ -1,10 +1,9 @@
 import { Module } from '@nestjs/common';
-import { StorageModule } from 'src/storage/storage.module';
+import { StorageModule } from '../storage/storage.module';
 import { SubjectController } from './subject.controller';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
 import { SubjectService } from './subject.service'; 
-import { SubtopicModule } from 'src/subtopic/subtopic.module';
+import { SubtopicModule } from '../subtopic/subtopic.module';
 
 @Module({
   imports: [

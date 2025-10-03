@@ -1,11 +1,11 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate, WordAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
-import { SubtopicService } from 'src/subtopic/subtopic.service';
+import { SubtopicService } from '../subtopic/subtopic.service';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
-import { OptionsService } from 'src/options/options.service';
+import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';

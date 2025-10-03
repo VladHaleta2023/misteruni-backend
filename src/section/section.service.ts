@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { SectionUpdateRequest } from './dto/section-request.dto';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';

@@ -7,12 +7,12 @@ import {
     Injectable,
     InternalServerErrorException
 } from '@nestjs/common';
-import { SubjectService } from 'src/subject/subject.service';
+import { SubjectService } from '../subject/subject.service';
 import { firstValueFrom } from 'rxjs';
 import * as FormData from 'form-data';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { SubtopicService } from 'src/subtopic/subtopic.service';
-import { StorageService } from 'src/storage/storage.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { SubtopicService } from '../subtopic/subtopic.service';
+import { StorageService } from '../storage/storage.service';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 

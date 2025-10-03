@@ -1,9 +1,9 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { StorageService } from 'src/storage/storage.service';
+import { StorageService } from '../storage/storage.service';
 import axios from "axios";
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';

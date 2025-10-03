@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicController } from './subtopic.controller';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
