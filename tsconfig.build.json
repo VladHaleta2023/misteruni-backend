@@ -4,7 +4,8 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "incremental": true,
-    "removeComments": true
+    "removeComments": true,
+    "types": ["node", "express"] 
   },
   "exclude": ["node_modules", "test", "dist", "**/*.spec.ts"]
 }
