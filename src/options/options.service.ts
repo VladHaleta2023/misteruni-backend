@@ -83,18 +83,30 @@ export class OptionsService {
                 contentType: file.mimetype,
                 knownLength: file.size,
             });
+            console.log('Добавлен файл:', file.originalname, file.size);
 
             form.append('part_id', String(part_id));
+            console.log('Добавлено поле part_id:', part_id);
+
             if (subject !== undefined) {
                 form.append('subject', String(subject));
+                console.log('Добавлено поле subject:', subject);
             }
 
             if (language !== undefined) {
                 form.append('language', String(language));
+                console.log('Добавлено поле language:', language);
             }
 
-            const response$ = this.httpService.post(url, form);
+            const response$ = this.httpService.post(url, form, {
+                headers: form.getHeaders(), // обязательно
+                maxBodyLength: Infinity,
+            });
+
             const response = await firstValueFrom(response$);
+
+            // Логируем ответ полностью
+            console.log('Ответ от Whisper:', response.data);
 
             if (!response.data ||
                 !response.data.part_id ||
@@ -114,8 +126,16 @@ export class OptionsService {
                 language_probability: response.data.language_probability,
                 subject: response.data.subject
             };
-        }
-        catch (error) {
+        } catch (error: any) {
+            // Полная информация об ошибке
+            console.error('Ошибка запроса к Whisper:', {
+                message: error.message,
+                stack: error.stack,
+                responseData: error.response?.data,
+                responseStatus: error.response?.status,
+                responseHeaders: error.response?.headers,
+            });
+
             if (error.response && error.response.data) {
                 throw new BadRequestException(`Błąd API: ${JSON.stringify(error.response.data)}`);
             }
