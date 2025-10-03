@@ -3,7 +3,6 @@ import {
     BadRequestException,
     HttpException,
     HttpStatus,
-    Inject,
     Injectable,
     InternalServerErrorException
 } from '@nestjs/common';
@@ -15,10 +14,11 @@ import { SubtopicService } from '../subtopic/subtopic.service';
 import { StorageService } from '../storage/storage.service';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { File } from '../file.type';
 
 interface AudioTranscribeParams {
   subjectId: number;
-  file: Express.Multer.File;
+  file: File;
   part_id: number;
   language?: string;
 }

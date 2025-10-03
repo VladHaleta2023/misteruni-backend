@@ -15,6 +15,7 @@ import { OptionsService } from './options.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AudioTranscribeDto } from './dto/audioTranscribe.dto';
 import { SplitIntoSentencesDto } from './dto/splitIntoSentences.dto';
+import { File } from '../file.type';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -50,7 +51,7 @@ export class OptionsController {
   @UseInterceptors(FileInterceptor('file'))
   async audioTranscribePart(
     @Param('subjectId', ParseIntPipe) subjectId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: File,
     @Body() body: AudioTranscribeDto,
   )
   : Promise<AudioTranscribeResponse & { statusCode: number; message: string }> {

@@ -5,6 +5,7 @@ import { SubjectUploadDto } from './dto/subject-upload.dto';
 import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { FullPlanRequestDto } from './dto/full-plan-request.dto';
 import { Request } from 'express';
+import { File } from '../file.type';
 
 @Controller('subjects')
 export class SubjectController {
@@ -74,7 +75,7 @@ export class SubjectController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadFileSubject(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile() file?: File,
     @Body() body?: SubjectUploadDto,
   ) {
     return this.subjectService.uploadFileSubject(id, file, body?.url);

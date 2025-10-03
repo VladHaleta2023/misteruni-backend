@@ -6,6 +6,7 @@ import {
   PutObjectCommandInput,
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
+import { File } from '../file.type';
 
 @Injectable()
 export class StorageService {
@@ -26,7 +27,7 @@ export class StorageService {
   }
 
   async uploadFile(
-    file: Express.Multer.File,
+    file: File,
     key?: string,
   ): Promise<string> {
     if (!this.bucketName) throw new Error('Bucket name is not configured');

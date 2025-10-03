@@ -7,6 +7,7 @@ import { StorageService } from '../storage/storage.service';
 import axios from "axios";
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
+import { File } from '../file.type';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -304,7 +305,7 @@ export class SubjectService {
 
     async uploadFileSubject(
         id: number,
-        file?: Express.Multer.File,
+        file?: File,
         url?: string,
     ) {
         try {
