@@ -3,7 +3,6 @@ import { StorageModule } from 'src/storage/storage.module';
 import { SubjectController } from './subject.controller';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { FASTAPI_URL } from 'src/constans';
 import { SubjectService } from './subject.service'; 
 import { SubtopicModule } from 'src/subtopic/subtopic.module';
 
@@ -18,12 +17,7 @@ import { SubtopicModule } from 'src/subtopic/subtopic.module';
   ],
   controllers: [SubjectController],
   providers: [
-    SubjectService,
-    {
-      provide: FASTAPI_URL,
-      useFactory: (configService: ConfigService) => configService.get<string>('FASTAPI_URL') || '',
-      inject: [ConfigService],
-    },
+    SubjectService
   ],
   exports: [SubjectService],
 })

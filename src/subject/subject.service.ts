@@ -2,22 +2,33 @@ import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Int
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { HttpService } from '@nestjs/axios';
-import { FASTAPI_URL } from 'src/constans';
 import { firstValueFrom } from 'rxjs';
 import { StorageService } from 'src/storage/storage.service';
 import axios from "axios";
 import * as path from 'path';
+import { ConfigService } from '@nestjs/config';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
 @Injectable()
 export class SubjectService {
+    private readonly fastapiUrl: string | undefined;
+
     constructor(
         private readonly prismaService: PrismaService,
         private readonly httpService: HttpService,
-        @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
-        private readonly storageService: StorageService
-    ) {}
+        private readonly storageService: StorageService,
+        private readonly configService: ConfigService
+    ) {
+        const node_env = this.configService.get<string>('NODE_ENV') || 'development';
+
+        if (node_env === 'development') {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL_LOCAL') || undefined;
+            }
+        else {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
+        }
+    }
 
     async calculateSubtopicsPercent(
         subjectId: number,
@@ -72,7 +83,7 @@ export class SubjectService {
     }
 
     async subjectAIPlanGenerate(id: number, prompt: string) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/full-plan-generate`;
+        const url = `${this.fastapiUrl}/admin/full-plan-generate`;
 
         try {
             const response$ = this.httpService.post(url, { prompt });

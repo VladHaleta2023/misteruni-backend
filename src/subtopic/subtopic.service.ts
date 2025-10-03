@@ -3,19 +3,30 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from 'src/subtopic/dto/subtopic-request.dto';
 import { SubtopicsAIGenerate } from './dto/subtopics-generate.dto';
 import { HttpService } from '@nestjs/axios';
-import { FASTAPI_URL } from 'src/constans';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
 @Injectable()
 export class SubtopicService {
+    private readonly fastapiUrl: string | undefined;
+
     constructor(
         private readonly prismaService: PrismaService,
         private readonly httpService: HttpService,
-        @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
-    ) {}
+        private readonly configService: ConfigService
+    ) {
+        const node_env = this.configService.get<string>('NODE_ENV') || 'development';
+
+        if (node_env === 'development') {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL_LOCAL') || undefined;
+        }
+        else {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
+        }
+    }
 
     async findSubtopics(
         subjectId: number,
@@ -555,7 +566,7 @@ export class SubtopicService {
         data: SubtopicsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/subtopics-generate`;
+        const url = `${this.fastapiUrl}/admin/subtopics-generate`;
 
         try {
             const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });

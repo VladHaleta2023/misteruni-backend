@@ -1,24 +1,35 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { FASTAPI_URL } from 'src/constans';
 import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate, WordAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from 'src/subtopic/subtopic.service';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from 'src/options/options.service';
+import { ConfigService } from '@nestjs/config';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
 @Injectable()
 export class TaskService {
+    private readonly fastapiUrl: string | undefined;
+
     constructor(
         private readonly prismaService: PrismaService,
         private readonly subtopicService: SubtopicService,
         private readonly httpService: HttpService,
         private readonly optionsService: OptionsService,
-        @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
-    ) {}
+        private readonly configService: ConfigService
+    ) {
+        const node_env = this.configService.get<string>('NODE_ENV') || 'development';
+
+        if (node_env === 'development') {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL_LOCAL') || undefined;
+        }
+        else {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
+        }
+    }
 
     async calculateSubtopicsPercent(
         subjectId: number,
@@ -372,7 +383,7 @@ export class TaskService {
         data: TaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/task-generate`;
+        const url = `${this.fastapiUrl}/admin/task-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -503,7 +514,7 @@ export class TaskService {
         data: InteractiveTaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/interactive-task-generate`;
+        const url = `${this.fastapiUrl}/admin/interactive-task-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -637,7 +648,7 @@ export class TaskService {
         data: QuestionsTaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/questions-task-generate`;
+        const url = `${this.fastapiUrl}/admin/questions-task-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -732,7 +743,7 @@ export class TaskService {
         data: SolutionAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/solution-generate`;
+        const url = `${this.fastapiUrl}/admin/solution-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -813,7 +824,7 @@ export class TaskService {
         data: OptionsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/options-generate`;
+        const url = `${this.fastapiUrl}/admin/options-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -905,7 +916,7 @@ export class TaskService {
         data: ProblemsAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/problems-generate`;
+        const url = `${this.fastapiUrl}/admin/problems-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -1808,7 +1819,7 @@ export class TaskService {
         data: WordAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `https://misteruni-fastapi.onrender.com/admin/words-generate`;
+        const url = `${this.fastapiUrl}/admin/words-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({

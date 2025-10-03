@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicController } from './subtopic.controller';
 import { HttpModule } from '@nestjs/axios';
-import { FASTAPI_URL } from 'src/constans';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -14,12 +13,7 @@ import { ConfigService } from '@nestjs/config';
   ],
   controllers: [SubtopicController],
   providers: [
-    SubtopicService,
-    {
-      provide: FASTAPI_URL,
-      useFactory: (configService: ConfigService) => configService.get<string>('FASTAPI_URL') || '',
-      inject: [ConfigService],
-    },
+    SubtopicService
   ],
   exports: [SubtopicService],
 })

@@ -7,7 +7,6 @@ import {
     Injectable,
     InternalServerErrorException
 } from '@nestjs/common';
-import { FASTAPI_URL } from 'src/constans';
 import { SubjectService } from 'src/subject/subject.service';
 import { firstValueFrom } from 'rxjs';
 import * as FormData from 'form-data';
@@ -15,6 +14,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SubtopicService } from 'src/subtopic/subtopic.service';
 import { StorageService } from 'src/storage/storage.service';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 
 interface AudioTranscribeParams {
   subjectId: number;
@@ -44,18 +44,32 @@ type Subtopic = {
 
 @Injectable()
 export class OptionsService {
+    private readonly fastapiUrl: string | undefined;
+    private readonly whisperUrl: string | undefined;
+
     constructor (
         private readonly prismaService: PrismaService,
         private readonly subtopicService: SubtopicService,
         private readonly subjectService: SubjectService,
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
-        @Inject(FASTAPI_URL) private readonly fastAPIUrl: string,
-    ) {}
+        private readonly configService: ConfigService
+    ) {
+        const node_env = this.configService.get<string>('NODE_ENV') || 'development';
+
+        if (node_env === 'development') {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL_LOCAL') || undefined;
+            this.whisperUrl = this.configService.get<string>('WHISPER_URL_LOCAL') || undefined;
+        }
+        else {
+            this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
+            this.whisperUrl = this.configService.get<string>('WHISPER_URL') || undefined;
+        }
+    }
 
     async audioTranscribePart(params: AudioTranscribeParams)
         : Promise<AudioTranscribeResponse & { statusCode: number; message: string }> {
-        const url = `https://misteruni-fastapi.onrender.com/admin/audio-transcribe-part`;//`${this.fastAPIUrl}/admin/audio-transcribe-part`;
+        const url = `${this.whisperUrl}/admin/audio-transcribe-part`;
         const { subjectId, file, part_id, language } = params;
 
         try {
@@ -110,7 +124,7 @@ export class OptionsService {
     async textSplitIntoSentences(text: string, language: string = "ru")
         : Promise<SplitIntoSentencesResponse & { statusCode: number; message: string }> {
         try {
-            const url = `https://misteruni-fastapi.onrender.com/admin/split-into-sentences`;
+            const url = `${this.fastapiUrl}/admin/split-into-sentences`;
             
             const response$ = this.httpService.post(url, { text, language });
             const response = await firstValueFrom(response$);
@@ -178,7 +192,7 @@ export class OptionsService {
         try {
             prismaClient = prismaClient || this.prismaService;
 
-            const url = `https://misteruni-fastapi.onrender.com/admin/tts`;
+            const url = `${this.fastapiUrl}/admin/tts`;
             const task = await prismaClient.task.findUnique({ where: { id } });
 
             if (!task) {

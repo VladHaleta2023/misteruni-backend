@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { OptionsService } from './options.service';
 import { OptionsController } from './options.controller';
 import { HttpModule } from '@nestjs/axios';
-import { FASTAPI_URL } from 'src/constans';
 import { ConfigService } from '@nestjs/config';
 import { StorageModule, SubjectModule } from 'src/subject/subject.module';
 import { SubtopicModule } from 'src/subtopic/subtopic.module';
@@ -19,12 +18,7 @@ import { SubtopicModule } from 'src/subtopic/subtopic.module';
   ],
   controllers: [OptionsController],
   providers: [
-    OptionsService,
-    {
-      provide: FASTAPI_URL,
-      useFactory: (configService: ConfigService) => configService.get<string>('FASTAPI_URL') || '',
-      inject: [ConfigService],
-    },
+    OptionsService
   ],
   exports: [OptionsService],
 })
