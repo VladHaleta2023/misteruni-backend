@@ -65,6 +65,8 @@ export class OptionsService {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
             this.whisperUrl = this.configService.get<string>('WHISPER_URL') || undefined;
         }
+
+        console.log(this.whisperUrl);
     }
 
     async audioTranscribePart(params: AudioTranscribeParams)
