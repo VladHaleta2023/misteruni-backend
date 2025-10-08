@@ -179,6 +179,10 @@ export class OptionsAIGenerate {
   @IsString({ each: true })
   options: string[];
 
+  @IsArray()
+  @IsString({ each: true })
+  explanations: string[];
+
   @IsInt()
   correctOptionIndex: number;
 

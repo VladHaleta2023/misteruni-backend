@@ -542,22 +542,30 @@ export class SubjectService {
                         status = 'completed';
                     }
 
-                    const words = await this.prismaService.word.findMany({
+                    const wordsFinished = await this.prismaService.word.findMany({
                         where: {
                             taskId: task.id,
                             finished: false
                         }
-                    })
+                    });
+
+                    const words = await this.prismaService.word.findMany({
+                        where: {
+                            taskId: task.id
+                        }
+                    });
 
                     let vocabluary = false;
+                    const wordsCount = words.length;
 
-                    if (words.length !== 0)
+                    if (wordsFinished.length !== 0)
                         vocabluary = true
 
                     return {
                         ...task,
                         status,
                         vocabluary,
+                        wordsCount,
                         topic: {
                             id: task.topic.id,
                             name: task.topic.name,

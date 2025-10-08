@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SectionUpdateRequest } from './dto/section-request.dto';
+import { all } from 'axios';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
+type DeltaStatus = 'completed' | 'error' | 'completed error';
 
 interface Subtopic extends Record<string, any> {
     blocked: boolean;
@@ -195,29 +197,31 @@ export class SectionService {
         let countImportanceThenPrediction = 0;
 
         for (const subtopic of subtopicsThenPrediction) {
-            const percent = subtopic.percent >= subject.threshold ? subject.threshold : subtopic.percent;
+            const percent = Math.min(subtopic.percent ?? 0, 100);
             countImportanceThenPrediction += subtopic.importance * percent / 100;
         }
 
         const countLeftImportance = countImportanceFullTime - countImportanceThenPrediction;
 
-        let countDeltaImportance = 0;
-
         const subtopicsFullTime = await this.calculateSubtopicsPercent(subjectId, 0, false);
 
+        let countDeltaImportance = 0;
+
         for (let i = 0; i < subtopicsFullTime.length; i++) {
-            let diff = subtopicsFullTime[i].percent - subtopicsThenPrediction[i].percent;
+            const prev = Math.min(subtopicsThenPrediction[i].percent ?? 0, 100);
+            const now = Math.min(subtopicsFullTime[i].percent ?? 0, 100);
 
-            if (diff >= subject.threshold)
-                diff = subject.threshold;
+            let diff = now - prev;
+            diff = Math.max(0, Math.min(diff, 100));
 
-            countDeltaImportance += countImportanceFullTime * diff / 100;
+            countDeltaImportance += subtopicsFullTime[i].importance * diff / 100;
         }
 
         let prediction: number | undefined = undefined;
 
-        if (countDeltaImportance != 0)
+        if (countDeltaImportance > 0) {
             prediction = countLeftImportance / countDeltaImportance * daysPrediction;
+        }
 
         const predictionDate = new Date(endOfWeekFullTime);
 
@@ -230,7 +234,7 @@ export class SectionService {
                 const yyyy = date.getFullYear();
                 return `${dd}.${mm}.${yyyy}`;
             })()
-            : "Nieskończoność";
+            : "Infinity";
 
         return predictionResult;
     }
@@ -405,7 +409,9 @@ export class SectionService {
                         data: { percent },
                     });
 
-                    allTopics.push({ ...topic, subtopics, percent, delta });
+                    const deltaStatus: DeltaStatus = delta >= 0 ? 'completed' : 'error';
+
+                    allTopics.push({ ...topic, subtopics, percent, delta, deltaStatus });
                 }
 
                 const topicsBySection = allTopics.reduce<Record<number, any[]>>((acc, topic) => {
@@ -431,7 +437,19 @@ export class SectionService {
                             ? nonZeroDeltas.reduce((acc, t) => acc + (t.delta ?? 0), 0) / topics.length
                             : 0;
 
-                        return { ...section, ...prompts, topics, percent, delta };
+                        let deltaStatus: DeltaStatus = 'completed';
+                        
+                        const allCompleted = topics.length > 0 && topics.every(t => t.deltaStatus === 'completed');
+                        const allError = topics.length > 0 && topics.every(t => t.deltaStatus === 'error');
+                        
+                        if (allCompleted)
+                            deltaStatus = "completed";
+                        else if (allError)
+                            deltaStatus = "error";
+                        else
+                            deltaStatus = "completed error"
+
+                        return { ...section, ...prompts, topics, percent, delta, deltaStatus };
                     });
             } else {
                 enrichedSections = sections.map(section => ({
@@ -439,7 +457,8 @@ export class SectionService {
                     ...resolvePrompts(section),
                     topics: [],
                     percent: 0,
-                    delta: 0
+                    delta: 0,
+                    deltaStatus: 'completed'
                 }));
             }
 
@@ -471,22 +490,45 @@ export class SectionService {
                     allTopicsWithStatus.find(at => at.id === t.id) || t
                 );
 
-                const anyCompleted = topics.some(t => t.status === 'completed');
                 const allCompleted = topics.length > 0 && topics.every(t => t.status === 'completed');
+                const allInProgress = topics.length > 0 && topics.every(t => t.status === 'progress');
+                const allStarted = topics.length > 0 && topics.every(t => t.status === 'started');
                 const allBlocked = topics.length > 0 && topics.every(t => t.status === 'blocked');
+                const anyCompleted = topics.some(t => t.status === 'completed');
                 const anyInProgress = topics.some(t => t.status === 'progress');
+                const anyStarted = topics.some(t => t.status === 'started');
 
-                let status: Status;
-                if (allBlocked) status = 'blocked';
-                else if (anyCompleted) status = 'completed';
-                else if (anyInProgress || anyCompleted) status = 'progress';
-                else status = 'started';
-
-                let process: Status;
-                if (allCompleted) process = 'completed';
-                else if (anyCompleted || anyInProgress) process = 'progress';
-                else if (allBlocked) process = 'blocked';
-                else process = 'started';
+                let status: Status = "started";
+                let process: Status = "started";
+                
+                if (allBlocked) {
+                    status = "blocked";
+                    process = "blocked";
+                }
+                else if (allCompleted) {
+                    status = "completed";
+                    process = "completed";
+                }
+                else if (allInProgress) {
+                    status = "progress";
+                    process = "progress";
+                }
+                else if (allStarted) {
+                    status = "started";
+                    process = "started";
+                }
+                else if (anyCompleted && anyInProgress) {
+                    status = "completed";
+                    process = "progress"
+                }
+                else if (anyCompleted && anyStarted) {
+                    status = "completed";
+                    process = "started"
+                }
+                else if (anyInProgress && anyStarted) {
+                    status = "progress";
+                    process = "started"
+                }
 
                 return { ...section, topics, status, process };
             });

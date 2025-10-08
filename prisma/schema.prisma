@@ -117,6 +117,7 @@ model Task {
   text                String      @default("")
   explanation         String      @default("")
   options             String[]    @default([])
+  explanations        String[]    @default([])
   correctOptionIndex  Int         @default(0)
   solution            String      @default("")
   userSolution        String      @default("")

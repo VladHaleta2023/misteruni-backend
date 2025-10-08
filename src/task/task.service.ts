@@ -139,22 +139,30 @@ export class TaskService {
                         status = 'completed';
                     }
 
-                    const words = await this.prismaService.word.findMany({
+                    const wordsFinished = await this.prismaService.word.findMany({
                         where: {
                             taskId: task.id,
                             finished: false
                         }
-                    })
+                    });
+
+                    const words = await this.prismaService.word.findMany({
+                        where: {
+                            taskId: task.id
+                        }
+                    });
 
                     let vocabluary = false;
+                    const wordsCount = words.length;
 
-                    if (words.length !== 0)
+                    if (wordsFinished.length !== 0)
                         vocabluary = true
 
                     return {
                         ...task,
                         status,
                         vocabluary,
+                        wordsCount,
                         topic: {
                             id: topic.id,
                             name: topic.name,
@@ -868,6 +876,10 @@ export class TaskService {
                 throw new BadRequestException('Options musi być listą stringów');
             }
 
+            if (!Array.isArray(data.explanations) || !data.explanations.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Explanations musi być listą stringów');
+            }
+
             const response$ = this.httpService.post(url, data, { signal });
             const response = await firstValueFrom(response$);
             const r = response.data;
@@ -877,6 +889,7 @@ export class TaskService {
                 typeof r.changed !== 'string' ||
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.options) ||
+                !Array.isArray(r.explanations) ||
                 typeof r.attempt !== 'number' ||
                 typeof r.correctOptionIndex !== 'number' ||
                 typeof r.text !== 'string' ||
@@ -1062,6 +1075,7 @@ export class TaskService {
                     if (taskData.note !== undefined) updateData.note = taskData.note;
                     if (taskData.solution !== undefined) updateData.solution = taskData.solution;
                     if (taskData.options !== undefined) updateData.options = taskData.options;
+                    if (taskData.explanations !== undefined) updateData.explanations = taskData.explanations;
                     if (taskData.correctOptionIndex !== undefined) updateData.correctOptionIndex = taskData.correctOptionIndex;
                     if (taskData.stage !== undefined) updateData.stage = taskData.stage;
 
@@ -1114,6 +1128,7 @@ export class TaskService {
                             note: taskData.note,
                             solution: taskData.solution,
                             options: taskData.options,
+                            explanations: taskData.explanations,
                             correctOptionIndex: taskData.correctOptionIndex,
                             stage: taskData.stage ?? 0,
                             topicId,
@@ -1191,6 +1206,7 @@ export class TaskService {
                         if (taskData.text !== undefined) updateData.text = taskData.text;
                         if (taskData.solution !== undefined) updateData.solution = taskData.solution;
                         if (taskData.options !== undefined) updateData.options = taskData.options;
+                        if (taskData.explanations !== undefined) updateData.explanations = taskData.explanations;
                         if (taskData.correctOptionIndex !== undefined) updateData.correctOptionIndex = taskData.correctOptionIndex;
                         if (taskData.stage !== undefined) updateData.stage = taskData.stage;
 
@@ -1214,6 +1230,7 @@ export class TaskService {
                                 text: taskData.text,
                                 solution: taskData.solution,
                                 options: taskData.options,
+                                explanations:  taskData.explanations,
                                 correctOptionIndex: taskData.correctOptionIndex,
                                 stage: taskData.stage ?? 0,
                                 topicId,

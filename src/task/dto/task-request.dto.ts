@@ -23,6 +23,10 @@ export class TaskCreateRequest {
 
   @IsArray()
   @IsString({ each: true })
+  explanations: string[]
+
+  @IsArray()
+  @IsString({ each: true })
   taskSubtopics: string[]
 
   @IsInt()
