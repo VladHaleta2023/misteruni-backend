@@ -263,22 +263,16 @@ export class SectionService {
             const resolvePrompts = (section: any) => ({
                 subtopicsPrompt: section.subtopicsPrompt?.trim() || subject.subtopicsPrompt || "",
                 subtopicsPromptOwn: Boolean(section.subtopicsPrompt?.trim()),
-
                 questionPrompt: section.questionPrompt?.trim() || subject.questionPrompt || "",
                 questionPromptOwn: Boolean(section.questionPrompt?.trim()),
-
                 solutionPrompt: section.solutionPrompt?.trim() || subject.solutionPrompt || "",
                 solutionPromptOwn: Boolean(section.solutionPrompt?.trim()),
-
                 answersPrompt: section.answersPrompt?.trim() || subject.answersPrompt || "",
                 answersPromptOwn: Boolean(section.answersPrompt?.trim()),
-
                 closedSubtopicsPrompt: section.closedSubtopicsPrompt?.trim() || subject.closedSubtopicsPrompt || "",
                 closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt?.trim()),
-
                 subQuestionsPrompt: section.subQuestionsPrompt?.trim() || subject.subQuestionsPrompt || "",
                 subQuestionsPromptOwn: Boolean(section.subQuestionsPrompt?.trim()),
-
                 vocabluaryPrompt: section.vocabluaryPrompt?.trim() || subject.vocabluaryPrompt || "",
                 vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt?.trim()),
             });
@@ -291,10 +285,8 @@ export class SectionService {
 
                 if (weekOffset !== 0) {
                     const previousSubtopics = await this.calculateSubtopicsPercent(subjectId, weekOffset - 1, false);
-
                     const previousMap = new Map<number, typeof previousSubtopics[0]>();
                     previousSubtopics.forEach(sub => previousMap.set(sub.id, sub));
-
                     updatedSubtopics = updatedSubtopics
                         .map(sub => {
                             const prev = previousMap.get(sub.id);
@@ -304,16 +296,12 @@ export class SectionService {
                                 delta
                             };
                         });
-                }
-                else {
+                } else {
                     updatedSubtopics = updatedSubtopics
-                    .map(sub => {
-                        const delta = 0;
-                        return {
+                        .map(sub => ({
                             ...sub,
-                            delta
-                        };
-                    });
+                            delta: 0,
+                        }));
                 }
 
                 const topics = await this.prismaService.topic.findMany({
@@ -343,9 +331,9 @@ export class SectionService {
                             subtopics.length;
                         const nonZeroDeltas = subtopics.filter(s => (s.delta ?? 0) !== 0);
                         delta =
-                        nonZeroDeltas.length > 0
-                            ? nonZeroDeltas.reduce((acc, s) => acc + (s.delta ?? 0), 0) / subtopics.length
-                            : 0;
+                            nonZeroDeltas.length > 0
+                                ? nonZeroDeltas.reduce((acc, s) => acc + (s.delta ?? 0), 0) / subtopics.length
+                                : 0;
                     } else {
                         const now = new Date();
                         const day = now.getDay();
@@ -397,7 +385,7 @@ export class SectionService {
                             percent =
                                 tasks.reduce((acc, t) => acc + (t.percent ?? 0), 0) /
                                 tasks.length;
-                            delta = percent - previousPercent
+                            delta = percent - previousPercent;
                         } else {
                             percent = 0;
                             delta = 0;
@@ -433,15 +421,15 @@ export class SectionService {
 
                         const nonZeroDeltas = topics.filter(t => (t.delta ?? 0) !== 0);
                         const delta =
-                        nonZeroDeltas.length > 0
-                            ? nonZeroDeltas.reduce((acc, t) => acc + (t.delta ?? 0), 0) / topics.length
-                            : 0;
+                            nonZeroDeltas.length > 0
+                                ? nonZeroDeltas.reduce((acc, t) => acc + (t.delta ?? 0), 0) / topics.length
+                                : 0;
 
                         let deltaStatus: DeltaStatus = 'completed';
-                        
+
                         const allCompleted = topics.length > 0 && topics.every(t => t.deltaStatus === 'completed');
                         const allError = topics.length > 0 && topics.every(t => t.deltaStatus === 'error');
-                        
+
                         if (allCompleted)
                             deltaStatus = "completed";
                         else if (allError)
@@ -450,7 +438,8 @@ export class SectionService {
                             deltaStatus = "completed error"
 
                         return { ...section, ...prompts, topics, percent, delta, deltaStatus };
-                    });
+                    })
+                    .filter(Boolean);
             } else {
                 enrichedSections = sections.map(section => ({
                     ...section,
@@ -500,7 +489,7 @@ export class SectionService {
 
                 let status: Status = "started";
                 let process: Status = "started";
-                
+
                 if (allBlocked) {
                     status = "blocked";
                     process = "blocked";
@@ -537,18 +526,44 @@ export class SectionService {
             allTopicsWithStatus.forEach(t => counts[t.status]++);
 
             const totalTopics = allTopicsWithStatus.length || 1;
+
+            let sumPercentCompleted = 0;
+            let sumPercentBlocked = 0;
+            let sumPercentProgress = 0;
+
+            allTopicsWithStatus.forEach(topic => {
+                const p = topic.percent ?? 0;
+                if (topic.status === 'blocked') {
+                    sumPercentBlocked += 100;
+                } else if (topic.status === 'completed') {
+                    sumPercentCompleted += p;
+                } else if (topic.status === 'progress') {
+                    sumPercentProgress += p;
+                }
+            });
+
+            const maxPercent = totalTopics * 100;
+
+            const percentBlocked = (sumPercentBlocked / maxPercent) * 100;
+            const percentCompleted = (sumPercentCompleted / maxPercent) * 100;
+            const percentProgress = (sumPercentProgress / maxPercent) * 100;
+            const percentStarted = 100 - percentBlocked - percentCompleted - percentProgress;
+
             const totalPercent: Record<Status, number> = {
-                blocked: (counts.blocked / totalTopics) * 100,
-                started: (counts.started / totalTopics) * 100,
-                progress: (counts.progress / totalTopics) * 100,
-                completed: (counts.completed / totalTopics) * 100,
+                blocked: percentBlocked < 0 ? 0 : percentBlocked,
+                started: percentStarted < 0 ? 0 : percentStarted,
+                progress: percentProgress < 0 ? 0 : percentProgress,
+                completed: percentCompleted < 0 ? 0 : percentCompleted,
             };
 
-            if (totalPercent.blocked == 0 &&
-                totalPercent.started == 0 &&
-                totalPercent.progress == 0 &&
-                totalPercent.completed == 0)
+            if (
+                totalPercent.blocked === 0 &&
+                totalPercent.started === 0 &&
+                totalPercent.progress === 0 &&
+                totalPercent.completed === 0
+            ) {
                 totalPercent.started = 100;
+            }
 
             const response: any = {
                 statusCode: 200,

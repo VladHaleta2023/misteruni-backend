@@ -75,23 +75,44 @@ export class SubtopicService {
             });
 
             const totalSubtopics = updatedSubtopics.length || 1;
-            const counts: Record<Status, number> = {
-                blocked: 0,
-                started: 0,
-                progress: 0,
-                completed: 0
-            };
+
+            let sumPercentCompleted = 0;
+            let sumPercentBlocked = 0;
+            let sumPercentProgress = 0;
 
             updatedSubtopics.forEach(sub => {
-                counts[sub.status] += 1;
+                const p = sub.percent ?? 0;
+                if (sub.status === 'blocked') {
+                    sumPercentBlocked += 100;
+                } else if (sub.status === 'completed') {
+                    sumPercentCompleted += p;
+                } else if (sub.status === 'progress') {
+                    sumPercentProgress += p;
+                }
             });
 
+            const maxPercent = totalSubtopics * 100;
+
+            const percentBlocked = (sumPercentBlocked / maxPercent) * 100;
+            const percentCompleted = (sumPercentCompleted / maxPercent) * 100;
+            const percentProgress = (sumPercentProgress / maxPercent) * 100;
+            const percentStarted = 100 - percentBlocked - percentCompleted - percentProgress;
+
             const totalPercentByStatus: Record<Status, number> = {
-                blocked: (counts.blocked / totalSubtopics) * 100,
-                started: (counts.started / totalSubtopics) * 100,
-                progress: (counts.progress / totalSubtopics) * 100,
-                completed: (counts.completed / totalSubtopics) * 100
+                blocked: percentBlocked < 0 ? 0 : percentBlocked,
+                started: percentStarted < 0 ? 0 : percentStarted,
+                progress: percentProgress < 0 ? 0 : percentProgress,
+                completed: percentCompleted < 0 ? 0 : percentCompleted,
             };
+
+            if (
+                totalPercentByStatus.blocked === 0 &&
+                totalPercentByStatus.started === 0 &&
+                totalPercentByStatus.progress === 0 &&
+                totalPercentByStatus.completed === 0
+            ) {
+                totalPercentByStatus.started = 100;
+            }
 
             const now = new Date();
             let startOfWeek: Date;
@@ -141,9 +162,9 @@ export class SubtopicService {
                 },
             });
 
-            let weekLabel = "bieżący" 
+            let weekLabel = "bieżący";
             if (weekOffset < 0)
-                weekLabel = `${weekOffset} tydz.`
+                weekLabel = `${weekOffset} tydz.`;
 
             const formatDate = (date: Date) => {
                 const dd = String(date.getDate()).padStart(2, '0');
