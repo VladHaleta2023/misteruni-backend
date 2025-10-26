@@ -12,7 +12,7 @@ async function bootstrap() {
   httpServer.setTimeout(900000);
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>("PORT") || 5000;
+  const port = process.env.PORT || configService.get<number>("PORT") || 5000;
 
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
@@ -26,6 +26,8 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
+
+  console.log(port);
 
   await app.listen(port);
   console.log(`🚀 Server running on port: ${port}`);
