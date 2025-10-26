@@ -8,6 +8,7 @@ import axios from "axios";
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { File } from '../file.type';
+import { DateUtils } from '../scripts/dateUtils';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -464,7 +465,8 @@ export class SubjectService {
     }
 
     async findTasks(
-        id: number, weekOffset: number = 0
+        id: number,
+        weekOffset: number = 0
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -474,25 +476,8 @@ export class SubjectService {
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
             const now = new Date();
-            let startOfWeek: Date;
-            let endOfWeek: Date;
-
-            if (weekOffset === 0) {
-                startOfWeek = new Date(0);
-                endOfWeek = new Date(now);
-            } else {
-                const day = now.getDay();
-                const currentMonday = new Date(now);
-                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-                currentMonday.setHours(0, 0, 0, 0);
-
-                startOfWeek = new Date(currentMonday);
-                startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
-
-                endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(startOfWeek.getDate() + 6);
-                endOfWeek.setHours(23, 59, 59, 999);
-            }
+            const startOfWeek = DateUtils.getMonday(now, weekOffset);
+            const endOfWeek = DateUtils.getSunday(now, weekOffset);
 
             const tasks = await this.prismaService.task.findMany({
                 where: {
@@ -545,21 +530,18 @@ export class SubjectService {
                     const wordsFinished = await this.prismaService.word.findMany({
                         where: {
                             taskId: task.id,
-                            finished: false
-                        }
+                            finished: false,
+                        },
                     });
 
                     const words = await this.prismaService.word.findMany({
                         where: {
-                            taskId: task.id
-                        }
+                            taskId: task.id,
+                        },
                     });
 
-                    let vocabluary = false;
+                    const vocabluary = wordsFinished.length !== 0;
                     const wordsCount = words.length;
-
-                    if (wordsFinished.length !== 0)
-                        vocabluary = true
 
                     return {
                         ...task,
@@ -583,18 +565,18 @@ export class SubjectService {
 
             const groupedTasksMap: Record<string, typeof tasksWithPercent> = {};
             tasksWithPercent.forEach(task => {
-            const updated = task.updatedAt;
-            const day = String(updated.getDate()).padStart(2, '0');
-            const month = String(updated.getMonth() + 1).padStart(2, '0');
-            const year = updated.getFullYear();
-            const dateKey = `${day}-${month}-${year}`;
+                const updated = task.updatedAt;
+                const day = String(updated.getDate()).padStart(2, '0');
+                const month = String(updated.getMonth() + 1).padStart(2, '0');
+                const year = updated.getFullYear();
+                const dateKey = `${day}-${month}-${year}`;
 
-            if (!groupedTasksMap[dateKey]) groupedTasksMap[dateKey] = [];
+                if (!groupedTasksMap[dateKey]) groupedTasksMap[dateKey] = [];
                 groupedTasksMap[dateKey].push(task);
             });
 
             const groupedTasks = Object.entries(groupedTasksMap).map(([dateKey, tasks]) => {
-            const [day, month, year] = dateKey.split('-');
+                const [day, month, year] = dateKey.split('-');
                 return {
                     date: { day, month, year },
                     tasks,
@@ -606,8 +588,7 @@ export class SubjectService {
                 message: 'Pobrano listę zadań pomyślnie',
                 elements: groupedTasks,
             };
-        }
-        catch (error) {
+        } catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać listę zadań');
         }
     }

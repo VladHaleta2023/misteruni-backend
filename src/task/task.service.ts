@@ -7,6 +7,7 @@ import { SubtopicService } from '../subtopic/subtopic.service';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
+import { DateUtils } from '../scripts/dateUtils';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -92,25 +93,9 @@ export class TaskService {
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
             const now = new Date();
-            let startOfWeek: Date;
-            let endOfWeek: Date;
 
-            if (weekOffset === 0) {
-                startOfWeek = new Date(0);
-                endOfWeek = new Date(now);
-            } else {
-                const day = now.getDay();
-                const currentMonday = new Date(now);
-                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-                currentMonday.setHours(0, 0, 0, 0);
-
-                startOfWeek = new Date(currentMonday);
-                startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
-
-                endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(startOfWeek.getDate() + 6);
-                endOfWeek.setHours(23, 59, 59, 999);
-            }
+            const startOfWeek = DateUtils.getMonday(now, weekOffset);
+            const endOfWeek = DateUtils.getSunday(now, weekOffset);
 
             const tasks = await this.prismaService.task.findMany({
                 where: {
@@ -252,6 +237,15 @@ export class TaskService {
 
             if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
 
+            let status: Status = "started";
+
+            if (task.percent === 0)
+                status = "started"
+            else if (task.percent >= subject.threshold)
+                status = "completed"
+            else
+                status = "progress"
+
             const taskSubtopics = task.progresses.map(p => ({
                 name: p.subtopic.name,
                 percent: p.percent,
@@ -276,6 +270,7 @@ export class TaskService {
 
             const taskWithSubtopics = {
                 ...taskData,
+                status: status,
                 subtopics: taskSubtopics,
                 audioFiles: audioFiles.map(f => f.url),
                 subTasks: subTasksWithSubtopics,
@@ -349,6 +344,15 @@ export class TaskService {
                 };
             }
 
+            let status: Status = "started";
+
+            if (task.percent === 0)
+                status = "started"
+            else if (task.percent >= subject.threshold)
+                status = "completed"
+            else
+                status = "progress"
+
             const taskSubtopics = task.progresses.map(p => ({
                 name: p.subtopic.name,
                 percent: p.percent,
@@ -366,6 +370,7 @@ export class TaskService {
             const { progresses, subTasks, audioFiles, ...taskData } = task;
             const taskWithSubtopicsAndUrls = {
                 ...taskData,
+                status: status,
                 subtopics: taskSubtopics,
                 audioFiles: audioFiles.map(f => f.url),
                 subTasks: subTasksWithSubtopics.map(sub => ({
@@ -426,6 +431,7 @@ export class TaskService {
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
 
             let filtered = subtopics
                 .filter(s => s.percent < (data.threshold ?? subject.threshold))
@@ -473,6 +479,7 @@ export class TaskService {
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||
+                typeof r.literature !== 'string' ||
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.outputSubtopics) ||
@@ -1608,7 +1615,6 @@ export class TaskService {
         }
     }
 
-    // Words
     async findWords(
         subjectId: number,
         sectionId: number,
@@ -1652,7 +1658,8 @@ export class TaskService {
             return {
                 statusCode: 200,
                 message: 'Pobranie słów lub wyrazów udane',
-                words
+                words,
+                task
             };
         } catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać słów lub wyrazów');

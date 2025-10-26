@@ -20,6 +20,10 @@ export class TaskAIGenerate {
 
   @IsOptional()
   @IsString()
+  literature?: string;
+
+  @IsOptional()
+  @IsString()
   topic?: string;
 
   @IsString()

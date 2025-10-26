@@ -58,6 +58,7 @@ model Topic {
   id                      Int         @id @default(autoincrement())
   name                    String
   blocked                 Boolean     @default(false)
+  literature              String      @default("")
   percent                 Int         @default(0)
   sectionId               Int
   subjectId               Int

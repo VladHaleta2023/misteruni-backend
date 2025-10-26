@@ -6,6 +6,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { DateUtils } from '../scripts/dateUtils';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -63,7 +64,7 @@ export class SubtopicService {
             }
 
             const updatedSubtopics = subtopics.map(sub => {
-                const pct = sub.percent ?? 0;
+                const pct = Math.round(sub.percent ?? 0);
                 let status: Status;
 
                 if (sub.blocked) status = 'blocked';
@@ -82,27 +83,27 @@ export class SubtopicService {
 
             updatedSubtopics.forEach(sub => {
                 const p = sub.percent ?? 0;
-                if (sub.status === 'blocked') {
-                    sumPercentBlocked += 100;
-                } else if (sub.status === 'completed') {
+                if (sub.status == "blocked") {
+                    sumPercentBlocked += p;
+                } else if (sub.status == "completed") {
                     sumPercentCompleted += p;
-                } else if (sub.status === 'progress') {
+                } else if (sub.status == "progress") {
                     sumPercentProgress += p;
                 }
             });
 
             const maxPercent = totalSubtopics * 100;
 
-            const percentBlocked = (sumPercentBlocked / maxPercent) * 100;
-            const percentCompleted = (sumPercentCompleted / maxPercent) * 100;
-            const percentProgress = (sumPercentProgress / maxPercent) * 100;
+            const percentBlocked = Math.round((sumPercentBlocked / maxPercent) * 100);
+            const percentCompleted = Math.round((sumPercentCompleted / maxPercent) * 100);
+            const percentProgress = Math.round((sumPercentProgress / maxPercent) * 100);
             const percentStarted = 100 - percentBlocked - percentCompleted - percentProgress;
 
             const totalPercentByStatus: Record<Status, number> = {
-                blocked: percentBlocked < 0 ? 0 : percentBlocked,
-                started: percentStarted < 0 ? 0 : percentStarted,
-                progress: percentProgress < 0 ? 0 : percentProgress,
-                completed: percentCompleted < 0 ? 0 : percentCompleted,
+                blocked: percentBlocked ?? 0,
+                started: percentStarted ?? 0,
+                progress: percentProgress ?? 0,
+                completed: percentCompleted ?? 0,
             };
 
             if (
@@ -115,25 +116,8 @@ export class SubtopicService {
             }
 
             const now = new Date();
-            let startOfWeek: Date;
-            let endOfWeek: Date;
-
-            if (weekOffset === 0) {
-                startOfWeek = new Date(0);
-                endOfWeek = new Date(now);
-            } else {
-                const day = now.getDay();
-                const currentMonday = new Date(now);
-                currentMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-                currentMonday.setHours(0, 0, 0, 0);
-
-                startOfWeek = new Date(currentMonday);
-                startOfWeek.setDate(currentMonday.getDate() + 7 * weekOffset);
-
-                endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(startOfWeek.getDate() + 6);
-                endOfWeek.setHours(23, 59, 59, 999);
-            }
+            const startOfWeek = DateUtils.getMonday(now, weekOffset);
+            const endOfWeek = DateUtils.getSunday(now, weekOffset);
 
             const solvedTasksCount = await this.prismaService.task.count({
                 where: {

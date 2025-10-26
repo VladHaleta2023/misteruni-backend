@@ -65,8 +65,6 @@ export class OptionsService {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
             this.whisperUrl = this.configService.get<string>('WHISPER_URL') || undefined;
         }
-
-        console.log(this.whisperUrl);
     }
 
     async audioTranscribePart(params: AudioTranscribeParams)
@@ -291,24 +289,5 @@ export class OptionsService {
         catch (error) {
             throw new InternalServerErrorException('Błąd podczas usuwania plików');
         }
-    }
-
-    async randRang() {
-        const subtopics = await this.prismaService.subtopic.count({
-            where: { subjectId: 6 }
-        });
-
-        console.log(subtopics);
-
-        const result = await this.prismaService.subtopic.aggregate({
-            where: { subjectId: 6 },
-            _sum: {
-                importance: true,
-            },
-            });
-
-            const totalImportance = result._sum.importance ?? 0;
-
-            console.log("Сумма importance:", totalImportance);
     }
 }

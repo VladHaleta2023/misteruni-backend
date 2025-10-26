@@ -32,4 +32,8 @@ export class TopicUpdateRequest {
   @IsOptional()
   @IsString()
   subtopicsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  literature?: string;
 }

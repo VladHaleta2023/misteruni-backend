@@ -92,11 +92,6 @@ export class OptionsController {
     return this.optionsService.createSubtopicsTransaction(subtopics);
   }
 
-  @Post('rang')
-  async randRang() {
-    return this.optionsService.randRang();
-  }
-
   @Post('tasks/:id/tss')
   async generateTTS(
     @Param('id', ParseIntPipe) id: number,
