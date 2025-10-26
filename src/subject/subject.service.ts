@@ -58,11 +58,6 @@ export class SubjectService {
                         ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
                         : 0;
 
-                await this.prismaService.subtopic.update({
-                    where: { id: subtopic.id },
-                    data: { percent },
-                });
-
                 return { ...subtopic, percent };
             }),
         );

@@ -58,11 +58,6 @@ export class TaskService {
                         ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
                         : 0;
 
-                await this.prismaService.subtopic.update({
-                    where: { id: subtopic.id },
-                    data: { percent },
-                });
-
                 return { ...subtopic, percent };
             }),
         );
@@ -425,7 +420,24 @@ export class TaskService {
 
             const subtopics = await this.prismaService.subtopic.findMany({
                 where: { topicId },
-                select: { name: true, percent: true }
+                include: {
+                    progresses: {
+                        select: {
+                            percent: true
+                        }
+                    }
+                }
+            });
+
+            const subtopicsWithAvg = subtopics.map(subtopic => {
+                const avgPercent = subtopic.progresses.length > 0 
+                    ? subtopic.progresses.reduce((sum, p) => sum + p.percent, 0) / subtopic.progresses.length
+                    : 0;
+                
+                return {
+                    name: subtopic.name,
+                    percent: avgPercent
+                };
             });
 
             data.subject = data.subject ?? subject.name;
@@ -433,17 +445,17 @@ export class TaskService {
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
 
-            let filtered = subtopics
+            let filtered = subtopicsWithAvg
                 .filter(s => s.percent < (data.threshold ?? subject.threshold))
                 .map(s => [s.name, s.percent] as [string, number]);
 
             if (filtered.length === 0) {
-                filtered = subtopics.map(s => [s.name, s.percent] as [string, number]);
+                filtered = subtopicsWithAvg.map(s => [s.name, s.percent] as [string, number]);
             }
 
             data.subtopics = filtered;
 
-            data.subtopics = data.subtopics ?? subtopics.map(s => [s.name, s.percent]);
+            data.subtopics = data.subtopics ?? subtopicsWithAvg.map(s => [s.name, s.percent]);
             data.difficulty = data.difficulty ?? subject.difficulty;
             data.threshold = data.threshold ?? subject.threshold;
 
@@ -564,13 +576,28 @@ export class TaskService {
                     section: { type }
                 },
                 include: {
-                    subtopics: { select: { percent: true } }
+                    subtopics: {
+                        include: {
+                            progresses: {
+                                select: {
+                                    percent: true
+                                }
+                            }
+                        }
+                    }
                 }
             });
 
             const topicsWithAverage = topics.map(topic => {
-                const avgPercent = topic.subtopics.length > 0
-                    ? topic.subtopics.reduce((sum, s) => sum + s.percent, 0) / topic.subtopics.length
+                const subtopicAverages = topic.subtopics.map(subtopic => {
+                    const progresses = subtopic.progresses.map(p => p.percent);
+                    return progresses.length > 0
+                        ? progresses.reduce((sum, progress) => sum + progress, 0) / progresses.length
+                        : 0;
+                });
+
+                const avgPercent = subtopicAverages.length > 0
+                    ? subtopicAverages.reduce((sum, avg) => sum + avg, 0) / subtopicAverages.length
                     : 0;
 
                 return {
@@ -586,14 +613,14 @@ export class TaskService {
                 .sort((a, b) => b.percent - a.percent)
                 .map(s => [s.name, s.percent]);
             data.difficulty = data.difficulty ?? subject.difficulty;
-            
+
             const resolvedQuestionPrompt =
                 topic.questionPrompt?.trim()
                     ? topic.questionPrompt
                     : section.questionPrompt?.trim()
                     ? section.questionPrompt
                     : subject.questionPrompt ?? null;
-            
+
             data.prompt = resolvedQuestionPrompt;
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
@@ -1557,11 +1584,6 @@ export class TaskService {
                 await prismaClient.task.update({
                     where: { id: task.id },
                     data: { percent: percentsTotal },
-                });
-
-                await prismaClient.topic.update({
-                    where: { id: topicId },
-                    data: { percent: (existingTopic.percent + percentsTotal) / 2 },
                 });
 
                 return {

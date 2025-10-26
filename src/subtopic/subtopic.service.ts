@@ -44,27 +44,67 @@ export class SubtopicService {
                 throw new BadRequestException('Przedmiot nie został znaleziony');
             }
 
-            let subtopics = await this.prismaService.subtopic.findMany({
+            interface SubtopicWithProgress {
+                id: number;
+                name: string;
+                blocked: boolean;
+                importance: number;
+                progresses: { percent: number }[];
+                percent?: number;
+                status?: Status;
+            }
+
+            let subtopics: SubtopicWithProgress[] = await this.prismaService.subtopic.findMany({
                 where: { subjectId, sectionId, topicId },
                 orderBy: { name: 'asc' },
-                select: { id: true, name: true, percent: true, blocked: true, importance: true }
+                select: { 
+                    id: true, 
+                    name: true, 
+                    blocked: true, 
+                    importance: true,
+                    progresses: {
+                        select: {
+                            percent: true
+                        }
+                    }
+                }
+            });
+
+            subtopics = subtopics.map(sub => {
+                const progresses = sub.progresses;
+                const avgPercent =
+                    progresses.length > 0
+                        ? Math.min(Math.round(progresses.reduce((sum, p) => sum + (p.percent ?? 0), 0) / progresses.length), 100)
+                        : 0;
+
+                return {
+                    ...sub,
+                    percent: avgPercent
+                };
             });
 
             if (subtopics.length === 0) {
                 const topic = await this.prismaService.topic.findUnique({
                     where: { id: topicId },
-                    select: { id: true, name: true, percent: true, blocked: true }
+                    select: { id: true, name: true, blocked: true }
                 });
 
                 if (!topic) {
                     throw new BadRequestException('Temat nie został znaleziony');
                 }
 
-                subtopics = [{ ...topic, importance: 0 }];
+                subtopics = [{
+                    id: topic.id,
+                    name: topic.name,
+                    blocked: topic.blocked,
+                    importance: 0,
+                    progresses: [],
+                    percent: 0
+                }];
             }
 
             const updatedSubtopics = subtopics.map(sub => {
-                const pct = Math.round(sub.percent ?? 0);
+                const pct = sub.percent ?? 0;
                 let status: Status;
 
                 if (sub.blocked) status = 'blocked';
@@ -94,10 +134,10 @@ export class SubtopicService {
 
             const maxPercent = totalSubtopics * 100;
 
-            const percentBlocked = Math.round((sumPercentBlocked / maxPercent) * 100);
-            const percentCompleted = Math.round((sumPercentCompleted / maxPercent) * 100);
-            const percentProgress = Math.round((sumPercentProgress / maxPercent) * 100);
-            const percentStarted = 100 - percentBlocked - percentCompleted - percentProgress;
+            const percentBlocked = Math.min(Math.round((sumPercentBlocked / maxPercent) * 100), 100);
+            const percentCompleted = Math.min(Math.round((sumPercentCompleted / maxPercent) * 100), 100);
+            const percentProgress = Math.min(Math.round((sumPercentProgress / maxPercent) * 100), 100);
+            const percentStarted = Math.max(Math.min(100 - percentBlocked - percentCompleted - percentProgress, 100), 0);
 
             const totalPercentByStatus: Record<Status, number> = {
                 blocked: percentBlocked ?? 0,

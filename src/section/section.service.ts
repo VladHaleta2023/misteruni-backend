@@ -29,9 +29,10 @@ export class SectionService {
     constructor(private readonly prismaService: PrismaService) {}
 
     private getStatus(percent: number, blocked: boolean, threshold: number): Status {
+        const safePercent = Math.min(100, percent); 
         if (blocked) return 'blocked';
-        if (percent === 0) return 'started';
-        if (percent < threshold) return 'progress';
+        if (safePercent === 0) return 'started';
+        if (safePercent < threshold) return 'progress';
         return 'completed';
     }
 
@@ -89,7 +90,7 @@ export class SectionService {
                 if (topic.subtopics && topic.subtopics.length > 0) {
                     const updatedSubtopics = topic.subtopics.map(subtopic => ({
                         ...subtopic,
-                        status: this.getStatus(subtopic.percent ?? 0, !!subtopic.blocked, threshold),
+                        status: this.getStatus(Math.min(100, subtopic.percent ?? 0), !!subtopic.blocked, threshold),
                     }));
 
                     const activeSubs = updatedSubtopics.filter(st => st.status !== 'blocked');
@@ -104,17 +105,20 @@ export class SectionService {
                     else if (anyProgress || (anyStarted && anyCompleted)) topicStatus = 'progress';
                     else topicStatus = 'started';
 
-                    return { ...topic, subtopics: updatedSubtopics, status: topicStatus };
+                    return {
+                        ...topic,
+                        subtopics: updatedSubtopics,
+                        status: topicStatus
+                    };
                 }
 
                 return {
                     ...topic,
-                    status: this.getStatus(topic.percent ?? 0, !!topic.blocked, threshold),
+                    status: this.getStatus(Math.min(100, topic.percent ?? 0), !!topic.blocked, threshold),
                 };
             });
 
             const activeTopics = updatedTopics.filter(t => t.status !== 'blocked');
-            const allStarted = activeTopics.every(t => t.status === 'started');
             const allCompleted = activeTopics.every(t => t.status === 'completed');
             const anyProgress = activeTopics.some(t => t.status === 'progress');
             const anyStarted = activeTopics.some(t => t.status === 'started');
@@ -139,11 +143,11 @@ export class SectionService {
             where: { subjectId },
             include: {
                 progresses: {
-                where: {
-                    updatedAt: { gte: startOfRange, lte: endOfRange },
-                    task: { finished: true },
-                },
-                include: { task: { select: { id: true } } },
+                    where: {
+                        updatedAt: { gte: startOfRange, lte: endOfRange },
+                        task: { finished: true },
+                    },
+                    include: { task: { select: { id: true } } },
                 },
             },
         });
@@ -152,7 +156,10 @@ export class SectionService {
             const progresses = subtopic.progresses ?? [];
             const percent =
                 progresses.length > 0
-                ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
+                ? Math.min(
+                    100,
+                    Math.ceil(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
+                )
                 : 0;
             return { ...subtopic, percent };
         });
@@ -268,11 +275,11 @@ export class SectionService {
             const prevTasks = previousTasksByTopicId[topic.id] || [];
 
             const percent = tasks.length > 0
-                ? tasks.reduce((acc, t) => acc + t.percent, 0) / tasks.length
+                ? Math.min(100, tasks.reduce((acc, t) => acc + t.percent, 0) / tasks.length)
                 : 0;
 
             const previousPercent = prevTasks.length > 0
-                ? prevTasks.reduce((acc, t) => acc + t.percent, 0) / prevTasks.length
+                ? Math.min(100, prevTasks.reduce((acc, t) => acc + t.percent, 0) / prevTasks.length)
                 : 0;
 
             const delta = percent - previousPercent;
@@ -288,7 +295,7 @@ export class SectionService {
             return 'started';
         } else {
             const elements = subtopics.length > 0 ? subtopics : [{ percent }];
-            const allCompleted = elements.every(el => (el.percent ?? 0) >= threshold);
+            const allCompleted = elements.every(el => Math.min(100, el.percent ?? 0) >= threshold);
             return allCompleted ? 'completed' : 'progress';
         }
     }
@@ -305,7 +312,8 @@ export class SectionService {
         const previousMap = new Map(previousSubtopics.map(sub => [sub.id, sub]));
         const updatedSubtopicsWithDelta = updatedSubtopics.map(sub => ({
             ...sub,
-            delta: weekOffset !== 0 ? (sub.percent - (previousMap.get(sub.id)?.percent || 0)) : 0
+            percent: Math.min(100, sub.percent),
+            delta: weekOffset !== 0 ? (Math.min(100, sub.percent) - Math.min(100, previousMap.get(sub.id)?.percent || 0)) : 0
         }));
 
         const subtopicsGrouped = withSubtopics 
@@ -331,7 +339,11 @@ export class SectionService {
         );
 
         const topicPercentMap = new Map(
-            topicsWithCalculatedPercents.map(t => [t.id, t])
+            topicsWithCalculatedPercents.map(t => [t.id, {
+                ...t,
+                percent: Math.min(100, t.percent),
+                delta: Math.max(-100, Math.min(100, t.delta))
+            }])
         );
 
         const allTopics = topicsFromDB.map(topic => {
@@ -341,20 +353,25 @@ export class SectionService {
             let delta = 0;
 
             if (subtopics.length > 0) {
-                percent = subtopics.reduce((acc, s) => acc + s.percent, 0) / subtopics.length;
-                const nonZeroDeltas = subtopics.filter(s => s.delta !== 0);
-                delta = nonZeroDeltas.length
-                    ? nonZeroDeltas.reduce((acc, s) => acc + s.delta!, 0) / nonZeroDeltas.length
+                const totalPercent = subtopics.reduce((acc, s) => acc + Math.min(100, s.percent), 0);
+                percent = totalPercent / subtopics.length;
+                
+                const validDeltas = subtopics
+                    .filter(s => s.delta !== 0)
+                    .map(s => Math.max(-100, Math.min(100, s.delta ?? 0)));
+                
+                delta = validDeltas.length > 0 
+                    ? validDeltas.reduce((acc, d) => acc + d, 0) / validDeltas.length 
                     : 0;
             } else {
                 const calculated = topicPercentMap.get(topic.id);
                 if (calculated) {
-                    percent = calculated.percent;
-                    delta = calculated.delta;
+                    percent = Math.min(100, calculated.percent);
+                    delta = Math.max(-100, Math.min(100, calculated.delta));
                 }
             }
 
-            percent = Math.round(percent);
+            percent = Math.min(100, Math.ceil(percent));
             const deltaStatus: DeltaStatus = delta >= 0 ? 'completed' : 'error';
 
             return { 
@@ -378,10 +395,15 @@ export class SectionService {
                 const topics = topicsBySection[section.id] || [];
                 if (!topics.length) return null;
 
-                const percent = Math.round(topics.reduce((acc, t) => acc + t.percent, 0) / topics.length);
-                const nonZeroDeltas = topics.filter(t => t.delta !== 0);
-                const delta = nonZeroDeltas.length
-                    ? nonZeroDeltas.reduce((acc, t) => acc + t.delta!, 0) / nonZeroDeltas.length
+                const totalPercent = topics.reduce((acc, t) => acc + Math.min(100, t.percent), 0);
+                const percent = Math.min(100, Math.ceil(totalPercent / topics.length));
+                
+                const validDeltas = topics
+                    .filter(t => t.delta !== 0)
+                    .map(t => Math.max(-100, Math.min(100, t.delta ?? 0)));
+                
+                const delta = validDeltas.length > 0
+                    ? validDeltas.reduce((acc, d) => acc + d, 0) / validDeltas.length
                     : 0;
 
                 const allCompleted = topics.every(t => t.deltaStatus === 'completed');
@@ -405,7 +427,7 @@ export class SectionService {
         let sumPercentProgress = 0;
 
         sectionsWithStatus.forEach(section => {
-            const p = section.percent ?? 0;
+            const p = Math.min(100, section.percent ?? 0);
 
             if (section.blocked) {
                 sumPercentBlocked += p;
@@ -417,9 +439,9 @@ export class SectionService {
         });
 
         const maxPercent = totalSections * 100;
-        const percentBlocked = Math.round((sumPercentBlocked / maxPercent) * 100);
-        const percentCompleted = Math.round((sumPercentCompleted / maxPercent) * 100);
-        const percentProgress = Math.round((sumPercentProgress / maxPercent) * 100);
+        const percentBlocked = Math.ceil((sumPercentBlocked / maxPercent) * 100);
+        const percentCompleted = Math.ceil((sumPercentCompleted / maxPercent) * 100);
+        const percentProgress = Math.ceil((sumPercentProgress / maxPercent) * 100);
         const percentStarted = 100 - percentBlocked - percentCompleted - percentProgress;
 
         const totalPercent: Record<Status, number> = {
@@ -555,8 +577,8 @@ export class SectionService {
             for (const topic of topics) {
                 const nowSubs = subsNowByTopic[topic.id] || [];
                 const thenSubs = subsThenByTopic[topic.id] || [];
-                const closedNow = nowSubs.filter(sub => sub.percent >= subject.threshold);
-                const closedThen = thenSubs.filter(sub => sub.percent >= subject.threshold);
+                const closedNow = nowSubs.filter(sub => Math.min(100, sub.percent) >= subject.threshold);
+                const closedThen = thenSubs.filter(sub => Math.min(100, sub.percent) >= subject.threshold);
 
                 totalSubsNow += closedNow.length;
                 totalSubsThen += closedThen.length;
@@ -704,7 +726,6 @@ export class SectionService {
                             id: true,
                             topicId: true,
                             name: true,
-                            percent: true,
                             blocked: true,
                         },
                     });

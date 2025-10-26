@@ -59,7 +59,6 @@ model Topic {
   name                    String
   blocked                 Boolean     @default(false)
   literature              String      @default("")
-  percent                 Int         @default(0)
   sectionId               Int
   subjectId               Int
   createdAt               DateTime    @default(now())
@@ -91,7 +90,6 @@ model Subtopic {
   updatedAt  DateTime @updatedAt
   importance Int      @default(0)
   progresses SubtopicProgress[]
-  percent    Int      @default(0)
   section    Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
