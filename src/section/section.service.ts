@@ -136,15 +136,25 @@ export class SectionService {
 
     async calculateSubtopicsPercent(subjectId: number, weekOffset = 0) {
         const now = new Date();
-        const startOfRange = DateUtils.getMonday(now, weekOffset);
-        const endOfRange = DateUtils.getSunday(now, weekOffset);
+        
+        let endOfRange: Date;
+        
+        if (weekOffset === 0) {
+            endOfRange = new Date();
+            if (now.getDay() === 0) {
+                endOfRange.setHours(23, 59, 59, 999);
+            }
+        } else {
+            endOfRange = DateUtils.getSunday(now, weekOffset);
+            endOfRange.setHours(23, 59, 59, 999);
+        }
 
         const subtopics = await this.prismaService.subtopic.findMany({
             where: { subjectId },
             include: {
                 progresses: {
                     where: {
-                        updatedAt: { gte: startOfRange, lte: endOfRange },
+                        updatedAt: { lte: endOfRange },
                         task: { finished: true },
                     },
                     include: { task: { select: { id: true } } },
@@ -233,9 +243,21 @@ export class SectionService {
 
         const topicIds = topics.map(t => t.id);
         const now = new Date();
-        const endOfRange = DateUtils.getSunday(now, weekOffset);
-        const startOfRangePrevious = DateUtils.getMonday(now, weekOffset - 1);
+        
+        let endOfRange: Date;
+        
+        if (weekOffset === 0) {
+            endOfRange = new Date();
+            if (now.getDay() === 0) {
+                endOfRange.setHours(23, 59, 59, 999);
+            }
+        } else {
+            endOfRange = DateUtils.getSunday(now, weekOffset);
+            endOfRange.setHours(23, 59, 59, 999);
+        }
+
         const endOfRangePrevious = DateUtils.getSunday(now, weekOffset - 1);
+        endOfRangePrevious.setHours(23, 59, 59, 999);
 
         const [currentTasks, previousTasks] = await Promise.all([
             this.prismaService.task.findMany({
@@ -252,7 +274,7 @@ export class SectionService {
                     topicId: { in: topicIds },
                     finished: true,
                     parentTaskId: null,
-                    updatedAt: { gte: startOfRangePrevious, lte: endOfRangePrevious },
+                    updatedAt: { lte: endOfRangePrevious },
                 },
                 select: { topicId: true, percent: true },
             })
@@ -556,8 +578,22 @@ export class SectionService {
             });
 
             const now = new Date();
-            const startOfWeek = DateUtils.getMonday(now, weekOffset);
-            const endOfWeek = DateUtils.getSunday(now, weekOffset);
+            
+            let startOfRange: Date;
+            let endOfRange: Date;
+            
+            if (weekOffset === 0) {
+                startOfRange = DateUtils.getMonday(now, 0);
+                endOfRange = new Date();
+                if (now.getDay() === 0) {
+                    endOfRange = DateUtils.getSunday(now, 0);
+                    endOfRange.setHours(23, 59, 59, 999);
+                }
+            } else {
+                startOfRange = DateUtils.getMonday(now, weekOffset);
+                endOfRange = DateUtils.getSunday(now, weekOffset);
+                endOfRange.setHours(23, 59, 59, 999);
+            }
 
             const groupByTopic = (subs: any[]) =>
                 subs.reduce<Record<number, any[]>>((acc, sub) => {
@@ -593,8 +629,8 @@ export class SectionService {
             if (weekOffset === 0) {
                 predictionResult = await this.calculatePrediction(
                     now,
-                    startOfWeek,
-                    endOfWeek,
+                    startOfRange,
+                    endOfRange,
                     subjectId,
                     subject,
                     subtopicsNow,
@@ -606,7 +642,7 @@ export class SectionService {
                 where: {
                 finished: true,
                 parentTaskId: null,
-                updatedAt: { gte: startOfWeek, lte: endOfWeek },
+                updatedAt: { gte: startOfRange, lte: endOfRange },
                 topic: { subjectId },
                 },
             });
@@ -615,7 +651,7 @@ export class SectionService {
                 where: {
                 finished: true,
                 parentTaskId: null,
-                updatedAt: { gte: startOfWeek, lte: endOfWeek },
+                updatedAt: { gte: startOfRange, lte: endOfRange },
                 percent: { gte: subject.threshold },
                 topic: { subjectId },
                 },
@@ -628,8 +664,8 @@ export class SectionService {
                 solvedTasksCountCompleted,
                 closedSubtopicsCount: totalSubsNow - totalSubsThen,
                 closedTopicsCount: totalTopicsNow - totalTopicsThen,
-                startDateStr: formatDate(startOfWeek),
-                endDateStr: formatDate(endOfWeek),
+                startDateStr: formatDate(startOfRange),
+                endDateStr: formatDate(endOfRange),
                 weekLabel,
                 prediction: predictionResult,
             };
