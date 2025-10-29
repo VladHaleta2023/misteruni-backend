@@ -31,7 +31,9 @@ export class TopicService {
       }
 
       const section = await this.prismaService.section.findUnique({
-        where: { id: sectionId },
+        where: {
+          id: sectionId
+        },
       });
 
       if (!section) {
@@ -68,7 +70,7 @@ export class TopicService {
           ? subject.subQuestionsPrompt ?? null
           : section.subQuestionsPrompt;
 
-      const resolvedVocabluaryPrompt =
+      const resolvedStoriesPrompt =
         section.vocabluaryPrompt?.trim() === '' || !section.vocabluaryPrompt
           ? subject.vocabluaryPrompt ?? null
           : section.vocabluaryPrompt;
@@ -82,7 +84,7 @@ export class TopicService {
           answersPrompt: resolvedAnswersPrompt,
           closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
           subQuestionsPrompt: resolvedSubQuestionsPrompt,
-          vocabluaryPrompt: resolvedVocabluaryPrompt,
+          vocabluaryPrompt: resolvedStoriesPrompt,
           subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
           questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
           solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
@@ -127,7 +129,7 @@ export class TopicService {
               : topic.subQuestionsPrompt,
           vocabluaryPrompt:
             topic.vocabluaryPrompt?.trim() === '' || !topic.vocabluaryPrompt
-              ? resolvedVocabluaryPrompt
+              ? resolvedStoriesPrompt
               : topic.vocabluaryPrompt,
           subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
           questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
@@ -174,7 +176,9 @@ export class TopicService {
       }
 
       const section = await this.prismaService.section.findUnique({
-        where: { id: sectionId },
+        where: {
+          id: sectionId,
+        },
       });
 
       if (!section) {
@@ -211,7 +215,7 @@ export class TopicService {
           ? subject.subQuestionsPrompt ?? null
           : section.subQuestionsPrompt;
 
-      const resolvedVocabluaryPrompt =
+      const resolvedStoriesPrompt =
         section.vocabluaryPrompt?.trim() === '' || !section.vocabluaryPrompt
           ? subject.vocabluaryPrompt ?? null
           : section.vocabluaryPrompt;
@@ -225,7 +229,7 @@ export class TopicService {
           answersPrompt: resolvedAnswersPrompt,
           closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
           subQuestionsPrompt: resolvedSubQuestionsPrompt,
-          vocabluaryPrompt: resolvedVocabluaryPrompt,
+          vocabluaryPrompt: resolvedStoriesPrompt,
           subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
           questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
           solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
@@ -272,7 +276,7 @@ export class TopicService {
             : topic.subQuestionsPrompt,
         vocabluaryPrompt:
           topic.vocabluaryPrompt?.trim() === '' || !topic.vocabluaryPrompt
-            ? resolvedVocabluaryPrompt
+            ? resolvedStoriesPrompt
             : topic.vocabluaryPrompt,
         subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
         questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),

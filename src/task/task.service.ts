@@ -568,12 +568,14 @@ export class TaskService {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
 
-            const type: string = "Grammar";
-
             const topics = await this.prismaService.topic.findMany({
                 where: {
                     subjectId,
-                    section: { type }
+                    section: {
+                        type: {
+                            not: 'Stories',
+                        },
+                    }
                 },
                 include: {
                     subtopics: {
@@ -716,8 +718,6 @@ export class TaskService {
             if (!topic) {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
-
-            const type: string = "Grammar";
 
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;

@@ -394,7 +394,15 @@ export class SubjectService {
             }
 
             const sections = await this.prismaService.section.findMany({
-                where: { subjectId },
+                where: {
+                    subjectId,
+                    type: {
+                        not: 'Stories',
+                    },
+                },
+                orderBy: {
+                    partId: 'asc',
+                },
             });
 
             const sectionPromptMap = new Map<number, string>();
@@ -412,12 +420,20 @@ export class SubjectService {
 
             const topics = await this.prismaService.topic.findMany({
                 where: {
-                    section: { subjectId },
+                    section: {
+                        subjectId,
+                        type: {
+                            not: 'Stories',
+                        },
+                    },
                 },
                 include: {
                     section: withSections,
                     subtopics: withSubtopics,
                 },
+                orderBy: {
+                    partId: "asc"
+                }
             });
 
             const resolvedTopics = topics
@@ -455,7 +471,7 @@ export class SubjectService {
             return response;
 
         } catch (error) {
-            throw new InternalServerErrorException(`Nie udało się pobrać tematów: ${error}`);
+            throw new InternalServerErrorException(`Nie udało się pobrać tematów: ${error.message}`);
         }
     }
 
