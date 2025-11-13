@@ -88,7 +88,9 @@ export class OptionsController {
   }
 
   @Post('subtopics')
-  async createSubtopicsTransaction(@Body('subtopics') subtopics: Subtopic[]) {
+  async createSubtopicsTransaction(
+    @Body('subtopics') subtopics: Subtopic[]
+  ) {
     return this.optionsService.createSubtopicsTransaction(subtopics);
   }
 

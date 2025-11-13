@@ -55,12 +55,4 @@ export class SectionController {
   ) {
     return this.sectionService.updateSection(subjectId, id, data);
   }
-
-  @Post(':id/blocked')
-  async sectionBlocked(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Param('id', ParseIntPipe) id: number
-  ) {
-    return this.sectionService.sectionBlocked(subjectId, id);
-  }
 }

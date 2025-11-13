@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from '../subtopic/dto/subtopic-request.dto';
-import { SubtopicsAIGenerate } from './dto/subtopics-generate.dto';
+import { SubtopicsAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { Request } from 'express';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics/:topicId/subtopics')
@@ -33,6 +33,29 @@ export class SubtopicController {
 
     try {
       const result = await this.subtopicService.subtopicsAIGenerate(subjectId, sectionId, topicId, data);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @Post('topic-expansion-generate')
+  async topicExpansionAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Body() data: TopicExpansionAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+    
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.subtopicService.topicExpansionAIGenerate(subjectId, sectionId, topicId, data);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {

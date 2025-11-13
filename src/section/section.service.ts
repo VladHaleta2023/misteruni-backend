@@ -3,23 +3,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DateUtils } from '../scripts/dateUtils';
 import { SectionUpdateRequest } from '../section/dto/section-request.dto';
 
-type Status = 'blocked' | 'started' | 'progress' | 'completed';
+type Status = 'started' | 'progress' | 'completed';
 type DeltaStatus = 'completed' | 'error' | 'completed error';
 
 interface Subtopic extends Record<string, any> {
-    blocked: boolean;
     percent: number;
     status?: Status;
 }
 
 interface Topic extends Record<string, any> {
-    blocked: boolean;
     subtopics: Subtopic[];
     status?: Status;
 }
 
 interface Section extends Record<string, any> {
-    blocked: boolean;
     topics: Topic[];
     status?: Status;
 }
@@ -28,109 +25,25 @@ interface Section extends Record<string, any> {
 export class SectionService {
     constructor(private readonly prismaService: PrismaService) {}
 
-    private getStatus(percent: number, blocked: boolean, threshold: number): Status {
+    private getStatus(percent: number, threshold: number): Status {
         const safePercent = Math.min(100, percent); 
-        if (blocked) return 'blocked';
         if (safePercent === 0) return 'started';
-        if (safePercent < threshold) return 'progress';
-        return 'completed';
+        if (safePercent >= threshold) return 'completed';
+        return 'progress';
     }
 
     private calculateSectionsWithStatus(enrichedSections: any[], threshold: number) {
         return enrichedSections.map(section => {
-            const topics = section.topics || [];
-
-            const allCompleted = topics.length > 0 && topics.every(t => t.status === 'completed');
-            const allInProgress = topics.length > 0 && topics.every(t => t.status === 'progress');
-            const allStarted = topics.length > 0 && topics.every(t => t.status === 'started');
-            const allBlocked = topics.length > 0 && topics.every(t => t.status === 'blocked');
-            const anyCompleted = topics.some(t => t.status === 'completed');
-            const anyInProgress = topics.some(t => t.status === 'progress');
-            const anyStarted = topics.some(t => t.status === 'started');
-
             let status: Status = "started";
-            let process: Status = "started";
 
-            if (allBlocked) {
-                status = "blocked";
-                process = "blocked";
-            }
-            else if (allCompleted) {
-                status = "completed";
-                process = "completed";
-            }
-            else if (allInProgress) {
-                status = "progress";
-                process = "progress";
-            }
-            else if (allStarted) {
+            if (section.percent == 0)
                 status = "started";
-                process = "started";
-            }
-            else if (anyCompleted && anyInProgress) {
+            else if (section.percent >= threshold)
                 status = "completed";
-                process = "progress"
-            }
-            else if (anyCompleted && anyStarted) {
-                status = "completed";
-                process = "started"
-            }
-            else if (anyInProgress && anyStarted) {
+            else
                 status = "progress";
-                process = "started"
-            }
 
-            return { ...section, topics, status, process };
-        });
-    }
-
-    addStatusToSections(sections: Section[], threshold: number): Section[] {
-        return sections.map(section => {
-            const updatedTopics = section.topics.map(topic => {
-                if (topic.subtopics && topic.subtopics.length > 0) {
-                    const updatedSubtopics = topic.subtopics.map(subtopic => ({
-                        ...subtopic,
-                        status: this.getStatus(Math.min(100, subtopic.percent ?? 0), !!subtopic.blocked, threshold),
-                    }));
-
-                    const activeSubs = updatedSubtopics.filter(st => st.status !== 'blocked');
-                    const allCompleted = activeSubs.every(st => st.status === 'completed');
-                    const anyProgress = activeSubs.some(st => st.status === 'progress');
-                    const anyStarted = activeSubs.some(st => st.status === 'started');
-                    const anyCompleted = activeSubs.some(st => st.status === 'completed');
-
-                    let topicStatus: Status;
-                    if (topic.blocked || activeSubs.length === 0) topicStatus = 'blocked';
-                    else if (allCompleted) topicStatus = 'completed';
-                    else if (anyProgress || (anyStarted && anyCompleted)) topicStatus = 'progress';
-                    else topicStatus = 'started';
-
-                    return {
-                        ...topic,
-                        subtopics: updatedSubtopics,
-                        status: topicStatus
-                    };
-                }
-
-                return {
-                    ...topic,
-                    status: this.getStatus(Math.min(100, topic.percent ?? 0), !!topic.blocked, threshold),
-                };
-            });
-
-            const activeTopics = updatedTopics.filter(t => t.status !== 'blocked');
-            const allCompleted = activeTopics.every(t => t.status === 'completed');
-            const anyProgress = activeTopics.some(t => t.status === 'progress');
-            const anyStarted = activeTopics.some(t => t.status === 'started');
-            const anyCompleted = activeTopics.some(t => t.status === 'completed');
-
-            let sectionStatus: Status;
-            if (section.blocked || activeTopics.length === 0) sectionStatus = 'blocked';
-            else if (allCompleted) sectionStatus = 'completed';
-            else if (anyProgress || (anyStarted && anyCompleted)) sectionStatus = 'progress';
-            else sectionStatus = 'started';
-
-            return { ...section, topics: updatedTopics, status: sectionStatus };
+            return { ...section, status };
         });
     }
 
@@ -158,19 +71,34 @@ export class SectionService {
                         task: { finished: true },
                     },
                     include: { task: { select: { id: true } } },
+                    orderBy: { updatedAt: 'asc' },
                 },
             },
         });
 
         const updatedSubtopics = subtopics.map(subtopic => {
             const progresses = subtopic.progresses ?? [];
-            const percent =
-                progresses.length > 0
-                ? Math.min(
-                    100,
-                    Math.ceil(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
-                )
-                : 0;
+            
+            let percent = 0;
+            const alpha = 0.7;
+            
+            if (progresses.length > 0) {
+                const sortedProgresses = [...progresses].sort((a, b) => 
+                    new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+                );
+                
+                let emaValue: number | null = null;
+                for (const progress of sortedProgresses) {
+                    const currentPercent = Math.min(100, progress.percent);
+                    if (emaValue === null) {
+                        emaValue = currentPercent;
+                    } else {
+                        emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
+                    }
+                }
+                percent = Math.min(100, Math.ceil(emaValue!));
+            }
+            
             return { ...subtopic, percent };
         });
 
@@ -228,6 +156,7 @@ export class SectionService {
         }
 
         const resultDate = new Date(endOfWeekFullTime);
+
         if (prediction) {
             resultDate.setDate(resultDate.getDate() + Math.ceil(prediction));
             const dd = String(resultDate.getDate()).padStart(2, '0');
@@ -235,7 +164,82 @@ export class SectionService {
             const yyyy = resultDate.getFullYear();
             return `${dd}.${mm}.${yyyy}`;
         }
+
         return 'Infinity';
+    }
+
+    private async getUserJoinDate(subjectId: number): Promise<Date> {
+        const subject = await this.prismaService.subject.findFirst({
+            where: { id: subjectId },
+            select: { createdAt: true },
+            orderBy: { createdAt: 'asc' }
+        });
+        
+        return subject?.createdAt || new Date();
+    }
+
+    private async calculateInstantPrediction(
+        now: Date,
+        subjectId: number,
+        subject: any,
+        subtopicsNow: any[]
+    ): Promise<string> {
+        const importanceSum = await this.prismaService.subtopic.aggregate({
+            where: { subjectId },
+            _sum: { importance: true },
+        });
+
+        const totalImportance = (importanceSum._sum.importance ?? 0) * (subject.threshold / 100);
+
+        let currentImportance = 0;
+        for (const sub of subtopicsNow) {
+            currentImportance += sub.importance * Math.min(sub.percent ?? 0, 100) / 100;
+        }
+
+        const leftImportance = Math.max(0, totalImportance - currentImportance);
+
+        const userJoinDate = await this.getUserJoinDate(subjectId);
+        const daysSinceJoin = Math.floor((now.getTime() - userJoinDate.getTime()) / (1000 * 60 * 60 * 24));
+        const effectiveDays = Math.max(1, daysSinceJoin);
+
+        const avgDailySpeed = currentImportance / effectiveDays;
+
+        let prediction: number | undefined;
+        if (avgDailySpeed > 0) {
+            prediction = leftImportance / avgDailySpeed;
+            prediction = Math.max(3, prediction);
+        }
+
+        const resultDate = new Date(now);
+
+        if (prediction) {
+            resultDate.setDate(resultDate.getDate() + Math.ceil(prediction));
+            const dd = String(resultDate.getDate()).padStart(2, '0');
+            const mm = String(resultDate.getMonth() + 1).padStart(2, '0');
+            const yyyy = resultDate.getFullYear();
+            return `${dd}.${mm}.${yyyy}`;
+        }
+
+        return 'Infinity';
+    }
+
+    async calculateUniversalPrediction(
+        now: Date,
+        currentMonday: Date,
+        endOfWeek: Date,
+        subjectId: number,
+        subject: any,
+        subtopicsNow: any[],
+        subtopicsThen: any[]
+    ): Promise<string> {
+        const userJoinDate = await this.getUserJoinDate(subjectId);
+        const daysSinceJoin = Math.floor((now.getTime() - userJoinDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysSinceJoin < 14) {
+            return this.calculateInstantPrediction(now, subjectId, subject, subtopicsNow);
+        } else {
+            return this.calculatePrediction(now, currentMonday, endOfWeek, subjectId, subject, subtopicsNow, subtopicsThen);
+        }
     }
 
     private async batchCalculateTopicPercents(topics: any[], weekOffset: number) {
@@ -310,16 +314,13 @@ export class SectionService {
         });
     }
 
-    private calculateTopicStatus(subtopics: any[], percent: number, threshold: number): Status {
-        if (subtopics.length > 0 && subtopics.every(s => s.blocked)) {
-            return 'blocked';
-        } else if (percent === 0) {
+    private calculateTopicStatus(percent: number, threshold: number): Status {
+        if (percent === 0)
             return 'started';
-        } else {
-            const elements = subtopics.length > 0 ? subtopics : [{ percent }];
-            const allCompleted = elements.every(el => Math.min(100, el.percent ?? 0) >= threshold);
-            return allCompleted ? 'completed' : 'progress';
-        }
+        else if (percent >= threshold)
+            return 'completed';
+        else
+            return 'progress'
     }
 
     private async processSectionsWithTopics(
@@ -402,7 +403,7 @@ export class SectionService {
                 percent, 
                 delta, 
                 deltaStatus,
-                status: this.calculateTopicStatus(subtopics, percent, threshold)
+                status: this.calculateTopicStatus(percent, threshold)
             };
         });
 
@@ -445,29 +446,23 @@ export class SectionService {
     private calculateTotalPercent(sectionsWithStatus: any[]) {
         const totalSections = sectionsWithStatus.length || 1;
         let sumPercentCompleted = 0;
-        let sumPercentBlocked = 0;
         let sumPercentProgress = 0;
 
         sectionsWithStatus.forEach(section => {
             const p = Math.min(100, section.percent ?? 0);
 
-            if (section.blocked) {
-                sumPercentBlocked += p;
-            } else if (section.status === "completed" && section.process === "completed") {
+            if (section.status === "completed")
                 sumPercentCompleted += p;
-            } else if (section.status !== "started" || section.process !== "started") {
+            else if (section.status === "progress")
                 sumPercentProgress += p;
-            }
         });
 
         const maxPercent = totalSections * 100;
-        const percentBlocked = Math.ceil((sumPercentBlocked / maxPercent) * 100);
         const percentCompleted = Math.ceil((sumPercentCompleted / maxPercent) * 100);
         const percentProgress = Math.ceil((sumPercentProgress / maxPercent) * 100);
-        const percentStarted = 100 - percentBlocked - percentCompleted - percentProgress;
+        const percentStarted = 100 - percentCompleted - percentProgress;
 
         const totalPercent: Record<Status, number> = {
-            blocked: percentBlocked ?? 0,
             started: percentStarted ?? 0,
             progress: percentProgress ?? 0,
             completed: percentCompleted ?? 0,
@@ -525,6 +520,15 @@ export class SectionService {
                     weekOffset,
                     threshold
                 );
+
+                enrichedSections = enrichedSections.map(section => ({
+                    ...section,
+                    topics: section.topics.map(topic => ({
+                        ...topic,
+                        frequency: Math.ceil(topic.frequency - (topic.percent * topic.frequency / 100))
+                        //Math.ceil(((Math.pow(topic.frequency, 1.4) - ((topic.percent || 0) * (topic.frequency || 0) / 100))) / 5),
+                    }))
+                }));
             } else {
                 enrichedSections = sections.map(section => ({
                     ...section,
@@ -535,7 +539,7 @@ export class SectionService {
                 }));
             }
 
-            const sectionsWithStatus = this.calculateSectionsWithStatus(enrichedSections, threshold);
+            const sectionsWithStatus = this.calculateSectionsWithStatus(enrichedSections, subject.threshold);
             
             const [statistics, totalPercent] = await Promise.all([
                 this.calculateStatSections(subjectId, weekOffset, updatedSubtopics, previousSubtopics),
@@ -626,8 +630,9 @@ export class SectionService {
                 `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
 
             let predictionResult: string | null = null;
+
             if (weekOffset === 0) {
-                predictionResult = await this.calculatePrediction(
+                predictionResult = await this.calculateUniversalPrediction(
                     now,
                     startOfRange,
                     endOfRange,
@@ -640,20 +645,20 @@ export class SectionService {
 
             const solvedTasksCount = await this.prismaService.task.count({
                 where: {
-                finished: true,
-                parentTaskId: null,
-                updatedAt: { gte: startOfRange, lte: endOfRange },
-                topic: { subjectId },
+                    finished: true,
+                    parentTaskId: null,
+                    updatedAt: { gte: startOfRange, lte: endOfRange },
+                    topic: { subjectId },
                 },
             });
 
             const solvedTasksCountCompleted = await this.prismaService.task.count({
                 where: {
-                finished: true,
-                parentTaskId: null,
-                updatedAt: { gte: startOfRange, lte: endOfRange },
-                percent: { gte: subject.threshold },
-                topic: { subjectId },
+                    finished: true,
+                    parentTaskId: null,
+                    updatedAt: { gte: startOfRange, lte: endOfRange },
+                    percent: { gte: subject.threshold },
+                    topic: { subjectId },
                 },
             });
 
@@ -667,7 +672,7 @@ export class SectionService {
                 startDateStr: formatDate(startOfRange),
                 endDateStr: formatDate(endOfRange),
                 weekLabel,
-                prediction: predictionResult,
+                prediction: predictionResult
             };
         } catch {
             return {
@@ -679,6 +684,7 @@ export class SectionService {
                 endDateStr: '',
                 weekLabel: '',
                 prediction: null,
+                dayPrediction: null
             };
         }
     }
@@ -714,8 +720,12 @@ export class SectionService {
             const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
             const subQuestionsPromptOwn = Boolean(section.subQuestionsPrompt && section.subQuestionsPrompt.trim() !== "");
             const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
+            const topicExpansionPromptOwn = Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== "");
 
             const prompts = {
+                topicExpansionPrompt: topicExpansionPromptOwn ? section.topicExpansionPrompt.trim() : (subject.topicExpansionPrompt || ""),
+                topicExpansionPromptOwn: topicExpansionPromptOwn,
+
                 subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
                 subtopicsPromptOwn: subtopicsPromptOwn,
 
@@ -762,7 +772,6 @@ export class SectionService {
                             id: true,
                             topicId: true,
                             name: true,
-                            blocked: true,
                         },
                     });
 
@@ -853,75 +862,6 @@ export class SectionService {
                 message: 'Dział został pomyślnie zaktualizowany',
                 section: updatedSection,
             };
-        }
-        catch (error) {
-            throw new InternalServerErrorException('Błąd podczas aktualizacji dział');
-        }
-    }
-
-    async sectionBlocked(
-        subjectId: number,
-        id: number
-    ) {
-        try {
-            const existingSubject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
-            if (!existingSubject) {
-                return {
-                    statusCode: 404,
-                    message: `Przedmiot nie został znaleziony`,
-                };
-            }
-
-            const existingSection = await this.prismaService.section.findUnique({ where: { id } });
-            if (!existingSection) {
-                return {
-                    statusCode: 404,
-                    message: `Dział nie został znaleziony`,
-                };
-            }
-
-            if (existingSection.blocked) {
-                await this.prismaService.section.update({
-                    where: { id, subjectId },
-                    data: { blocked: false }
-                });
-
-                await this.prismaService.topic.updateMany({
-                    where: { sectionId: id, subjectId },
-                    data: { blocked: false }
-                });
-
-                await this.prismaService.subtopic.updateMany({
-                    where: { sectionId: id, subjectId },
-                    data: { blocked: false }
-                });
-
-                return {
-                    statusCode: 200,
-                    message: `Dział został pomyślnie odblokowany`,
-                };
-            }
-            else {
-                await this.prismaService.section.update({
-                    where: { id, subjectId },
-                    data: { blocked: true }
-                });
-
-                await this.prismaService.topic.updateMany({
-                    where: { sectionId: id, subjectId },
-                    data: { blocked: true }
-                });
-
-                await this.prismaService.subtopic.updateMany({
-                    where: { sectionId: id, subjectId },
-                    data: { blocked: true }
-                });
-
-                return {
-                    statusCode: 200,
-                    message: `Dział został pomyślnie zablokowany`,
-                };
-            }
         }
         catch (error) {
             throw new InternalServerErrorException('Błąd podczas aktualizacji dział');

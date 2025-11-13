@@ -41,12 +41,12 @@ export class TopicController {
     return this.topicService.updateTopic(subjectId, sectionId, id, data);
   }
 
-  @Post(":id/blocked")
-  async topicBlocked(
+  @Get(":id/words")
+  async findWords(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('id', ParseIntPipe) id: number
   ) {
-    return this.topicService.topicBlocked(subjectId, sectionId, id);
+    return this.topicService.findWords(subjectId, sectionId, id);
   }
 }

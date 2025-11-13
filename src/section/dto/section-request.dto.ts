@@ -35,5 +35,13 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  topicExpansionPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  difficulty?: string;
 }

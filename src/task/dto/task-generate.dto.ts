@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
 } from 'class-validator';
@@ -37,6 +38,13 @@ export class TaskAIGenerate {
 
   @IsString()
   note: string;
+
+  @IsString()
+  mode: string;
+
+  @IsOptional()
+  @IsNumber()
+  taskId?: number | null;
 
   @IsInt()
   @IsOptional()
@@ -85,9 +93,9 @@ export class InteractiveTaskAIGenerate {
   @IsString()
   text: string;
 
-  @IsInt()
+  @IsString()
   @IsOptional()
-  difficulty?: number;
+  difficulty?: string;
 
   @IsString()
   translate: string;
@@ -264,10 +272,6 @@ export class WordAIGenerate {
 
   @IsString()
   changed: string;
-
-  @IsString()
-  @IsOptional()
-  text?: string;
 
   @IsInt()
   attempt: number;

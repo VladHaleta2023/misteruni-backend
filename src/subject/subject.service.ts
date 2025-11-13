@@ -194,7 +194,8 @@ export class SubjectService {
                     answersPromptOwn: true,
                     closedSubtopicsPromptOwn: true,
                     subQuestionsPromptOwn: true,
-                    vocabluaryPromptOwn: true
+                    vocabluaryPromptOwn: true,
+                    topicExpansionPromptOwn: true
                 }
             };
         } catch (error) {
@@ -405,16 +406,23 @@ export class SubjectService {
                 },
             });
 
-            const sectionPromptMap = new Map<number, string>();
+            const sectionSubtopicsPromptMap = new Map<number, string>();
+            const sectionTopicExpansionPromptMap = new Map<number, string>();
             const sectionPartIdMap = new Map<number, number>();
 
             for (const section of sections) {
-                const resolvedPrompt =
+                const resolvedSubtopicsPrompt =
                     !section.subtopicsPrompt || section.subtopicsPrompt.trim() === ''
                         ? subject.subtopicsPrompt ?? null
                         : section.subtopicsPrompt;
 
-                sectionPromptMap.set(section.id, resolvedPrompt);
+                const resolvedTopicExpansionPrompt =
+                    !section.topicExpansionPrompt || section.topicExpansionPrompt.trim() === ''
+                        ? subject.topicExpansionPrompt ?? null
+                        : section.topicExpansionPrompt;
+
+                sectionSubtopicsPromptMap.set(section.id, resolvedSubtopicsPrompt);
+                sectionTopicExpansionPromptMap.set(section.id, resolvedTopicExpansionPrompt);
                 sectionPartIdMap.set(section.id, section.partId);
             }
 
@@ -432,19 +440,21 @@ export class SubjectService {
                     subtopics: withSubtopics,
                 },
                 orderBy: {
-                    partId: "asc"
-                }
+                    partId: 'asc',
+                },
             });
 
             const resolvedTopics = topics
                 .map(topic => {
                     const sectionId = topic.sectionId;
-                    const subtopicsPrompt = sectionPromptMap.get(sectionId) ?? null;
+                    const subtopicsPrompt = sectionSubtopicsPromptMap.get(sectionId) ?? null;
+                    const topicExpansionPrompt = sectionTopicExpansionPromptMap.get(sectionId) ?? null;
                     const sectionPartId = sectionPartIdMap.get(sectionId) ?? 0;
 
                     const result = {
                         ...topic,
                         subtopicsPrompt,
+                        topicExpansionPrompt,
                         _sectionPartId: sectionPartId,
                     };
 
@@ -597,7 +607,7 @@ export class SubjectService {
             return {
                 statusCode: 200,
                 message: 'Pobrano listę zadań pomyślnie',
-                elements: groupedTasks,
+                elements: groupedTasks
             };
         } catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać listę zadań');

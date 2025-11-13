@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Word" ADD COLUMN     "streakCorrectCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalAttemptCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalCorrectCount" INTEGER NOT NULL DEFAULT 0;

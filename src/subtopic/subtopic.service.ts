@@ -1,14 +1,14 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from '../subtopic/dto/subtopic-request.dto';
-import { SubtopicsAIGenerate } from './dto/subtopics-generate.dto';
+import { SubtopicsAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { DateUtils } from '../scripts/dateUtils';
 
-type Status = 'blocked' | 'started' | 'progress' | 'completed';
+type Status = 'started' | 'progress' | 'completed';
 
 @Injectable()
 export class SubtopicService {
@@ -47,9 +47,11 @@ export class SubtopicService {
             interface SubtopicWithProgress {
                 id: number;
                 name: string;
-                blocked: boolean;
                 importance: number;
-                progresses: { percent: number }[];
+                progresses: {
+                    percent: number;
+                    updatedAt: Date;
+                }[];
                 percent?: number;
                 status?: Status;
             }
@@ -59,34 +61,50 @@ export class SubtopicService {
                 orderBy: { name: 'asc' },
                 select: { 
                     id: true, 
-                    name: true, 
-                    blocked: true, 
+                    name: true,
                     importance: true,
                     progresses: {
+                        where: {
+                            task: { finished: true }
+                        },
                         select: {
-                            percent: true
-                        }
+                            percent: true,
+                            updatedAt: true,
+                        },
+                        orderBy: { updatedAt: 'asc' }
                     }
                 }
             });
 
             subtopics = subtopics.map(sub => {
                 const progresses = sub.progresses;
-                const avgPercent =
-                    progresses.length > 0
-                        ? Math.min(Math.round(progresses.reduce((sum, p) => sum + (p.percent ?? 0), 0) / progresses.length), 100)
-                        : 0;
-
+                
+                let percent = 0;
+                const alpha = 0.7;
+                
+                if (progresses.length > 0) {
+                    let emaValue: number | null = null;
+                    for (const progress of progresses) {
+                        const currentPercent = Math.min(100, progress.percent);
+                        if (emaValue === null) {
+                            emaValue = currentPercent;
+                        } else {
+                            emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
+                        }
+                    }
+                    percent = Math.min(100, Math.ceil(emaValue!));
+                }
+                
                 return {
                     ...sub,
-                    percent: avgPercent
+                    percent
                 };
             });
 
             if (subtopics.length === 0) {
                 const topic = await this.prismaService.topic.findUnique({
                     where: { id: topicId },
-                    select: { id: true, name: true, blocked: true }
+                    select: { id: true, name: true }
                 });
 
                 if (!topic) {
@@ -96,19 +114,17 @@ export class SubtopicService {
                 subtopics = [{
                     id: topic.id,
                     name: topic.name,
-                    blocked: topic.blocked,
                     importance: 0,
                     progresses: [],
                     percent: 0
-                }];
+                } as SubtopicWithProgress];
             }
 
             const updatedSubtopics = subtopics.map(sub => {
                 const pct = sub.percent ?? 0;
                 let status: Status;
 
-                if (sub.blocked) status = 'blocked';
-                else if (pct === 0) status = 'started';
+                if (pct === 0) status = 'started';
                 else if (pct < subject.threshold) status = 'progress';
                 else status = 'completed';
 
@@ -118,36 +134,29 @@ export class SubtopicService {
             const totalSubtopics = updatedSubtopics.length || 1;
 
             let sumPercentCompleted = 0;
-            let sumPercentBlocked = 0;
             let sumPercentProgress = 0;
 
             updatedSubtopics.forEach(sub => {
                 const p = sub.percent ?? 0;
-                if (sub.status == "blocked") {
-                    sumPercentBlocked += p;
-                } else if (sub.status == "completed") {
+                if (sub.status == "completed")
                     sumPercentCompleted += p;
-                } else if (sub.status == "progress") {
+                else if (sub.status == "progress")
                     sumPercentProgress += p;
-                }
             });
 
             const maxPercent = totalSubtopics * 100;
 
-            const percentBlocked = Math.min(Math.round((sumPercentBlocked / maxPercent) * 100), 100);
-            const percentCompleted = Math.min(Math.round((sumPercentCompleted / maxPercent) * 100), 100);
-            const percentProgress = Math.min(Math.round((sumPercentProgress / maxPercent) * 100), 100);
-            const percentStarted = Math.max(Math.min(100 - percentBlocked - percentCompleted - percentProgress, 100), 0);
+            const percentCompleted = Math.min(Math.ceil((sumPercentCompleted / maxPercent) * 100), 100);
+            const percentProgress = Math.min(Math.ceil((sumPercentProgress / maxPercent) * 100), 100);
+            const percentStarted = Math.max(Math.min(100 - percentCompleted - percentProgress, 100), 0);
 
             const totalPercentByStatus: Record<Status, number> = {
-                blocked: percentBlocked ?? 0,
                 started: percentStarted ?? 0,
                 progress: percentProgress ?? 0,
                 completed: percentCompleted ?? 0,
             };
 
             if (
-                totalPercentByStatus.blocked === 0 &&
                 totalPercentByStatus.started === 0 &&
                 totalPercentByStatus.progress === 0 &&
                 totalPercentByStatus.completed === 0
@@ -187,8 +196,7 @@ export class SubtopicService {
             });
 
             let weekLabel = "bieżący";
-            if (weekOffset < 0)
-                weekLabel = `${weekOffset} tydz.`;
+            if (weekOffset < 0) weekLabel = `${weekOffset} tydz.`;
 
             const formatDate = (date: Date) => {
                 const dd = String(date.getDate()).padStart(2, '0');
@@ -489,6 +497,7 @@ export class SubtopicService {
                 skipDuplicates: true,
             });
 
+            console.log(`Updated: ${topic.name}`);
 
             return {
                 statusCode: 201,
@@ -626,6 +635,7 @@ export class SubtopicService {
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
                 Array.isArray(item) &&
@@ -652,7 +662,8 @@ export class SubtopicService {
                 !r?.topic ||
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
-                typeof r.attempt !== 'number'
+                typeof r.attempt !== 'number' ||
+                typeof r.literature !== 'string'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
@@ -673,6 +684,84 @@ export class SubtopicService {
             return {
                 statusCode: 201,
                 message: "Generacja treści zadania udana",
+                ...r
+            };
+        } catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    async topicExpansionAIGenerate(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        data: TopicExpansionAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/topic-expansion-generate`;
+
+        try {
+            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const subtopics = await this.prismaService.subtopic.findMany({
+                where: { topicId: topicId },
+                select: { name: true },
+            });
+
+            const subtopicNames: string[] = subtopics.map(sub => sub.name);
+
+            data.subject = data.subject ?? subject.name;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
+            data.note = data.note ?? topic.note;
+            data.subtopics = data.subtopics ?? subtopicNames;
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                !r?.prompt ||
+                !r?.changed ||
+                !r?.subject ||
+                !r?.section ||
+                !r?.topic ||
+                !Array.isArray(r.subtopics) ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number' ||
+                typeof r.literature !== 'string' ||
+                typeof r.note !== 'string'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.subtopics.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Subtopics musi być listą stringów');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja właściwości tematu udana",
                 ...r
             };
         } catch (error) {

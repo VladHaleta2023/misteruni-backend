@@ -198,6 +198,29 @@ export class TaskController {
     }
   }
 
+  @Post('words-generate-selected')
+  async wordsSelectedAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Body() data: WordAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.wordsAIGenerate(subjectId, sectionId, topicId, null, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
   @Post('interactive-task-generate')
   async interactiveTaskAIGenerate(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -450,7 +473,7 @@ export class TaskController {
   }
 
   @Get(':id/words')
-  async findWords(
+  async fetchWords(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
@@ -462,7 +485,41 @@ export class TaskController {
     req.on('close', () => controller.abort());
 
     try {
-      const result = await this.taskService.findWords(subjectId, sectionId, topicId, id);
+      const result = await this.taskService.findWords(
+        subjectId,
+        sectionId,
+        topicId,
+        id
+      );
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @Post('words/find')
+  async findWords(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Req() req: Request,
+    @Body('wordIds') wordIds?: number[],
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.findWords(
+        subjectId,
+        sectionId,
+        topicId,
+        null,
+        wordIds
+      );
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -496,13 +553,12 @@ export class TaskController {
     }
   }
 
-  @Delete(':id/words/:wordId')
+  @Delete('words/:id')
   async deleteWord(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Param('wordId', ParseIntPipe) wordId: number,
     @Req() req: Request
   ) {
     const controller = new AbortController();
@@ -510,7 +566,7 @@ export class TaskController {
     req.on('close', () => controller.abort());
 
     try {
-      const result = await this.taskService.deleteWord(subjectId, sectionId, topicId, id, wordId);
+      const result = await this.taskService.deleteWord(subjectId, sectionId, topicId, id);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -520,6 +576,36 @@ export class TaskController {
     }
   }
 
+  @Put('words/update-selected')
+  async updateSelectedWords(
+      @Param('subjectId', ParseIntPipe) subjectId: number,
+      @Param('sectionId', ParseIntPipe) sectionId: number,
+      @Param('topicId', ParseIntPipe) topicId: number,
+      @Body('outputWords') outputWords: string[],
+      @Body('wordIds') wordIds: number[],
+      @Req() req: Request
+  ) {
+      const controller = new AbortController();
+      req.on('close', () => controller.abort());
+
+      try {
+          const result = await this.taskService.updateWords(
+              subjectId,
+              sectionId,
+              topicId,
+              undefined,
+              outputWords,
+              wordIds
+          );
+          return result;
+      } catch (error) {
+          if (error.name === 'AbortError') {
+              throw new HttpException('Client aborted', 499);
+          }
+          throw error;
+      }
+  }
+
   @Put(':id/words')
   async updateWords(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -527,15 +613,22 @@ export class TaskController {
     @Param('topicId', ParseIntPipe) topicId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body('outputWords') outputWords: string[],
-    @Body('outputText') outputText: string,
-    @Req() req: Request
+    @Req() req: Request,
+    @Body('wordIds') wordIds?: number[],
   ) {
     const controller = new AbortController();
 
     req.on('close', () => controller.abort());
 
     try {
-      const result = await this.taskService.updateWords(subjectId, sectionId, topicId, id, outputWords, outputText);
+      const result = await this.taskService.updateWords(
+        subjectId,
+        sectionId,
+        topicId,
+        id,
+        outputWords,
+        wordIds
+      );
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {

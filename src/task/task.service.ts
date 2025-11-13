@@ -8,6 +8,7 @@ import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequ
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { DateUtils } from '../scripts/dateUtils';
+import { Word, Task } from '@prisma/client';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -89,17 +90,22 @@ export class TaskService {
 
             const now = new Date();
 
-            const startOfWeek = DateUtils.getMonday(now, weekOffset);
-            const endOfWeek = DateUtils.getSunday(now, weekOffset);
+            let dateFilter: any = undefined;
+
+            if (weekOffset !== 0) {
+                const startOfWeek = DateUtils.getMonday(now, weekOffset);
+                const endOfWeek = DateUtils.getSunday(now, weekOffset);
+                dateFilter = {
+                    gte: startOfWeek,
+                    lte: endOfWeek,
+                };
+            }
 
             const tasks = await this.prismaService.task.findMany({
                 where: {
                     topicId,
                     parentTaskId: null,
-                    updatedAt: {
-                        gte: startOfWeek,
-                        lte: endOfWeek,
-                    },
+                    ...(dateFilter ? { updatedAt: dateFilter } : {}),
                 },
                 orderBy: [
                     { updatedAt: 'desc' },
@@ -119,7 +125,7 @@ export class TaskService {
                         status = 'completed';
                     }
 
-                    const wordsFinished = await this.prismaService.word.findMany({
+                    const wordsUnfinished = await this.prismaService.word.findMany({
                         where: {
                             taskId: task.id,
                             finished: false
@@ -132,17 +138,13 @@ export class TaskService {
                         }
                     });
 
-                    let vocabluary = false;
-                    const wordsCount = words.length;
-
-                    if (wordsFinished.length !== 0)
-                        vocabluary = true
+                    const vocabluary = words.length > 0 && words.every(word => word.streakCorrectCount >= 3);
 
                     return {
                         ...task,
                         status,
-                        vocabluary,
-                        wordsCount,
+                        vocabluary: vocabluary,
+                        wordsCount: words.length,
                         topic: {
                             id: topic.id,
                             name: topic.name,
@@ -171,11 +173,7 @@ export class TaskService {
             const groupedTasks = Object.entries(groupedTasksMap).map(([dateKey, tasks]) => {
                 const [day, month, year] = dateKey.split('-');
                 return {
-                    date: {
-                        day,
-                        month,
-                        year
-                    },
+                    date: { day, month, year },
                     tasks,
                 };
             });
@@ -184,9 +182,11 @@ export class TaskService {
                 statusCode: 200,
                 message: 'Pobrano listę zadań pomyślnie',
                 elements: groupedTasks,
+                topic: topic
             };
+
         } catch (error) {
-            throw new InternalServerErrorException('Nie udało się pobrać listę zadań');
+            throw new InternalServerErrorException('Nie udało się pobrać listy zadań');
         }
     }
 
@@ -265,6 +265,7 @@ export class TaskService {
 
             const taskWithSubtopics = {
                 ...taskData,
+                topicNote: topic.note,
                 status: status,
                 subtopics: taskSubtopics,
                 audioFiles: audioFiles.map(f => f.url),
@@ -365,6 +366,7 @@ export class TaskService {
             const { progresses, subTasks, audioFiles, ...taskData } = task;
             const taskWithSubtopicsAndUrls = {
                 ...taskData,
+                topicNote: topic.note,
                 status: status,
                 subtopics: taskSubtopics,
                 audioFiles: audioFiles.map(f => f.url),
@@ -392,58 +394,72 @@ export class TaskService {
         signal?: AbortSignal
     ) {
         const url = `${this.fastapiUrl}/admin/task-generate`;
-        
+
         try {
             const subject = await this.prismaService.subject.findUnique({
                 where: { id: subjectId },
             });
-
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
             const section = await this.prismaService.section.findUnique({
                 where: { id: sectionId },
             });
-
-            if (!section) {
-                throw new BadRequestException('Dział nie został znaleziony');
-            }
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
 
             const topic = await this.prismaService.topic.findUnique({
                 where: { id: topicId },
             });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            if (!topic) {
-                throw new BadRequestException('Temat nie został znaleziony');
-            }
+            let subtopicsWithAvg: { name: string; percent: number }[] = [];
 
-            const subtopics = await this.prismaService.subtopic.findMany({
-                where: { topicId },
-                include: {
-                    progresses: {
-                        select: {
-                            percent: true
-                        }
-                    }
+            if (data.mode === "strict" && data.taskId) {
+                const existingTask = await this.prismaService.task.findUnique({
+                    where: { id: data.taskId },
+                    include: {
+                        progresses: {
+                            include: {
+                                subtopic: {
+                                    include: {
+                                        progresses: {
+                                            select: { percent: true },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                });
+
+                if (!existingTask) {
+                    throw new BadRequestException('Zadanie o podanym taskId nie zostało znalezione');
                 }
-            });
 
-            const subtopicsWithAvg = subtopics.map(subtopic => {
-                const avgPercent = subtopic.progresses.length > 0 
-                    ? subtopic.progresses.reduce((sum, p) => sum + p.percent, 0) / subtopic.progresses.length
-                    : 0;
-                
-                return {
-                    name: subtopic.name,
-                    percent: avgPercent
-                };
-            });
+                subtopicsWithAvg = existingTask.progresses.map(p => {
+                    const s = p.subtopic;
+                    const avgPercent = s.progresses.length > 0
+                        ? s.progresses.reduce((sum, pr) => sum + pr.percent, 0) / s.progresses.length
+                        : 0;
+                    return { name: s.name, percent: avgPercent };
+                });
+            }
+            else {
+                const subtopics = await this.prismaService.subtopic.findMany({
+                    where: { topicId },
+                    include: {
+                        progresses: {
+                            select: { percent: true },
+                        },
+                    },
+                });
 
-            data.subject = data.subject ?? subject.name;
-            data.section = data.section ?? section.name;
-            data.topic = data.topic ?? topic.name;
-            data.literature = data.literature ?? topic.literature;
+                subtopicsWithAvg = subtopics.map(subtopic => {
+                    const avgPercent = subtopic.progresses.length > 0
+                        ? subtopic.progresses.reduce((sum, p) => sum + p.percent, 0) / subtopic.progresses.length
+                        : 0;
+                    return { name: subtopic.name, percent: avgPercent };
+                });
+            }
 
             let filtered = subtopicsWithAvg
                 .filter(s => s.percent < (data.threshold ?? subject.threshold))
@@ -454,8 +470,10 @@ export class TaskService {
             }
 
             data.subtopics = filtered;
-
-            data.subtopics = data.subtopics ?? subtopicsWithAvg.map(s => [s.name, s.percent]);
+            data.subject = data.subject ?? subject.name;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
             data.difficulty = data.difficulty ?? subject.difficulty;
             data.threshold = data.threshold ?? subject.threshold;
 
@@ -465,7 +483,7 @@ export class TaskService {
                     : section.questionPrompt?.trim()
                     ? section.questionPrompt
                     : subject.questionPrompt ?? null;
-            
+
             data.prompt = resolvedQuestionPrompt;
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
@@ -491,6 +509,7 @@ export class TaskService {
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||
+                typeof r.mode !== 'string' ||
                 typeof r.literature !== 'string' ||
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
@@ -502,30 +521,12 @@ export class TaskService {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
 
-            if (!r.subtopics.every((item: any) =>
-                Array.isArray(item) &&
-                item.length === 2 &&
-                typeof item[0] === 'string' &&
-                typeof item[1] === 'number'
-            )) {
-                throw new BadRequestException('Subtopics musi być listą par [string, number]');
-            }
-
-            if (!r.errors.every((item: any) => typeof item === 'string')) {
-                throw new BadRequestException('Errors musi być listą stringów');
-            }
-
-            if (!r.outputSubtopics.every((item: any) => typeof item === 'string')) {
-                throw new BadRequestException('OutputSubtopics musi być listą stringów');
-            }
-
             return {
                 statusCode: 201,
                 message: "Generacja tekstu zadania udane",
-                ...r
+                ...r,
             };
-        }
-        catch (error) {
+        } catch (error) {
             if (error.response && error.response.data) {
                 const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
                 throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -542,86 +543,91 @@ export class TaskService {
         signal?: AbortSignal
     ) {
         const url = `${this.fastapiUrl}/admin/interactive-task-generate`;
-        
+
         try {
-            const subject = await this.prismaService.subject.findUnique({
-                where: { id: subjectId },
-            });
+            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
+            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
 
-            const section = await this.prismaService.section.findUnique({
-                where: { id: sectionId },
-            });
-
-            if (!section) {
-                throw new BadRequestException('Dział nie został znaleziony');
-            }
-
-            const topic = await this.prismaService.topic.findUnique({
-                where: { id: topicId },
-            });
-
-            if (!topic) {
-                throw new BadRequestException('Temat nie został znaleziony');
-            }
+            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
             const topics = await this.prismaService.topic.findMany({
                 where: {
                     subjectId,
-                    section: {
-                        type: {
-                            not: 'Stories',
-                        },
-                    }
+                    section: { type: { not: 'Stories' } },
                 },
                 include: {
                     subtopics: {
                         include: {
                             progresses: {
-                                select: {
-                                    percent: true
-                                }
+                                where: { task: { finished: true } },
+                                select: { percent: true, updatedAt: true },
+                                orderBy: { updatedAt: 'asc' },
+                            },
+                        },
+                    },
+                },
+            });
+
+            const alpha = 0.7;
+
+            const topicsWithStatus = topics.map(topic => {
+                const subtopicsWithPercentAndStatus = topic.subtopics.map(subtopic => {
+                    const progresses = subtopic.progresses;
+
+                    let percent = 0;
+                    if (progresses.length > 0) {
+                        let emaValue: number | null = null;
+                        for (const progress of progresses) {
+                            const currentPercent = Math.min(100, Number(progress.percent));
+                            if (emaValue === null) {
+                                emaValue = currentPercent;
+                            } else {
+                                emaValue = emaValue * (1 - alpha) + currentPercent * alpha;
                             }
                         }
+                        percent = Math.min(100, Math.ceil(emaValue!));
                     }
-                }
-            });
 
-            const topicsWithAverage = topics.map(topic => {
-                const subtopicAverages = topic.subtopics.map(subtopic => {
-                    const progresses = subtopic.progresses.map(p => p.percent);
-                    return progresses.length > 0
-                        ? progresses.reduce((sum, progress) => sum + progress, 0) / progresses.length
-                        : 0;
+                    let status: 'started' | 'progress' | 'completed';
+                    if (percent === 0) {
+                        status = 'started';
+                    } else if (percent < Number(subject.threshold)) {
+                        status = 'progress';
+                    } else {
+                        status = 'completed';
+                    }
+
+                    return { ...subtopic, percent, status };
                 });
 
-                const avgPercent = subtopicAverages.length > 0
-                    ? subtopicAverages.reduce((sum, avg) => sum + avg, 0) / subtopicAverages.length
-                    : 0;
+                const completed = subtopicsWithPercentAndStatus.length > 0 && subtopicsWithPercentAndStatus.every(st => st.status === 'completed');
 
                 return {
-                    name: topic.name,
-                    percent: Math.round(avgPercent)
+                    ...topic,
+                    completed,
+                    subtopics: subtopicsWithPercentAndStatus,
                 };
             });
+
+            const completedTopics = topicsWithStatus.filter(t => t.completed);
+
+            const topicsForData: [string, number][] = completedTopics.map(t => [
+                t.name,
+                Math.max(...t.subtopics.map(st => st.percent))
+            ]);
 
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
-            data.subtopics = data.subtopics ?? topicsWithAverage
-                .sort((a, b) => b.percent - a.percent)
-                .map(s => [s.name, s.percent]);
-            data.difficulty = data.difficulty ?? subject.difficulty;
+            data.subtopics = data.subtopics ?? topicsForData.sort((a, b) => b[1] - a[1]);
+            data.difficulty = data.difficulty ?? section.difficulty;
 
             const resolvedQuestionPrompt =
-                topic.questionPrompt?.trim()
-                    ? topic.questionPrompt
-                    : section.questionPrompt?.trim()
-                    ? section.questionPrompt
-                    : subject.questionPrompt ?? null;
+                (topic.questionPrompt?.trim() || section.questionPrompt?.trim() || subject.questionPrompt) ?? null;
 
             data.prompt = resolvedQuestionPrompt;
 
@@ -675,8 +681,8 @@ export class TaskService {
                 message: "Generacja tekstu zadania udane",
                 ...r
             };
-        }
-        catch (error) {
+
+        } catch (error) {
             if (error.response && error.response.data) {
                 const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
                 throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -1134,7 +1140,7 @@ export class TaskService {
 
                             await prismaClient.subtopicProgress.create({
                                 data: {
-                                    percent: 100,
+                                    percent: 0,
                                     subtopicId: subtopic.id,
                                     taskId
                                 }
@@ -1184,7 +1190,7 @@ export class TaskService {
 
                             await prismaClient.subtopicProgress.create({
                                 data: {
-                                    percent: 100,
+                                    percent: 0,
                                     subtopicId: subtopic.id,
                                     taskId
                                 }
@@ -1290,7 +1296,7 @@ export class TaskService {
 
                             await prismaClient.subtopicProgress.create({
                                 data: {
-                                    percent: 100,
+                                    percent: 0,
                                     subtopicId: subtopic.id,
                                     taskId
                                 }
@@ -1641,49 +1647,50 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
-        id: number
+        id: number | null | undefined,
+        wordIds?: number[]
     ) {
         try {
-            const subject = await this.prismaService.subject.findUnique({
-                where: { id: subjectId },
-            });
+            const [subject, section, topic] = await Promise.all([
+                this.prismaService.subject.findUnique({ where: { id: subjectId } }),
+                this.prismaService.section.findUnique({ where: { id: sectionId } }),
+                this.prismaService.topic.findUnique({ where: { id: topicId } }),
+            ]);
 
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
-
-            const section = await this.prismaService.section.findUnique({
-                where: { id: sectionId },
-            });
-
             if (!section) throw new BadRequestException('Dział nie został znaleziony');
-
-            const topic = await this.prismaService.topic.findUnique({
-                where: { id: topicId },
-            });
-
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            const task = await this.prismaService.task.findUnique({
-                where: { id },
-            });
+            let words: Word[] = [];
+            let task: Task | null = null;
 
-            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
+            if (id) {
+                task = await this.prismaService.task.findUnique({ where: { id } });
+                if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
 
-            const words = await this.prismaService.word.findMany({
-                where: {
-                    taskId: id
-                },
-                orderBy: [
-                    { finished: "desc" }
-                ]
-            });
+                words = await this.prismaService.word.findMany({
+                    where: { taskId: id }
+                });
+            } else if (Array.isArray(wordIds) && wordIds.length > 0) {
+                words = await this.prismaService.word.findMany({
+                    where: { id: { in: wordIds } }
+                });
+
+                if (words.length === 0) {
+                    throw new BadRequestException('Nie znaleziono słów dla podanych ID');
+                }
+            } else {
+                throw new BadRequestException('Brak identyfikatora zadania lub listy ID słów');
+            }
 
             return {
                 statusCode: 200,
                 message: 'Pobranie słów lub wyrazów udane',
                 words,
-                task
+                task,
             };
         } catch (error) {
+            console.error(error);
             throw new InternalServerErrorException('Nie udało się pobrać słów lub wyrazów');
         }
     }
@@ -1720,6 +1727,8 @@ export class TaskService {
 
             if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
 
+            text = text.toLocaleLowerCase();
+
             const existingWord = await this.prismaService.word.findUnique({
                 where: { text },
             });
@@ -1755,54 +1764,67 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
-        id: number,
-        outputWords: string[],
-        outputText: string
+        id: number | null | undefined,
+        outputWords: string[] = [],
+        wordIds?: number[]
     ) {
         try {
-            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            const [subject, section, topic] = await Promise.all([
+                this.prismaService.subject.findUnique({ where: { id: subjectId } }),
+                this.prismaService.section.findUnique({ where: { id: sectionId } }),
+                this.prismaService.topic.findUnique({ where: { id: topicId } }),
+            ]);
+
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
-
-            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
             if (!section) throw new BadRequestException('Dział nie został znaleziony');
-
-            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            const task = await this.prismaService.task.findUnique({ where: { id } });
-            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
+            let task: Task | null = null;
+            let words: Word[] = [];
 
-            await this.prismaService.task.update({
-                where: { id },
-                data: { wordsDescription: outputText },
-            });
+            if (id) {
+                task = await this.prismaService.task.findUnique({ where: { id } });
+                if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
 
-            if (outputWords.length > 0) {
-                await this.prismaService.word.updateMany({
-                    where: {
-                        taskId: id,
-                        text: { in: outputWords },
-                    },
-                    data: { finished: false },
-                });
-
-                await this.prismaService.word.updateMany({
-                    where: {
-                        taskId: id,
-                        NOT: { text: { in: outputWords } },
-                    },
-                    data: { finished: true },
-                });
-            } else {
-                await this.prismaService.word.updateMany({
+                words = await this.prismaService.word.findMany({
                     where: { taskId: id },
-                    data: { finished: true },
+                });
+            } else if (Array.isArray(wordIds) && wordIds.length > 0) {
+                words = await this.prismaService.word.findMany({
+                    where: { id: { in: wordIds } },
+                });
+
+                if (words.length === 0) {
+                    throw new BadRequestException('Nie znaleziono słów dla podanych ID');
+                }
+            } else {
+                throw new BadRequestException('Brak identyfikatora zadania lub listy ID słów');
+            }
+
+            for (const word of words) {
+                const isProblematic = outputWords.includes(word.text);
+                
+                await this.prismaService.word.update({
+                    where: { id: word.id },
+                    data: {
+                        finished: !isProblematic,
+                        totalAttemptCount: { increment: 1 },
+                        totalCorrectCount: !isProblematic ? { increment: 1 } : undefined,
+                        streakCorrectCount: isProblematic ? 0 : { increment: 1 },
+                    },
                 });
             }
+
+            const updatedWords = await this.prismaService.word.findMany({
+                where: id ? { taskId: id } : { id: { in: wordIds } },
+                orderBy: [{ finished: 'desc' }],
+            });
 
             return {
                 statusCode: 200,
                 message: 'Wyrazy zostały zaktualizowane pomyślnie',
+                task,
+                words: updatedWords,
             };
         } catch (error) {
             console.error(error);
@@ -1815,7 +1837,6 @@ export class TaskService {
         sectionId: number,
         topicId: number,
         id: number,
-        wordId: number
     ) {
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -1836,16 +1857,8 @@ export class TaskService {
 
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            const task = await this.prismaService.task.findUnique({
-                where: { id },
-            });
-
-            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
-
             await this.prismaService.word.delete({
-                where: {
-                    id: wordId
-                }
+                where: { id }
             });
 
             return {
@@ -1861,7 +1874,7 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
-        taskId: number,
+        taskId: number | null | undefined,
         data: WordAIGenerate,
         signal?: AbortSignal
     ) {
@@ -1891,16 +1904,6 @@ export class TaskService {
             if (!topic) {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
-
-            const task = await this.prismaService.task.findFirst({
-                where: { id: taskId }
-            });
-
-            if (!task) {
-                throw new BadRequestException('Zadnaie nie zostało znalezione');
-            }
-
-            data.text = data.text ?? task.text;
 
             const resolvedVocabliaryPrompt =
                 topic.vocabluaryPrompt?.trim()
@@ -1932,7 +1935,6 @@ export class TaskService {
                 typeof r.prompt !== 'string' ||
                 typeof r.changed !== 'string' ||
                 typeof r.outputText !== 'string' ||
-                typeof r.text !== 'string' ||
                 !Array.isArray(r.words) ||
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.outputWords) ||

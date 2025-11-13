@@ -81,15 +81,6 @@ export class SubjectController {
     return this.subjectService.uploadFileSubject(id, file, body?.url);
   }
 
-  @Get(':id/tasks')
-  async findTasks(
-    @Param('id', ParseIntPipe) id: number,
-    @Query('weekOffset') weekOffset?: string,
-  ) {
-    const weekOffsetInt = Number(weekOffset) || 0;
-    return this.subjectService.findTasks(id, weekOffsetInt);
-  }
-
   @Delete(':id/tasks/:taskId')
   async deleteTask(
     @Param('id', ParseIntPipe) subjectId: number,

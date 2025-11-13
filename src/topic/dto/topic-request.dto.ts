@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TopicUpdateRequest {
   @IsOptional()
@@ -7,33 +7,13 @@ export class TopicUpdateRequest {
 
   @IsOptional()
   @IsString()
-  questionPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  solutionPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  answersPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  closedSubtopicsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  subQuestionsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  vocabluaryPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  subtopicsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
   literature?: string;
+
+  @IsOptional()
+  @IsInt()
+  frequency?: number;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

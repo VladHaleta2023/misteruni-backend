@@ -9,161 +9,148 @@ datasource db {
 }
 
 model Subject {
-  id                      Int         @id   @default(autoincrement())
-  name                    String      @unique
-  prompt                  String      @default("")
-  difficulty              Int         @default(0)
-  threshold               Int         @default(0)
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
-  url                     String      @default("")
-  type                    String      @default("")
-  subtopicsPrompt         String      @default("")
-  questionPrompt          String      @default("")
-  subQuestionsPrompt      String      @default("")
-  solutionPrompt          String      @default("")
-  answersPrompt           String      @default("")
-  closedSubtopicsPrompt   String      @default("")
-  vocabluaryPrompt        String      @default("")
-
-  sections                Section[]
-  subtopics               Subtopic[]
-  topics                  Topic[]
+  id                    Int        @id @default(autoincrement())
+  name                  String     @unique
+  prompt                String     @default("")
+  difficulty            Int        @default(0)
+  threshold             Int        @default(0)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  url                   String     @default("")
+  type                  String     @default("")
+  subtopicsPrompt       String     @default("")
+  questionPrompt        String     @default("")
+  solutionPrompt        String     @default("")
+  answersPrompt         String     @default("")
+  closedSubtopicsPrompt String     @default("")
+  subQuestionsPrompt    String     @default("")
+  vocabluaryPrompt      String     @default("")
+  topicExpansionPrompt  String     @default("")
+  sections              Section[]
+  subtopics             Subtopic[]
+  topics                Topic[]
 }
 
 model Section {
-  id                      Int         @id @default(autoincrement())
-  name                    String
-  blocked                 Boolean     @default(false)
-  subjectId               Int
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
-  partId                  Int         @default(-1)
-  type                    String      @default("")
-  subtopicsPrompt         String      @default("")
-  questionPrompt          String      @default("")
-  subQuestionsPrompt      String      @default("")
-  solutionPrompt          String      @default("")
-  answersPrompt           String      @default("")
-  closedSubtopicsPrompt   String      @default("")
-  vocabluaryPrompt        String      @default("")
-
-  subtopics               Subtopic[]
-  topics                  Topic[]
-
-  subject                 Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  id                    Int        @id @default(autoincrement())
+  name                  String
+  subjectId             Int
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  partId                Int        @default(-1)
+  type                  String     @default("")
+  subtopicsPrompt       String     @default("")
+  questionPrompt        String     @default("")
+  solutionPrompt        String     @default("")
+  answersPrompt         String     @default("")
+  closedSubtopicsPrompt String     @default("")
+  subQuestionsPrompt    String     @default("")
+  vocabluaryPrompt      String     @default("")
+  topicExpansionPrompt  String     @default("")
+  difficulty            String     @default("")
+  subject               Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subtopics             Subtopic[]
+  topics                Topic[]
 }
 
 model Topic {
-  id                      Int         @id @default(autoincrement())
-  name                    String
-  blocked                 Boolean     @default(false)
-  literature              String      @default("")
-  sectionId               Int
-  subjectId               Int
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
-  partId                  Int         @default(-1)
-  subtopicsPrompt         String      @default("")
-  questionPrompt          String      @default("")
-  subQuestionsPrompt      String      @default("")
-  solutionPrompt          String      @default("")
-  answersPrompt           String      @default("")
-  closedSubtopicsPrompt   String      @default("")
-  vocabluaryPrompt        String      @default("")
-
-  subtopics               Subtopic[]
-  tasks                   Task[]
-
-  section                 Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject                 Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  id                    Int        @id @default(autoincrement())
+  name                  String
+  sectionId             Int
+  subjectId             Int
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  partId                Int        @default(-1)
+  questionPrompt        String     @default("")
+  solutionPrompt        String     @default("")
+  answersPrompt         String     @default("")
+  closedSubtopicsPrompt String     @default("")
+  subtopicsPrompt       String     @default("")
+  subQuestionsPrompt    String     @default("")
+  vocabluaryPrompt      String     @default("")
+  literature            String     @default("")
+  frequency             Int        @default(0)
+  topicExpansionPrompt  String     @default("")
+  note                  String     @default("")
+  subtopics             Subtopic[]
+  tasks                 Task[]
+  section               Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject               Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 }
 
 model Subtopic {
-  id         Int      @id @default(autoincrement())
+  id         Int                @id @default(autoincrement())
   name       String
-  blocked    Boolean    @default(false)
   sectionId  Int
   subjectId  Int
   topicId    Int
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  importance Int      @default(0)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  importance Int                @default(0)
+  section    Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topic      Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
   progresses SubtopicProgress[]
-  section    Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
 }
 
 model SubtopicProgress {
   id         Int      @id @default(autoincrement())
   percent    Int      @default(0)
-
   subtopicId Int
-  subtopic   Subtopic  @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
-
   taskId     Int
-  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  subtopic   Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
 
-
 model Task {
-  id                  Int         @id @default(autoincrement())
-  note                String      @default("")
-  text                String      @default("")
-  explanation         String      @default("")
-  options             String[]    @default([])
-  explanations        String[]    @default([])
-  correctOptionIndex  Int         @default(0)
-  solution            String      @default("")
-  userSolution        String      @default("")
-  userOptionIndex     Int         @default(0)
-  order               Int         @default(0)
-  percent             Int         @default(0)
-  stage               Int         @default(0)
-  answered            Boolean     @default(false)
-  finished            Boolean     @default(false)
-  wordsDescription    String      @default("")
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  topicId             Int
-  topic               Topic       @relation(fields: [topicId], references: [id], onDelete: Cascade)
-
-  parentTaskId        Int?        // Ссылка на главную задачу (null, если это главная задача)
-  parentTask          Task?       @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
-  subTasks            Task[]      @relation("SubTasks")
-  progresses          SubtopicProgress[]
-  audioFiles          AudioFile[]
-  words               Word[]
+  id                 Int                @id @default(autoincrement())
+  text               String             @default("")
+  options            String[]           @default([])
+  correctOptionIndex Int                @default(0)
+  solution           String             @default("")
+  userSolution       String             @default("")
+  userOptionIndex    Int                @default(0)
+  order              Int                @default(0)
+  finished           Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  topicId            Int
+  parentTaskId       Int?
+  stage              Int                @default(0)
+  answered           Boolean            @default(false)
+  percent            Int                @default(0)
+  note               String             @default("")
+  explanation        String             @default("")
+  explanations       String[]           @default([])
+  audioFiles         AudioFile[]
+  progresses         SubtopicProgress[]
+  parentTask         Task?              @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  subTasks           Task[]             @relation("SubTasks")
+  topic              Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  words              Word[]
 }
 
 model AudioFile {
-  id      Int     @id @default(autoincrement())
-  url     String  @default("")
-  order   Int     @default(0)
-  
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
+  id        Int      @id @default(autoincrement())
+  url       String   @default("")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   taskId    Int
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
 
 model Word {
-  id          Int     @id @default(autoincrement())
-  text        String
-  finished    Boolean @default(false)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  taskId      Int
-  task        Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([text])
+  id                 Int      @id @default(autoincrement())
+  text               String   @unique
+  finished           Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  taskId             Int
+  streakCorrectCount Int      @default(0)
+  totalAttemptCount  Int      @default(0)
+  totalCorrectCount  Int      @default(0)
+  task               Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
