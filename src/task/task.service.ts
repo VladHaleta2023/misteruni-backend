@@ -9,7 +9,7 @@ import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { DateUtils } from '../scripts/dateUtils';
 import { Word, Task } from '@prisma/client';
-import { TimezoneService } from 'src/timezone/timezone.service';
+import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 

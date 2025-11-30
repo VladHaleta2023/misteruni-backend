@@ -4,7 +4,7 @@ import { SubjectController } from './subject.controller';
 import { HttpModule } from '@nestjs/axios';
 import { SubjectService } from './subject.service'; 
 import { SubtopicModule } from '../subtopic/subtopic.module';
-import { TimezoneModule } from 'src/timezone/timezone.module';
+import { TimezoneModule } from '../timezone/timezone.module';
 
 @Module({
   imports: [

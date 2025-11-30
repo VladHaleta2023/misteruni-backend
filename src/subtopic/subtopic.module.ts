@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicController } from './subtopic.controller';
 import { HttpModule } from '@nestjs/axios';
-import { TimezoneModule } from 'src/timezone/timezone.module';
+import { TimezoneModule } from '../timezone/timezone.module';
 
 @Module({
   imports: [
