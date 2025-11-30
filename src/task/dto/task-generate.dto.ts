@@ -48,10 +48,6 @@ export class TaskAIGenerate {
 
   @IsInt()
   @IsOptional()
-  difficulty?: number;
-
-  @IsInt()
-  @IsOptional()
   threshold?: number;
 
   @IsArray()
@@ -60,7 +56,7 @@ export class TaskAIGenerate {
 
   @IsArray()
   @IsOptional()
-  subtopics?: [string, number][];
+  subtopics?: [string, number, number][];
 
   @IsArray()
   @IsString({ each: true })
@@ -135,10 +131,6 @@ export class QuestionsTaskAIGenerate {
   @IsString()
   text: string;
 
-  @IsInt()
-  @IsOptional()
-  difficulty?: number;
-
   @IsArray()
   @IsString({ each: true })
   questions: string[];
@@ -168,6 +160,10 @@ export class SolutionAIGenerate {
   @IsArray()
   @IsString({ each: true })
   errors: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  subtopics: string[];
 }
 
 export class OptionsAIGenerate {
@@ -195,12 +191,19 @@ export class OptionsAIGenerate {
   @IsString({ each: true })
   explanations: string[];
 
-  @IsInt()
-  correctOptionIndex: number;
-
   @IsArray()
   @IsString({ each: true })
   errors: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  subtopics: string[];
+
+  @IsInt()
+  random1: number;
+
+  @IsInt()
+  random2: number;
 }
 
 export class ProblemsAIGenerate {
@@ -236,18 +239,11 @@ export class ProblemsAIGenerate {
   @IsString({ each: true })
   options: string[];
 
-  @IsInt()
-  correctOptionIndex: number;
-
-  @IsInt()
-  userOptionIndex: number;
+  @IsString()
+  correctOption: string;
 
   @IsString()
   userSolution: string;
-
-  @IsInt()
-  @IsOptional()
-  difficulty?: number;
 
   @IsArray()
   @IsString({ each: true })

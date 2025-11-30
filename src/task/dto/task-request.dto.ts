@@ -29,9 +29,6 @@ export class TaskCreateRequest {
   @IsString({ each: true })
   taskSubtopics: string[]
 
-  @IsInt()
-  correctOptionIndex: number
-
   @IsString()
   solution: string
 }

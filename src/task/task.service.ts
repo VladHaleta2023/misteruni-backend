@@ -9,6 +9,7 @@ import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { DateUtils } from '../scripts/dateUtils';
 import { Word, Task } from '@prisma/client';
+import { TimezoneService } from 'src/timezone/timezone.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -21,7 +22,8 @@ export class TaskService {
         private readonly subtopicService: SubtopicService,
         private readonly httpService: HttpService,
         private readonly optionsService: OptionsService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly timezoneService: TimezoneService
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -88,6 +90,72 @@ export class TaskService {
             });
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
+            const subtopics = await this.prismaService.subtopic.findMany({
+                where: { topicId: topicId },
+                include: {
+                    progresses: {
+                        where: {
+                            task: { finished: true }
+                        },
+                        select: {
+                            percent: true,
+                            updatedAt: true,
+                        },
+                        orderBy: { updatedAt: 'asc' }
+                    }
+                }
+            });
+
+            const subtopicsWithStatus = subtopics.map(subtopic => {
+                const progresses = subtopic.progresses;
+                
+                let percent = 0;
+                const alpha = 0.7;
+                
+                if (progresses.length > 0) {
+                    let emaValue: number | null = null;
+                    for (const progress of progresses) {
+                        const localUpdatedAt = this.timezoneService.utcToLocal(progress.updatedAt);
+                        
+                        const currentPercent = Math.min(100, progress.percent);
+                        if (emaValue === null) {
+                            emaValue = currentPercent;
+                        } else {
+                            emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
+                        }
+                    }
+                    percent = Math.min(100, Math.ceil(emaValue!));
+                }
+                
+                let subtopicStatus: Status;
+                if (percent === 0) {
+                    subtopicStatus = 'started';
+                } else if (percent < subject.threshold) {
+                    subtopicStatus = 'progress';
+                } else {
+                    subtopicStatus = 'completed';
+                }
+                
+                return {
+                    ...subtopic,
+                    percent,
+                    status: subtopicStatus
+                };
+            });
+
+            const averagePercent = subtopicsWithStatus.length > 0
+                ? Math.ceil(subtopicsWithStatus.reduce((sum, st) => sum + st.percent, 0) / subtopicsWithStatus.length)
+                : 0;
+
+            let topicStatus: Status;
+            if (averagePercent === 0) {
+                topicStatus = 'started';
+            } else if (averagePercent < subject.threshold) {
+                topicStatus = 'progress';
+            } else {
+                topicStatus = 'completed';
+            }
+
             const now = new Date();
 
             let dateFilter: any = undefined;
@@ -95,9 +163,13 @@ export class TaskService {
             if (weekOffset !== 0) {
                 const startOfWeek = DateUtils.getMonday(now, weekOffset);
                 const endOfWeek = DateUtils.getSunday(now, weekOffset);
+                
+                const startOfWeekUTC = this.timezoneService.localToUTC(startOfWeek);
+                const endOfWeekUTC = this.timezoneService.localToUTC(endOfWeek);
+                
                 dateFilter = {
-                    gte: startOfWeek,
-                    lte: endOfWeek,
+                    gte: startOfWeekUTC,
+                    lte: endOfWeekUTC,
                 };
             }
 
@@ -125,18 +197,28 @@ export class TaskService {
                         status = 'completed';
                     }
 
-                    const wordsUnfinished = await this.prismaService.word.findMany({
-                        where: {
-                            taskId: task.id,
-                            finished: false
-                        }
-                    });
-
                     const words = await this.prismaService.word.findMany({
                         where: {
                             taskId: task.id
                         }
                     });
+
+                    const progresses = await this.prismaService.subtopicProgress.findMany({
+                        where: {
+                            taskId: task.id,
+                        },
+                        include: {
+                            subtopic: {
+                                select: {
+                                    name: true,
+                                },
+                            },
+                        },
+                    });
+
+                    const subtopics = progresses
+                        .filter(progress => progress.subtopic !== null)
+                        .map(progress => progress.subtopic.name);
 
                     const vocabluary = words.length > 0 && words.every(word => word.streakCorrectCount >= 3);
 
@@ -145,6 +227,7 @@ export class TaskService {
                         status,
                         vocabluary: vocabluary,
                         wordsCount: words.length,
+                        subtopics,
                         topic: {
                             id: topic.id,
                             name: topic.name,
@@ -160,10 +243,10 @@ export class TaskService {
 
             const groupedTasksMap: Record<string, typeof tasksWithPercent> = {};
             tasksWithPercent.forEach(task => {
-                const updated = task.updatedAt;
-                const day = String(updated.getDate()).padStart(2, '0');
-                const month = String(updated.getMonth() + 1).padStart(2, '0');
-                const year = updated.getFullYear();
+                const localUpdated = this.timezoneService.utcToLocal(task.updatedAt);
+                const day = String(localUpdated.getDate()).padStart(2, '0');
+                const month = String(localUpdated.getMonth() + 1).padStart(2, '0');
+                const year = localUpdated.getFullYear();
                 const dateKey = `${day}-${month}-${year}`;
 
                 if (!groupedTasksMap[dateKey]) groupedTasksMap[dateKey] = [];
@@ -182,7 +265,11 @@ export class TaskService {
                 statusCode: 200,
                 message: 'Pobrano listę zadań pomyślnie',
                 elements: groupedTasks,
-                topic: topic
+                topic: {
+                    ...topic,
+                    percent: averagePercent,
+                    status: topicStatus,
+                }
             };
 
         } catch (error) {
@@ -409,9 +496,9 @@ export class TaskService {
             const topic = await this.prismaService.topic.findUnique({
                 where: { id: topicId },
             });
-            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+            if (!topic) throw new BadRequestException('Temat nie został znalezione');
 
-            let subtopicsWithAvg: { name: string; percent: number }[] = [];
+            let subtopicsWithAvg: { name: string; percent: number; importance: number }[] = [];
 
             if (data.mode === "strict" && data.taskId) {
                 const existingTask = await this.prismaService.task.findUnique({
@@ -435,12 +522,48 @@ export class TaskService {
                     throw new BadRequestException('Zadanie o podanym taskId nie zostało znalezione');
                 }
 
-                subtopicsWithAvg = existingTask.progresses.map(p => {
-                    const s = p.subtopic;
-                    const avgPercent = s.progresses.length > 0
-                        ? s.progresses.reduce((sum, pr) => sum + pr.percent, 0) / s.progresses.length
-                        : 0;
-                    return { name: s.name, percent: avgPercent };
+                const uniqueSubtopics = new Map<number, {
+                    name: string;
+                    importance: number;
+                    progresses: { percent: number }[];
+                }>();
+
+                for (const prog of existingTask.progresses) {
+                    const st = prog.subtopic;
+                    if (!uniqueSubtopics.has(st.id)) {
+                        uniqueSubtopics.set(st.id, {
+                            name: st.name,
+                            importance: st.importance,
+                            progresses: st.progresses,
+                        });
+                    }
+                }
+
+                const alpha = 0.7;
+                subtopicsWithAvg = Array.from(uniqueSubtopics.values()).map(st => {
+                    let percent = 0;
+
+                    if (st.progresses.length > 0) {
+                        let emaValue: number | null = null;
+
+                        for (const p of st.progresses) {
+                            const currentPercent = Math.min(100, p.percent);
+
+                            if (emaValue === null) {
+                                emaValue = currentPercent;
+                            } else {
+                                emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
+                            }
+                        }
+
+                        percent = Math.min(100, Math.ceil(emaValue!));
+                    }
+
+                    return {
+                        name: st.name,
+                        percent,
+                        importance: st.importance,
+                    };
                 });
             }
             else {
@@ -453,28 +576,35 @@ export class TaskService {
                     },
                 });
 
-                subtopicsWithAvg = subtopics.map(subtopic => {
+                const allWithAvg = subtopics.map(subtopic => {
                     const avgPercent = subtopic.progresses.length > 0
                         ? subtopic.progresses.reduce((sum, p) => sum + p.percent, 0) / subtopic.progresses.length
                         : 0;
-                    return { name: subtopic.name, percent: avgPercent };
+
+                    return {
+                        name: subtopic.name,
+                        percent: avgPercent,
+                        importance: subtopic.importance,
+                    };
                 });
+
+                const threshold = subject.threshold ?? 100;
+
+                const belowThreshold = allWithAvg.filter(s => s.percent < threshold);
+
+                subtopicsWithAvg = belowThreshold.length > 0 ? belowThreshold : allWithAvg;
             }
 
-            let filtered = subtopicsWithAvg
-                .filter(s => s.percent < (data.threshold ?? subject.threshold))
-                .map(s => [s.name, s.percent] as [string, number]);
+            const filtered = subtopicsWithAvg.map(s => [s.name, s.percent, s.importance] as [string, number, number]);
+            filtered.sort((a, b) => {
+                return a[2] - b[2];
+            });
 
-            if (filtered.length === 0) {
-                filtered = subtopicsWithAvg.map(s => [s.name, s.percent] as [string, number]);
-            }
-
-            data.subtopics = filtered;
+            data.subtopics = data.subtopics ?? filtered;
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
-            data.difficulty = data.difficulty ?? subject.difficulty;
             data.threshold = data.threshold ?? subject.threshold;
 
             const resolvedQuestionPrompt =
@@ -488,11 +618,12 @@ export class TaskService {
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
                 Array.isArray(item) &&
-                item.length === 2 &&
+                item.length === 3 &&
                 typeof item[0] === 'string' &&
-                typeof item[1] === 'number'
+                typeof item[1] === 'number' &&
+                typeof item[2] === 'number'
             )) {
-                throw new BadRequestException('Subtopics musi być listą par [string, number]');
+                throw new BadRequestException('Subtopics musi być listą trójek [string, number, number]');
             }
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
@@ -654,6 +785,7 @@ export class TaskService {
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||
+                typeof r.difficulty !== 'string' ||
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
                 typeof r.attempt !== 'number' ||
@@ -728,7 +860,6 @@ export class TaskService {
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
-            data.difficulty = data.difficulty ?? subject.difficulty;
             
             const resolvedSubQuestionsPrompt =
                 topic.subQuestionsPrompt?.trim()
@@ -931,9 +1062,10 @@ export class TaskService {
                 !Array.isArray(r.options) ||
                 !Array.isArray(r.explanations) ||
                 typeof r.attempt !== 'number' ||
-                typeof r.correctOptionIndex !== 'number' ||
                 typeof r.text !== 'string' ||
-                typeof r.solution !== 'string'
+                typeof r.solution !== 'string' ||
+                typeof r.random1 !== 'number' ||
+                typeof r.random2 !== 'number'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
@@ -999,7 +1131,6 @@ export class TaskService {
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
-            data.difficulty =  data.difficulty ?? subject.difficulty;
 
             const resolvedClosedSubtopicsPrompt =
                 topic.closedSubtopicsPrompt?.trim()
@@ -1042,9 +1173,8 @@ export class TaskService {
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.options) ||
                 typeof r.attempt !== 'number' ||
-                typeof r.correctOptionIndex !== 'number' ||
+                typeof r.correctOption !== 'string' ||
                 typeof r.text !== 'string' ||
-                typeof r.difficulty !== 'number' ||
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||
@@ -1116,7 +1246,6 @@ export class TaskService {
                     if (taskData.solution !== undefined) updateData.solution = taskData.solution;
                     if (taskData.options !== undefined) updateData.options = taskData.options;
                     if (taskData.explanations !== undefined) updateData.explanations = taskData.explanations;
-                    if (taskData.correctOptionIndex !== undefined) updateData.correctOptionIndex = taskData.correctOptionIndex;
                     if (taskData.stage !== undefined) updateData.stage = taskData.stage;
 
                     await prismaClient.task.update({
@@ -1169,7 +1298,6 @@ export class TaskService {
                             solution: taskData.solution,
                             options: taskData.options,
                             explanations: taskData.explanations,
-                            correctOptionIndex: taskData.correctOptionIndex,
                             stage: taskData.stage ?? 0,
                             topicId,
                             order
@@ -1247,7 +1375,6 @@ export class TaskService {
                         if (taskData.solution !== undefined) updateData.solution = taskData.solution;
                         if (taskData.options !== undefined) updateData.options = taskData.options;
                         if (taskData.explanations !== undefined) updateData.explanations = taskData.explanations;
-                        if (taskData.correctOptionIndex !== undefined) updateData.correctOptionIndex = taskData.correctOptionIndex;
                         if (taskData.stage !== undefined) updateData.stage = taskData.stage;
 
                         await prismaClient.task.update({
@@ -1271,7 +1398,6 @@ export class TaskService {
                                 solution: taskData.solution,
                                 options: taskData.options,
                                 explanations:  taskData.explanations,
-                                correctOptionIndex: taskData.correctOptionIndex,
                                 stage: taskData.stage ?? 0,
                                 topicId,
                                 order,

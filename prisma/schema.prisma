@@ -4,15 +4,14 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  // url       = env("DATABASE_URL")
+  // directUrl = env("DIRECT_URL")
 }
 
 model Subject {
   id                    Int        @id @default(autoincrement())
   name                  String     @unique
   prompt                String     @default("")
-  difficulty            Int        @default(0)
   threshold             Int        @default(0)
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt

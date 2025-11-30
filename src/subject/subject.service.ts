@@ -9,6 +9,7 @@ import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { File } from '../file.type';
 import { DateUtils } from '../scripts/dateUtils';
+import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -20,7 +21,8 @@ export class SubjectService {
         private readonly prismaService: PrismaService,
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly timezoneService: TimezoneService
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -500,6 +502,9 @@ export class SubjectService {
             const startOfWeek = DateUtils.getMonday(now, weekOffset);
             const endOfWeek = DateUtils.getSunday(now, weekOffset);
 
+            const startOfWeekUTC = this.timezoneService.localToUTC(startOfWeek);
+            const endOfWeekUTC = this.timezoneService.localToUTC(endOfWeek);
+
             const tasks = await this.prismaService.task.findMany({
                 where: {
                     topic: {
@@ -507,8 +512,8 @@ export class SubjectService {
                     },
                     parentTaskId: null,
                     updatedAt: {
-                        gte: startOfWeek,
-                        lte: endOfWeek,
+                        gte: startOfWeekUTC,
+                        lte: endOfWeekUTC,
                     },
                 },
                 include: {
@@ -561,6 +566,23 @@ export class SubjectService {
                         },
                     });
 
+                    const progresses = await this.prismaService.subtopicProgress.findMany({
+                        where: {
+                            taskId: task.id,
+                        },
+                        include: {
+                            subtopic: {
+                                select: {
+                                    name: true,
+                                },
+                            },
+                        },
+                    });
+
+                    const subtopics = progresses
+                        .filter(progress => progress.subtopic !== null)
+                        .map(progress => progress.subtopic.name);
+
                     const vocabluary = wordsFinished.length !== 0;
                     const wordsCount = words.length;
 
@@ -569,6 +591,7 @@ export class SubjectService {
                         status,
                         vocabluary,
                         wordsCount,
+                        subtopics,
                         topic: {
                             id: task.topic.id,
                             name: task.topic.name,
@@ -586,10 +609,10 @@ export class SubjectService {
 
             const groupedTasksMap: Record<string, typeof tasksWithPercent> = {};
             tasksWithPercent.forEach(task => {
-                const updated = task.updatedAt;
-                const day = String(updated.getDate()).padStart(2, '0');
-                const month = String(updated.getMonth() + 1).padStart(2, '0');
-                const year = updated.getFullYear();
+                const localUpdated = this.timezoneService.utcToLocal(task.updatedAt);
+                const day = String(localUpdated.getDate()).padStart(2, '0');
+                const month = String(localUpdated.getMonth() + 1).padStart(2, '0');
+                const year = localUpdated.getFullYear();
                 const dateKey = `${day}-${month}-${year}`;
 
                 if (!groupedTasksMap[dateKey]) groupedTasksMap[dateKey] = [];

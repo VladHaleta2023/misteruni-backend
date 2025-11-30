@@ -4,6 +4,7 @@ import { TaskController } from './task.controller';
 import { HttpModule } from '@nestjs/axios';
 import { SubtopicModule } from '../subtopic/subtopic.module';
 import { OptionsModule } from '../options/options.module';
+import { TimezoneModule } from 'src/timezone/timezone.module';
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { OptionsModule } from '../options/options.module';
       maxRedirects: 5,
     }),
     SubtopicModule,
-    OptionsModule
+    OptionsModule,
+    TimezoneModule
   ],
   controllers: [TaskController],
   providers: [

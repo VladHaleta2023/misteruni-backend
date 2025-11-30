@@ -4,6 +4,7 @@ import { SubjectController } from './subject.controller';
 import { HttpModule } from '@nestjs/axios';
 import { SubjectService } from './subject.service'; 
 import { SubtopicModule } from '../subtopic/subtopic.module';
+import { TimezoneModule } from 'src/timezone/timezone.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { SubtopicModule } from '../subtopic/subtopic.module';
     }),
     StorageModule,
     SubtopicModule,
+    TimezoneModule
   ],
   controllers: [SubjectController],
   providers: [

@@ -2,35 +2,17 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { PrismaService } from '../prisma/prisma.service';
 import { DateUtils } from '../scripts/dateUtils';
 import { SectionUpdateRequest } from '../section/dto/section-request.dto';
+import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'started' | 'progress' | 'completed';
 type DeltaStatus = 'completed' | 'error' | 'completed error';
 
-interface Subtopic extends Record<string, any> {
-    percent: number;
-    status?: Status;
-}
-
-interface Topic extends Record<string, any> {
-    subtopics: Subtopic[];
-    status?: Status;
-}
-
-interface Section extends Record<string, any> {
-    topics: Topic[];
-    status?: Status;
-}
-
 @Injectable()
 export class SectionService {
-    constructor(private readonly prismaService: PrismaService) {}
-
-    private getStatus(percent: number, threshold: number): Status {
-        const safePercent = Math.min(100, percent); 
-        if (safePercent === 0) return 'started';
-        if (safePercent >= threshold) return 'completed';
-        return 'progress';
-    }
+    constructor(
+        private readonly prismaService: PrismaService,
+        private readonly timezoneService: TimezoneService
+    ) {}
 
     private calculateSectionsWithStatus(enrichedSections: any[], threshold: number) {
         return enrichedSections.map(section => {
@@ -62,12 +44,14 @@ export class SectionService {
             endOfRange.setHours(23, 59, 59, 999);
         }
 
+        const endOfRangeUTC = this.timezoneService.localToUTC(endOfRange);
+
         const subtopics = await this.prismaService.subtopic.findMany({
             where: { subjectId },
             include: {
                 progresses: {
                     where: {
-                        updatedAt: { lte: endOfRange },
+                        updatedAt: { lte: endOfRangeUTC },
                         task: { finished: true },
                     },
                     include: { task: { select: { id: true } } },
@@ -107,138 +91,115 @@ export class SectionService {
 
     async calculatePrediction(
         now: Date,
-        currentMonday: Date,
-        endOfWeek: Date,
         subjectId: number,
         subject: any,
         subtopicsNow: any[],
-        subtopicsThen: any[]
-    ) {
-        const endOfWeekFullTime = new Date(now);
-        const endOfWeekCopy = new Date(endOfWeek);
-        endOfWeekCopy.setHours(23, 59, 59, 999);
-
-        const startOfWeekThenPrediction = new Date(currentMonday);
-        startOfWeekThenPrediction.setDate(currentMonday.getDate() - 14);
-
-        const endOfWeekThenPrediction = new Date(startOfWeekThenPrediction);
-        endOfWeekThenPrediction.setDate(startOfWeekThenPrediction.getDate() + 6);
-
-        const daysPrediction = Math.floor(
-            (endOfWeekFullTime.getTime() - endOfWeekThenPrediction.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        const importanceSum = await this.prismaService.subtopic.aggregate({
-            where: { subjectId },
-            _sum: { importance: true },
-        });
-
-        const totalImportance =
-        (importanceSum._sum.importance ?? 0) * (subject.threshold / 100);
-
-        let thenImportance = 0;
-        for (const sub of subtopicsThen) {
-            thenImportance += sub.importance * Math.min(sub.percent ?? 0, 100) / 100;
-        }
-
-        const leftImportance = totalImportance - thenImportance;
-
-        let deltaImportance = 0;
-        for (let i = 0; i < subtopicsNow.length; i++) {
-            const prev = Math.min(subtopicsThen[i]?.percent ?? 0, 100);
-            const curr = Math.min(subtopicsNow[i]?.percent ?? 0, 100);
-            deltaImportance += subtopicsNow[i].importance * Math.max(0, curr - prev) / 100;
-        }
-
-        let prediction: number | undefined;
-        if (deltaImportance > 0) {
-            prediction = (leftImportance / deltaImportance) * daysPrediction;
-        }
-
-        const resultDate = new Date(endOfWeekFullTime);
-
-        if (prediction) {
-            resultDate.setDate(resultDate.getDate() + Math.ceil(prediction));
-            const dd = String(resultDate.getDate()).padStart(2, '0');
-            const mm = String(resultDate.getMonth() + 1).padStart(2, '0');
-            const yyyy = resultDate.getFullYear();
-            return `${dd}.${mm}.${yyyy}`;
-        }
-
-        return 'Infinity';
-    }
-
-    private async getUserJoinDate(subjectId: number): Promise<Date> {
-        const subject = await this.prismaService.subject.findFirst({
-            where: { id: subjectId },
-            select: { createdAt: true },
-            orderBy: { createdAt: 'asc' }
-        });
-        
-        return subject?.createdAt || new Date();
-    }
-
-    private async calculateInstantPrediction(
-        now: Date,
-        subjectId: number,
-        subject: any,
-        subtopicsNow: any[]
+        frequencyThreshold: number = 0,
+        globalCompression: number = 1.8
     ): Promise<string> {
-        const importanceSum = await this.prismaService.subtopic.aggregate({
-            where: { subjectId },
-            _sum: { importance: true },
-        });
+        try {
+            let topics = await this.prismaService.topic.findMany({
+                where: { subjectId },
+                include: { subtopics: true },
+                orderBy: { partId: 'asc' },
+            });
 
-        const totalImportance = (importanceSum._sum.importance ?? 0) * (subject.threshold / 100);
+            if (topics.length === 0) return 'Infinity';
+            
+            const filteredTopics = topics.filter(topic => topic.frequency >= frequencyThreshold);
 
-        let currentImportance = 0;
-        for (const sub of subtopicsNow) {
-            currentImportance += sub.importance * Math.min(sub.percent ?? 0, 100) / 100;
-        }
+            topics = filteredTopics.length > 0 ? filteredTopics : topics;
 
-        const leftImportance = Math.max(0, totalImportance - currentImportance);
+            const subtopicIds = topics.flatMap(t => t.subtopics.map(s => s.id));
+            if (subtopicIds.length === 0) return 'Infinity';
 
-        const userJoinDate = await this.getUserJoinDate(subjectId);
-        const daysSinceJoin = Math.floor((now.getTime() - userJoinDate.getTime()) / (1000 * 60 * 60 * 24));
-        const effectiveDays = Math.max(1, daysSinceJoin);
+            let totalWeight = 0;
+            let currentWeight = 0;
 
-        const avgDailySpeed = currentImportance / effectiveDays;
+            for (const topic of topics) {
+                const subtopicImportances = topic.subtopics.map(s => s.importance || 0);
+                if (subtopicImportances.length === 0) continue;
 
-        let prediction: number | undefined;
-        if (avgDailySpeed > 0) {
-            prediction = leftImportance / avgDailySpeed;
-            prediction = Math.max(3, prediction);
-        }
+                const minImp = Math.min(...subtopicImportances);
+                const maxImp = Math.max(...subtopicImportances);
+                const normalizedDifficulties = topic.subtopics.map(s =>
+                    maxImp === minImp ? 1 : ((s.importance || 0) - minImp) / (maxImp - minImp)
+                );
 
-        const resultDate = new Date(now);
+                const avgNormalizedDifficulty =
+                    normalizedDifficulties.reduce((sum, d) => sum + d, 0) / normalizedDifficulties.length;
 
-        if (prediction) {
-            resultDate.setDate(resultDate.getDate() + Math.ceil(prediction));
-            const dd = String(resultDate.getDate()).padStart(2, '0');
-            const mm = String(resultDate.getMonth() + 1).padStart(2, '0');
-            const yyyy = resultDate.getFullYear();
+                const compressedDifficulty = Math.min(avgNormalizedDifficulty * globalCompression, 1);
+
+                const avgSubtopicPercent =
+                    topic.subtopics.reduce((sum, s, idx) => {
+                        const progress = subtopicsNow.find(x => x.id === s.id)?.percent || 0;
+                        return sum + (Math.min(100, progress) / 100) * normalizedDifficulties[idx];
+                    }, 0) / topic.subtopics.length;
+
+                const topicPercent = subject.threshold > 0 
+                    ? Math.min(avgSubtopicPercent / (subject.threshold / 100), 1)
+                    : Math.min(avgSubtopicPercent, 1);
+
+                const normalizedFrequency = Math.min((topic.frequency / 100) * globalCompression, 1);
+
+                const topicCurrentWeight = compressedDifficulty * topicPercent * normalizedFrequency;
+                const topicTotalWeight = compressedDifficulty * (Math.max(0.1, subject.threshold / 100)) * normalizedFrequency;
+
+                currentWeight += topicCurrentWeight;
+                totalWeight += topicTotalWeight;
+            }
+
+            if (totalWeight <= 0 || currentWeight <= 0) {
+                return 'Infinity';
+            }
+
+            const firstProgress = await this.prismaService.subtopicProgress.findFirst({
+                where: { 
+                    subtopicId: { in: subtopicIds },
+                    percent: { gt: 0 }
+                },
+                select: { updatedAt: true },
+                orderBy: { updatedAt: 'asc' },
+            });
+
+            const learningStartDate = firstProgress?.updatedAt || new Date();
+
+            const nowUTC = this.timezoneService.localToUTC(now);
+            const learningStartDateUTC = this.timezoneService.localToUTC(learningStartDate);
+
+            const learningPeriodDays = Math.max(
+                1,
+                Math.floor((nowUTC.getTime() - learningStartDateUTC.getTime()) / (1000 * 60 * 60 * 24))
+            );
+
+            const learningSpeed = currentWeight / learningPeriodDays;
+            const remainingWeight = Math.max(0, totalWeight - currentWeight);
+
+            const MINIMAL_LEARNING_SPEED = 0.001;
+            
+            let predictionDays: number;
+            if (learningSpeed > MINIMAL_LEARNING_SPEED) {
+                predictionDays = remainingWeight / learningSpeed;
+                predictionDays = Math.max(1, predictionDays);
+            } else {
+                const conservativeSpeed = Math.max(MINIMAL_LEARNING_SPEED, currentWeight / 7);
+                predictionDays = remainingWeight / conservativeSpeed;
+                predictionDays = Math.max(7, predictionDays);
+            }
+
+            const resultDate = new Date(now);
+            resultDate.setDate(resultDate.getDate() + Math.ceil(predictionDays));
+
+            const localResultDate = this.timezoneService.utcToLocal(resultDate);
+            const dd = String(localResultDate.getDate()).padStart(2, '0');
+            const mm = String(localResultDate.getMonth() + 1).padStart(2, '0');
+            const yyyy = localResultDate.getFullYear();
+
             return `${dd}.${mm}.${yyyy}`;
-        }
-
-        return 'Infinity';
-    }
-
-    async calculateUniversalPrediction(
-        now: Date,
-        currentMonday: Date,
-        endOfWeek: Date,
-        subjectId: number,
-        subject: any,
-        subtopicsNow: any[],
-        subtopicsThen: any[]
-    ): Promise<string> {
-        const userJoinDate = await this.getUserJoinDate(subjectId);
-        const daysSinceJoin = Math.floor((now.getTime() - userJoinDate.getTime()) / (1000 * 60 * 60 * 24));
-        
-        if (daysSinceJoin < 14) {
-            return this.calculateInstantPrediction(now, subjectId, subject, subtopicsNow);
-        } else {
-            return this.calculatePrediction(now, currentMonday, endOfWeek, subjectId, subject, subtopicsNow, subtopicsThen);
+        } catch (error) {
+            console.error('Prediction calculation error:', error);
+            return 'Infinity';
         }
     }
 
@@ -263,13 +224,16 @@ export class SectionService {
         const endOfRangePrevious = DateUtils.getSunday(now, weekOffset - 1);
         endOfRangePrevious.setHours(23, 59, 59, 999);
 
+        const endOfRangeUTC = this.timezoneService.localToUTC(endOfRange);
+        const endOfRangePreviousUTC = this.timezoneService.localToUTC(endOfRangePrevious);
+
         const [currentTasks, previousTasks] = await Promise.all([
             this.prismaService.task.findMany({
                 where: {
                     topicId: { in: topicIds },
                     finished: true,
                     parentTaskId: null,
-                    updatedAt: { lte: endOfRange },
+                    updatedAt: { lte: endOfRangeUTC },
                 },
                 select: { topicId: true, percent: true },
             }),
@@ -278,7 +242,7 @@ export class SectionService {
                     topicId: { in: topicIds },
                     finished: true,
                     parentTaskId: null,
-                    updatedAt: { lte: endOfRangePrevious },
+                    updatedAt: { lte: endOfRangePreviousUTC },
                 },
                 select: { topicId: true, percent: true },
             })
@@ -510,6 +474,44 @@ export class SectionService {
             let enrichedSections: any[] = [];
             const threshold = Number(subject.threshold) || 0;
 
+            const HIGH_FREQUENCY_THRESHOLD = 70;
+            const MEDIUM_FREQUENCY_THRESHOLD = 40;
+            const HIGH_FREQ_REPEAT_DAYS = 30;
+            const MEDIUM_FREQ_REPEAT_DAYS = 60;
+
+            const getFullCalendarDaysDiff = (lastTaskDate: Date): number => {
+                return this.timezoneService.getDaysDifference(lastTaskDate);
+            };
+
+            let lastTaskDates = new Map<number, Date>();
+            if (withTopics) {
+                const startOfTodayUTC = this.timezoneService.getStartOfTodayUTC();
+
+                const lastTasks = await this.prismaService.task.findMany({
+                    where: {
+                        topic: { subjectId },
+                        finished: true,
+                        updatedAt: {
+                            lt: startOfTodayUTC
+                        }
+                    },
+                    select: {
+                        topicId: true,
+                        updatedAt: true,
+                    },
+                    orderBy: {
+                        updatedAt: 'desc',
+                    },
+                });
+
+                lastTaskDates = lastTasks.reduce((map, task) => {
+                    if (!map.has(task.topicId) || task.updatedAt > map.get(task.topicId)!) {
+                        map.set(task.topicId, task.updatedAt);
+                    }
+                    return map;
+                }, new Map<number, Date>());
+            }
+
             if (withTopics) {
                 enrichedSections = await this.processSectionsWithTopics(
                     sections,
@@ -523,11 +525,29 @@ export class SectionService {
 
                 enrichedSections = enrichedSections.map(section => ({
                     ...section,
-                    topics: section.topics.map(topic => ({
-                        ...topic,
-                        frequency: Math.ceil(topic.frequency - (topic.percent * topic.frequency / 100))
-                        //Math.ceil(((Math.pow(topic.frequency, 1.4) - ((topic.percent || 0) * (topic.frequency || 0) / 100))) / 5),
-                    }))
+                    topics: section.topics.map(topic => {
+                        const lastTaskDate = lastTaskDates.get(topic.id);
+                        let repeat = false;
+                        let daysDiff = 0;
+
+                        if (lastTaskDate) {
+                            daysDiff = getFullCalendarDaysDiff(lastTaskDate);
+                            
+                            if (topic.frequency >= HIGH_FREQUENCY_THRESHOLD) {
+                                repeat = daysDiff >= HIGH_FREQ_REPEAT_DAYS;
+                            } else if (topic.frequency >= MEDIUM_FREQUENCY_THRESHOLD) {
+                                repeat = daysDiff >= MEDIUM_FREQ_REPEAT_DAYS;
+                            }
+                        }
+
+                        return {
+                            ...topic,
+                            frequency: Math.ceil(topic.frequency - (topic.percent * topic.frequency / 100)),
+                            baseFrequency: topic.frequency,
+                            repeat,
+                            daysSinceLastTask: daysDiff,
+                        };
+                    })
                 }));
             } else {
                 enrichedSections = sections.map(section => ({
@@ -536,6 +556,7 @@ export class SectionService {
                     percent: 0,
                     delta: 0,
                     deltaStatus: 'completed',
+                    repeat: false,
                 }));
             }
 
@@ -546,10 +567,15 @@ export class SectionService {
                 Promise.resolve(this.calculateTotalPercent(sectionsWithStatus))
             ]);
 
+            const sectionsWithRepeat = sectionsWithStatus.map(section => ({
+                ...section,
+                repeat: section.topics?.some(topic => topic.repeat) || false,
+            }));
+
             const response: any = {
                 statusCode: 200,
                 message: 'Działy zostały pomyślnie pobrane',
-                sections: sectionsWithStatus,
+                sections: sectionsWithRepeat,
                 total: totalPercent,
                 statistics,
             };
@@ -599,6 +625,9 @@ export class SectionService {
                 endOfRange.setHours(23, 59, 59, 999);
             }
 
+            const startOfRangeUTC = this.timezoneService.localToUTC(startOfRange);
+            const endOfRangeUTC = this.timezoneService.localToUTC(endOfRange);
+
             const groupByTopic = (subs: any[]) =>
                 subs.reduce<Record<number, any[]>>((acc, sub) => {
                 if (!acc[sub.topicId]) acc[sub.topicId] = [];
@@ -626,20 +655,19 @@ export class SectionService {
                 if (thenSubs.length && closedThen.length === thenSubs.length) totalTopicsThen++;
             }
 
-            const formatDate = (d: Date) =>
-                `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const formatDate = (d: Date) => {
+                const localDate = this.timezoneService.utcToLocal(d);
+                return `${String(localDate.getDate()).padStart(2, '0')}.${String(localDate.getMonth() + 1).padStart(2, '0')}`;
+            };
 
             let predictionResult: string | null = null;
 
             if (weekOffset === 0) {
-                predictionResult = await this.calculateUniversalPrediction(
+                predictionResult = await this.calculatePrediction(
                     now,
-                    startOfRange,
-                    endOfRange,
                     subjectId,
                     subject,
-                    subtopicsNow,
-                    subtopicsThen
+                    subtopicsNow
                 );
             }
 
@@ -647,7 +675,7 @@ export class SectionService {
                 where: {
                     finished: true,
                     parentTaskId: null,
-                    updatedAt: { gte: startOfRange, lte: endOfRange },
+                    updatedAt: { gte: startOfRangeUTC, lte: endOfRangeUTC },
                     topic: { subjectId },
                 },
             });
@@ -656,7 +684,7 @@ export class SectionService {
                 where: {
                     finished: true,
                     parentTaskId: null,
-                    updatedAt: { gte: startOfRange, lte: endOfRange },
+                    updatedAt: { gte: startOfRangeUTC, lte: endOfRangeUTC },
                     percent: { gte: subject.threshold },
                     topic: { subjectId },
                 },

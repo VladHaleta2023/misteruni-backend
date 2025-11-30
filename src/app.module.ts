@@ -10,6 +10,7 @@ import { TopicModule } from './topic/topic.module';
 import { OptionsModule } from './options/options.module';
 import { SubtopicModule } from './subtopic/subtopic.module';
 import { TaskModule } from './task/task.module';
+import { TimezoneModule } from './timezone/timezone.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TaskModule } from './task/task.module';
     OptionsModule,
     SubtopicModule,
     TaskModule,
+    TimezoneModule,
   ],
   controllers: [AppController],
   providers: [AppService],

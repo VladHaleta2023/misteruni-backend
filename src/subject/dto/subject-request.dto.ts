@@ -63,9 +63,5 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsInt()
-  difficulty?: number;
-
-  @IsOptional()
-  @IsInt()
   threshold?: number;
 }

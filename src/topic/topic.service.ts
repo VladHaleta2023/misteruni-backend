@@ -1,12 +1,16 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TopicUpdateRequest } from './dto/topic-request.dto';
+import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
 @Injectable()
 export class TopicService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly timezoneService: TimezoneService
+  ) {}
 
   async findTopics(
     subjectId: number,
@@ -294,6 +298,9 @@ export class TopicService {
             if (progresses.length > 0) {
                 let emaValue: number | null = null;
                 for (const progress of progresses) {
+                    // КОНВЕРТИРУЕМ UTC ИЗ БАЗЫ В ЛОКАЛЬНОЕ ВРЕМЯ ДЛЯ РАСЧЕТОВ
+                    const localUpdatedAt = this.timezoneService.utcToLocal(progress.updatedAt);
+                    
                     const currentPercent = Math.min(100, progress.percent);
                     if (emaValue === null) {
                         emaValue = currentPercent;
@@ -320,8 +327,11 @@ export class TopicService {
             };
         });
 
-        const completed = subtopicsWithStatus.length > 0 && subtopicsWithStatus.every(st => st.status === 'completed');
+        const averagePercent = subtopicsWithStatus.length > 0
+          ? Math.ceil(subtopicsWithStatus.reduce((sum, st) => sum + st.percent, 0) / subtopicsWithStatus.length)
+          : 0;
 
+        const completed = averagePercent >= subject.threshold;
         response.topic = {
             ...topic,
             completed: completed,

@@ -7,8 +7,25 @@ import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { DateUtils } from '../scripts/dateUtils';
+import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'started' | 'progress' | 'completed';
+
+export interface SubtopicTask {
+    id: number;
+    text: string;
+    percent: number;
+    date: string;
+}
+
+export interface SubtopicWithProgressResponse {
+    id: number;
+    name: string;
+    importance: number;
+    tasks: SubtopicTask[];
+    percent?: number;
+    status?: Status;
+}
 
 @Injectable()
 export class SubtopicService {
@@ -17,7 +34,8 @@ export class SubtopicService {
     constructor(
         private readonly prismaService: PrismaService,
         private readonly httpService: HttpService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly timezoneService: TimezoneService
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -44,19 +62,22 @@ export class SubtopicService {
                 throw new BadRequestException('Przedmiot nie został znaleziony');
             }
 
-            interface SubtopicWithProgress {
-                id: number;
-                name: string;
-                importance: number;
-                progresses: {
-                    percent: number;
-                    updatedAt: Date;
-                }[];
-                percent?: number;
-                status?: Status;
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+                select: { 
+                    id: true, 
+                    name: true, 
+                    note: true,
+                    partId: true,
+                    frequency: true
+                }
+            });
+
+            if (!topic) {
+                throw new BadRequestException('Temat nie został znaleziony');
             }
 
-            let subtopics: SubtopicWithProgress[] = await this.prismaService.subtopic.findMany({
+            const subtopicsFromDb = await this.prismaService.subtopic.findMany({
                 where: { subjectId, sectionId, topicId },
                 orderBy: { name: 'asc' },
                 select: { 
@@ -70,21 +91,91 @@ export class SubtopicService {
                         select: {
                             percent: true,
                             updatedAt: true,
+                            task: {
+                                select: {
+                                    id: true,
+                                    text: true,
+                                    percent: true,
+                                    updatedAt: true,
+                                }
+                            }
                         },
                         orderBy: { updatedAt: 'asc' }
                     }
                 }
             });
 
-            subtopics = subtopics.map(sub => {
+            const uniqueTasksMap = new Map<number, any>();
+            
+            subtopicsFromDb.forEach(sub => {
+                sub.progresses.forEach(progress => {
+                    const taskId = progress.task.id;
+                    
+                    if (!uniqueTasksMap.has(taskId)) {
+                        const localDate = this.timezoneService.utcToLocal(progress.task.updatedAt);
+                        const dd = String(localDate.getDate()).padStart(2, '0');
+                        const mm = String(localDate.getMonth() + 1).padStart(2, '0');
+                        const yyyy = localDate.getFullYear();
+                        const dateStr = `${dd}.${mm}.${yyyy}`;
+
+                        let taskStatus: Status = "started";
+                        if (progress.task.percent === 0) {
+                            taskStatus = 'started';
+                        } else if (progress.task.percent < subject.threshold) {
+                            taskStatus = 'progress';
+                        } else {
+                            taskStatus = 'completed';
+                        }
+
+                        uniqueTasksMap.set(taskId, {
+                            id: progress.task.id,
+                            text: progress.task.text,
+                            percent: Math.round(progress.task.percent),
+                            date: dateStr,
+                            status: taskStatus,
+                            subtopics: [{
+                                id: sub.id,
+                                name: sub.name,
+                                percent: Math.round(progress.percent)
+                            }]
+                        });
+                    } else {
+                        const existingTask = uniqueTasksMap.get(taskId);
+                        if (!existingTask.subtopics.some(st => st.id === sub.id)) {
+                            existingTask.subtopics.push({
+                                id: sub.id,
+                                name: sub.name,
+                                percent: Math.round(progress.percent)
+                            });
+                        }
+                    }
+                });
+            });
+
+            const allUniqueTasks = Array.from(uniqueTasksMap.values()).sort((a, b) => {
+                return new Date(b.date.split('.').reverse().join('-')).getTime() - 
+                    new Date(a.date.split('.').reverse().join('-')).getTime();
+            });
+
+            let subtopics: SubtopicWithProgressResponse[] = subtopicsFromDb.map(sub => {
+                const tasksForThisSubtopic = allUniqueTasks
+                    .filter(task => task.subtopics.some(st => st.id === sub.id))
+                    .map(task => {
+                        const { subtopics, ...taskWithoutSubtopics } = task;
+                        return taskWithoutSubtopics;
+                    });
+
                 const progresses = sub.progresses;
-                
                 let percent = 0;
                 const alpha = 0.7;
                 
                 if (progresses.length > 0) {
+                    const sortedProgresses = [...progresses].sort((a, b) => 
+                        new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+                    );
+                    
                     let emaValue: number | null = null;
-                    for (const progress of progresses) {
+                    for (const progress of sortedProgresses) {
                         const currentPercent = Math.min(100, progress.percent);
                         if (emaValue === null) {
                             emaValue = currentPercent;
@@ -96,28 +187,22 @@ export class SubtopicService {
                 }
                 
                 return {
-                    ...sub,
+                    id: sub.id,
+                    name: sub.name,
+                    importance: sub.importance,
+                    tasks: tasksForThisSubtopic,
                     percent
                 };
             });
 
             if (subtopics.length === 0) {
-                const topic = await this.prismaService.topic.findUnique({
-                    where: { id: topicId },
-                    select: { id: true, name: true }
-                });
-
-                if (!topic) {
-                    throw new BadRequestException('Temat nie został znaleziony');
-                }
-
                 subtopics = [{
                     id: topic.id,
                     name: topic.name,
                     importance: 0,
-                    progresses: [],
+                    tasks: [],
                     percent: 0
-                } as SubtopicWithProgress];
+                }];
             }
 
             const updatedSubtopics = subtopics.map(sub => {
@@ -130,6 +215,22 @@ export class SubtopicService {
 
                 return { ...sub, status };
             });
+
+            let topicPercent = 0;
+
+            if (updatedSubtopics.length > 0) {
+                const totalPercent = updatedSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0);
+                topicPercent = Math.ceil(totalPercent / updatedSubtopics.length);
+            }
+
+            let topicStatus: Status;
+            if (topicPercent === 0) {
+                topicStatus = 'started';
+            } else if (topicPercent >= subject.threshold) {
+                topicStatus = 'completed';
+            } else {
+                topicStatus = 'progress';
+            }
 
             const totalSubtopics = updatedSubtopics.length || 1;
 
@@ -146,8 +247,8 @@ export class SubtopicService {
 
             const maxPercent = totalSubtopics * 100;
 
-            const percentCompleted = Math.min(Math.ceil((sumPercentCompleted / maxPercent) * 100), 100);
-            const percentProgress = Math.min(Math.ceil((sumPercentProgress / maxPercent) * 100), 100);
+            const percentCompleted = Math.min(Math.round((sumPercentCompleted / maxPercent) * 100), 100);
+            const percentProgress = Math.min(Math.round((sumPercentProgress / maxPercent) * 100), 100);
             const percentStarted = Math.max(Math.min(100 - percentCompleted - percentProgress, 100), 0);
 
             const totalPercentByStatus: Record<Status, number> = {
@@ -168,14 +269,17 @@ export class SubtopicService {
             const startOfWeek = DateUtils.getMonday(now, weekOffset);
             const endOfWeek = DateUtils.getSunday(now, weekOffset);
 
+            const startOfWeekUTC = this.timezoneService.localToUTC(startOfWeek);
+            const endOfWeekUTC = this.timezoneService.localToUTC(endOfWeek);
+
             const solvedTasksCount = await this.prismaService.task.count({
                 where: {
                     topicId,
                     finished: true,
                     parentTaskId: null,
                     updatedAt: {
-                        gte: startOfWeek,
-                        lte: endOfWeek,
+                        gte: startOfWeekUTC,
+                        lte: endOfWeekUTC,
                     },
                 },
             });
@@ -189,8 +293,8 @@ export class SubtopicService {
                         gte: subject.threshold,
                     },
                     updatedAt: {
-                        gte: startOfWeek,
-                        lte: endOfWeek,
+                        gte: startOfWeekUTC,
+                        lte: endOfWeekUTC,
                     },
                 },
             });
@@ -199,8 +303,9 @@ export class SubtopicService {
             if (weekOffset < 0) weekLabel = `${weekOffset} tydz.`;
 
             const formatDate = (date: Date) => {
-                const dd = String(date.getDate()).padStart(2, '0');
-                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const localDate = this.timezoneService.utcToLocal(date);
+                const dd = String(localDate.getDate()).padStart(2, '0');
+                const mm = String(localDate.getMonth() + 1).padStart(2, '0');
                 return `${dd}.${mm}`;
             };
 
@@ -210,6 +315,15 @@ export class SubtopicService {
             return {
                 statusCode: 200,
                 message: 'Pobrano listę podtematów pomyślnie',
+                topic: {
+                    id: topic.id,
+                    name: topic.name,
+                    note: topic.note,
+                    partId: topic.partId,
+                    frequency: topic.frequency,
+                    percent: topicPercent,
+                    status: topicStatus
+                },
                 subtopics: updatedSubtopics,
                 total: totalPercentByStatus,
                 statistics: {
