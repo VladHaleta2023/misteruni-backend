@@ -784,8 +784,8 @@ export class TaskService {
                 typeof r.changed !== 'string' ||
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
-                typeof r.topic !== 'string' ||
                 typeof r.difficulty !== 'string' ||
+                typeof r.topic !== 'string' ||
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
                 typeof r.attempt !== 'number' ||
