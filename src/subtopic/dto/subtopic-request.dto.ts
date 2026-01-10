@@ -1,4 +1,5 @@
-import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMinSize, ArrayNotEmpty, IsArray, IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 export class SubtopicCreateRequest {
   @IsString()
@@ -17,4 +18,19 @@ export class SubtopicUpdateRequest {
   @IsBoolean()
   @IsOptional()
   blocked?: boolean;
+}
+
+export class SubtopicUpdateItem {
+  @IsString()
+  name: string;
+
+  @IsString()
+  level: string;
+}
+
+export class UpdateSubtopicsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true }) // каждый элемент массива должен быть строкой
+  subtopics: string[];
 }

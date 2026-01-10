@@ -11,6 +11,10 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  subtopicsStatusPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   questionPrompt?: string;
 
   @IsOptional()
@@ -32,6 +36,10 @@ export class SectionUpdateRequest {
   @IsOptional()
   @IsString()
   vocabluaryPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  wordsPrompt?: string;
 
   @IsOptional()
   @IsString()

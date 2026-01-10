@@ -1,7 +1,7 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from '../subtopic/dto/subtopic-request.dto';
-import { SubtopicsAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
+import { SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -10,6 +10,12 @@ import { DateUtils } from '../scripts/dateUtils';
 import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'started' | 'progress' | 'completed';
+
+export enum SubjectDetailLevel {
+  MANDATORY = "MANDATORY",
+  DESIRABLE = "DESIRABLE",
+  OPTIONAL = "OPTIONAL"
+}
 
 export interface SubtopicTask {
     id: number;
@@ -48,6 +54,7 @@ export class SubtopicService {
     }
 
     async findSubtopics(
+        userId: number,
         subjectId: number,
         sectionId: number,
         topicId: number,
@@ -77,6 +84,21 @@ export class SubtopicService {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
 
+            const userSubject = await this.prismaService.userSubject.findUnique({
+                where: {
+                    userId_subjectId: {
+                        userId: userId,
+                        subjectId: subjectId
+                    }
+                },
+                select: {
+                    threshold: true,
+                    detailLevel: true
+                }
+            });
+
+            const threshold = userSubject?.threshold ?? 50; 
+
             const subtopicsFromDb = await this.prismaService.subtopic.findMany({
                 where: { subjectId, sectionId, topicId },
                 orderBy: { name: 'asc' },
@@ -86,7 +108,8 @@ export class SubtopicService {
                     importance: true,
                     progresses: {
                         where: {
-                            task: { finished: true }
+                            userId,
+                            task: { finished: true, userId }
                         },
                         select: {
                             percent: true,
@@ -121,7 +144,7 @@ export class SubtopicService {
                         let taskStatus: Status = "started";
                         if (progress.task.percent === 0) {
                             taskStatus = 'started';
-                        } else if (progress.task.percent < subject.threshold) {
+                        } else if (progress.task.percent < threshold) {
                             taskStatus = 'progress';
                         } else {
                             taskStatus = 'completed';
@@ -210,7 +233,7 @@ export class SubtopicService {
                 let status: Status;
 
                 if (pct === 0) status = 'started';
-                else if (pct < subject.threshold) status = 'progress';
+                else if (pct < threshold) status = 'progress';
                 else status = 'completed';
 
                 return { ...sub, status };
@@ -226,7 +249,7 @@ export class SubtopicService {
             let topicStatus: Status;
             if (topicPercent === 0) {
                 topicStatus = 'started';
-            } else if (topicPercent >= subject.threshold) {
+            } else if (topicPercent >= threshold) {
                 topicStatus = 'completed';
             } else {
                 topicStatus = 'progress';
@@ -274,6 +297,7 @@ export class SubtopicService {
 
             const solvedTasksCount = await this.prismaService.task.count({
                 where: {
+                    userId,
                     topicId,
                     finished: true,
                     parentTaskId: null,
@@ -286,11 +310,12 @@ export class SubtopicService {
 
             const solvedTasksCountCompleted = await this.prismaService.task.count({
                 where: {
+                    userId,
                     topicId,
                     finished: true,
                     parentTaskId: null,
                     percent: {
-                        gte: subject.threshold,
+                        gte: threshold,
                     },
                     updatedAt: {
                         gte: startOfWeekUTC,
@@ -341,6 +366,48 @@ export class SubtopicService {
         } catch (error) {
             throw new InternalServerErrorException(
                 `Nie udało się pobrać podtematów: ${error}`
+            );
+        }
+    }
+
+    async findAdminSubtopicsStatus(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId }
+            });
+
+            if (!topic) {
+                throw new BadRequestException('Temat nie został znaleziony');
+            }
+
+            const subtopics = await this.prismaService.subtopic.findMany({
+                where: { subjectId, sectionId, topicId },
+                orderBy: { name: 'asc' }
+            });
+
+            const formattedSubtopics = subtopics.map(st => [st.name, st.detailLevel]);
+
+            return {
+                statusCode: 200,
+                message: 'Pobrano listę statusów podtematów pomyślnie',
+                subtopics: formattedSubtopics
+            };
+
+        } catch (error) {
+            throw new InternalServerErrorException(
+                `Nie udało się pobrać statusów podtematów: ${error}`
             );
         }
     }
@@ -569,7 +636,7 @@ export class SubtopicService {
         sectionId: number,
         topicId: number,
         subtopics: [string, number][],
-        prismaClient?: PrismaClient | Prisma.TransactionClient,
+        prismaClient: PrismaClient | Prisma.TransactionClient = this.prismaService,
     ) {
         try {
             prismaClient = prismaClient || this.prismaService;
@@ -620,6 +687,73 @@ export class SubtopicService {
         }
         catch (error) {
             throw new InternalServerErrorException(`Błąd dodawania podtematu: ${error}`);
+        }
+    }
+
+    async updateSubtopics(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        subtopics: [string, string][],
+        prismaClient: PrismaClient | Prisma.TransactionClient = this.prismaService,
+    ) {
+        try {
+            const subject = await prismaClient.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await prismaClient.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await prismaClient.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            if (subtopics.length === 0) {
+                return {
+                    statusCode: 200,
+                    message: 'Brak podtematów do aktualizacji'
+                };
+            }
+
+            const allSubtopics = await prismaClient.subtopic.findMany({
+                where: {
+                    topicId,
+                    sectionId,
+                    subjectId,
+                }
+            });
+
+            const names = subtopics.map(([name]) => name);
+
+            const subtopicsToUpdate = allSubtopics.filter(st => 
+                names.includes(st.name)
+            );
+
+            const levelMap = new Map(subtopics);
+
+            const updates = subtopicsToUpdate
+                .filter(subtopic => {
+                    const newLevel = levelMap.get(subtopic.name);
+                    return newLevel && subtopic.detailLevel !== newLevel;
+                })
+                .map(subtopic => {
+                    const newLevel = levelMap.get(subtopic.name)!;
+                    return prismaClient.subtopic.update({
+                        where: { id: subtopic.id },
+                        data: { detailLevel: newLevel as any }
+                    });
+                });
+
+            if (updates.length > 0) {
+                await Promise.all(updates);
+            }
+
+            return {
+                statusCode: 200,
+                message: 'Podtematy zostały zaktualizowane',
+            };
+        } catch (error) {
+            console.error('Błąd aktualizacji podtematów:', error);
+            throw new InternalServerErrorException(`Błąd aktualizacji podtematów: ${error}`);
         }
     }
 
@@ -797,7 +931,86 @@ export class SubtopicService {
 
             return {
                 statusCode: 201,
-                message: "Generacja treści zadania udana",
+                message: "Generacja podtematów udana",
+                ...r
+            };
+        } catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    async subtopicsStatusAIGenerate(subjectId: number,
+        sectionId: number,
+        topicId: number,
+        data: SubtopicsStatusAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/subtopics-status-generate`;
+
+        try {
+            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            data.subject = data.subject ?? subject.name;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+
+            if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
+                Array.isArray(item) &&
+                item.length === 2 &&
+                typeof item[0] === 'string' &&
+                typeof item[1] === 'string'
+            )) {
+                throw new BadRequestException('Subtopics musi być listą par [string, string]');
+            }
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                !r?.prompt ||
+                !r?.changed ||
+                !r?.subject ||
+                !r?.section ||
+                !r?.topic ||
+                !Array.isArray(r.subtopics) ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.subtopics.every((item: any) =>
+                Array.isArray(item) &&
+                item.length === 2 &&
+                typeof item[0] === 'string' &&
+                typeof item[1] === 'string'
+            )) {
+                throw new BadRequestException('Subtopics musi być listą par [string, string]');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja statusów podtematów udana",
                 ...r
             };
         } catch (error) {

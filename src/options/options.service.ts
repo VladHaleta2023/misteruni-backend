@@ -187,6 +187,7 @@ export class OptionsService {
     }
 
     async generateTTS(
+        userId: number,
         id: number,
         text: string,
         partId: number,
@@ -197,7 +198,7 @@ export class OptionsService {
             prismaClient = prismaClient || this.prismaService;
 
             const url = `${this.fastapiUrl}/admin/tts`;
-            const task = await prismaClient.task.findUnique({ where: { id } });
+            const task = await prismaClient.task.findUnique({ where: { id, userId } });
 
             if (!task) {
                 throw new HttpException('Zadanie nie zostało znalezione', HttpStatus.NOT_FOUND);
@@ -240,13 +241,14 @@ export class OptionsService {
     }
 
     async deleteAudioFileByTaskId(
+        userId: number,
         id: number,
         prismaClient?: PrismaClient | Prisma.TransactionClient
     ) {
         try {
             prismaClient = prismaClient || this.prismaService;
 
-            const task = await prismaClient.task.findUnique({ where: { id } });
+            const task = await prismaClient.task.findUnique({ where: { id, userId } });
 
             if (!task) {
                 throw new HttpException('Zadanie nie zostało znalezione', HttpStatus.NOT_FOUND);

@@ -3,6 +3,7 @@ import { SubtopicService } from './subtopic.service';
 import { SubtopicController } from './subtopic.controller';
 import { HttpModule } from '@nestjs/axios';
 import { TimezoneModule } from '../timezone/timezone.module';
+import { AuthModule } from 'src/auth/auth.module';
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import { TimezoneModule } from '../timezone/timezone.module';
       timeout: 900000,
       maxRedirects: 5,
     }),
+    AuthModule,
     TimezoneModule
   ],
   controllers: [SubtopicController],

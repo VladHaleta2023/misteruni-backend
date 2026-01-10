@@ -5,6 +5,8 @@ import { HttpModule } from '@nestjs/axios';
 import { SubtopicModule } from '../subtopic/subtopic.module';
 import { OptionsModule } from '../options/options.module';
 import { TimezoneModule } from '../timezone/timezone.module';
+import { AuthModule } from 'src/auth/auth.module';
+import { StorageModule } from 'src/storage/storage.module';
 
 @Module({
   imports: [
@@ -12,6 +14,8 @@ import { TimezoneModule } from '../timezone/timezone.module';
       timeout: 900000,
       maxRedirects: 5,
     }),
+    AuthModule,
+    StorageModule,
     SubtopicModule,
     OptionsModule,
     TimezoneModule
@@ -23,3 +27,4 @@ import { TimezoneModule } from '../timezone/timezone.module';
 })
 
 export class TaskModule {}
+export { StorageModule }

@@ -3,9 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DateUtils } from '../scripts/dateUtils';
 import { SectionUpdateRequest } from '../section/dto/section-request.dto';
 import { TimezoneService } from '../timezone/timezone.service';
+import { SubjectDetailLevel, UserSubject } from '@prisma/client';
 
 type Status = 'started' | 'progress' | 'completed';
-type DeltaStatus = 'completed' | 'error' | 'completed error';
 
 @Injectable()
 export class SectionService {
@@ -17,52 +17,29 @@ export class SectionService {
     private calculateSectionsWithStatus(enrichedSections: any[], threshold: number) {
         return enrichedSections.map(section => {
             let status: Status = "started";
-
-            if (section.percent == 0)
-                status = "started";
-            else if (section.percent >= threshold)
-                status = "completed";
-            else
-                status = "progress";
-
+            if (section.percent == 0) status = "started";
+            else if (section.percent >= threshold) status = "completed";
+            else status = "progress";
             return { ...section, status };
         });
     }
 
-    async calculateSubtopicsPercent(subjectId: number, weekOffset = 0) {
-        const now = new Date();
-        
-        let endOfRange: Date;
-        
-        if (weekOffset === 0) {
-            endOfRange = new Date();
-            if (now.getDay() === 0) {
-                endOfRange.setHours(23, 59, 59, 999);
-            }
-        } else {
-            endOfRange = DateUtils.getSunday(now, weekOffset);
-            endOfRange.setHours(23, 59, 59, 999);
-        }
-
-        const endOfRangeUTC = this.timezoneService.localToUTC(endOfRange);
+    async calculateSubtopicsPercent(userId: number, subjectId: number, detailLevel: SubjectDetailLevel) {
+        const endOfRangeUTC = this.timezoneService.localToUTC(new Date());
 
         const subtopics = await this.prismaService.subtopic.findMany({
-            where: { subjectId },
+            where: { subjectId, detailLevel },
             include: {
                 progresses: {
-                    where: {
-                        updatedAt: { lte: endOfRangeUTC },
-                        task: { finished: true },
-                    },
+                    where: { userId, updatedAt: { lte: endOfRangeUTC }, task: { finished: true, userId } },
                     include: { task: { select: { id: true } } },
                     orderBy: { updatedAt: 'asc' },
                 },
             },
         });
 
-        const updatedSubtopics = subtopics.map(subtopic => {
+        return subtopics.map(subtopic => {
             const progresses = subtopic.progresses ?? [];
-            
             let percent = 0;
             const alpha = 0.7;
             
@@ -74,337 +51,208 @@ export class SectionService {
                 let emaValue: number | null = null;
                 for (const progress of sortedProgresses) {
                     const currentPercent = Math.min(100, progress.percent);
-                    if (emaValue === null) {
-                        emaValue = currentPercent;
-                    } else {
-                        emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
-                    }
+                    if (emaValue === null) emaValue = currentPercent;
+                    else emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
                 }
                 percent = Math.min(100, Math.ceil(emaValue!));
             }
             
             return { ...subtopic, percent };
         });
-
-        return updatedSubtopics;
     }
 
-    async calculatePrediction(
-        now: Date,
-        subjectId: number,
-        subject: any,
-        subtopicsNow: any[],
-        frequencyThreshold: number = 0,
-        globalCompression: number = 1.8
-    ): Promise<string> {
+    async calculatePrediction(userId: number, now: Date, subjectId: number, threshold: number, subtopicsNow: any[], audioTopics: any[]) {
         try {
-            let topics = await this.prismaService.topic.findMany({
+            const topics = await this.prismaService.topic.findMany({
                 where: { subjectId },
-                include: { subtopics: true },
-                orderBy: { partId: 'asc' },
+                include: { subtopics: true, section: true, words: { where: { userId } } },
+                orderBy: { partId: 'asc' }
             });
 
-            if (topics.length === 0) return 'Infinity';
-            
-            const filteredTopics = topics.filter(topic => topic.frequency >= frequencyThreshold);
+            if (!topics.length) return 'Infinity';
 
-            topics = filteredTopics.length > 0 ? filteredTopics : topics;
+            const topicsForPrediction = topics.filter(t => t.section.type === 'Stories' || t.frequency >= 0);
+            if (!topicsForPrediction.length) return 'Infinity';
 
-            const subtopicIds = topics.flatMap(t => t.subtopics.map(s => s.id));
-            if (subtopicIds.length === 0) return 'Infinity';
+            const subtopicIds = topicsForPrediction.flatMap(t => t.subtopics?.map(s => s.id) ?? []);
+            const topicIds = topicsForPrediction.map(t => t.id);
 
             let totalWeight = 0;
             let currentWeight = 0;
+            const globalCompression = 1.8;
 
-            for (const topic of topics) {
-                const subtopicImportances = topic.subtopics.map(s => s.importance || 0);
-                if (subtopicImportances.length === 0) continue;
+            for (const topic of topicsForPrediction) {
+                const thresholdNorm = Math.max(0.1, threshold / 100);
+                const freqNorm = Math.min((topic.frequency / 100) * globalCompression, 1);
 
-                const minImp = Math.min(...subtopicImportances);
-                const maxImp = Math.max(...subtopicImportances);
-                const normalizedDifficulties = topic.subtopics.map(s =>
-                    maxImp === minImp ? 1 : ((s.importance || 0) - minImp) / (maxImp - minImp)
-                );
+                if (topic.subtopics?.length) {
+                    const importances = topic.subtopics.map(s => s.importance ?? 1);
+                    const min = Math.min(...importances);
+                    const max = Math.max(...importances);
+                    const normalized = importances.map(v => max === min ? 1 : (v - min) / (max - min));
+                    const difficulty = Math.min((normalized.reduce((a, b) => a + b, 0) / normalized.length) * globalCompression, 1);
 
-                const avgNormalizedDifficulty =
-                    normalizedDifficulties.reduce((sum, d) => sum + d, 0) / normalizedDifficulties.length;
-
-                const compressedDifficulty = Math.min(avgNormalizedDifficulty * globalCompression, 1);
-
-                const avgSubtopicPercent =
-                    topic.subtopics.reduce((sum, s, idx) => {
-                        const progress = subtopicsNow.find(x => x.id === s.id)?.percent || 0;
-                        return sum + (Math.min(100, progress) / 100) * normalizedDifficulties[idx];
+                    const progress = topic.subtopics.reduce((sum, s, i) => {
+                        const p = subtopicsNow.find(x => x.id === s.id)?.percent ?? 0;
+                        return sum + (Math.min(100, p) / 100) * normalized[i];
                     }, 0) / topic.subtopics.length;
 
-                const topicPercent = subject.threshold > 0 
-                    ? Math.min(avgSubtopicPercent / (subject.threshold / 100), 1)
-                    : Math.min(avgSubtopicPercent, 1);
+                    currentWeight += difficulty * Math.min(progress / thresholdNorm, 1) * freqNorm;
+                    totalWeight += difficulty * freqNorm;
+                } else {
+                    const audio = audioTopics.find(a => a.id === topic.id);
+                    const percent = Math.min(100, audio?.percent ?? 0) / 100;
 
-                const normalizedFrequency = Math.min((topic.frequency / 100) * globalCompression, 1);
+                    const wordDifficulties = topic.words?.map(w => Math.max(1, 100 - (w.frequency ?? 50))) ?? [];
+                    let difficulty = 0.6;
+                    if (wordDifficulties.length) {
+                        const min = Math.min(...wordDifficulties);
+                        const max = Math.max(...wordDifficulties);
+                        const normalized = wordDifficulties.map(v => max === min ? 1 : (v - min) / (max - min));
+                        difficulty = Math.min((normalized.reduce((a, b) => a + b, 0) / normalized.length) * globalCompression, 1);
+                    }
 
-                const topicCurrentWeight = compressedDifficulty * topicPercent * normalizedFrequency;
-                const topicTotalWeight = compressedDifficulty * (Math.max(0.1, subject.threshold / 100)) * normalizedFrequency;
-
-                currentWeight += topicCurrentWeight;
-                totalWeight += topicTotalWeight;
+                    currentWeight += difficulty * Math.min(percent / thresholdNorm, 1) * freqNorm;
+                    totalWeight += difficulty * freqNorm;
+                }
             }
 
-            if (totalWeight <= 0 || currentWeight <= 0) {
-                return 'Infinity';
-            }
+            if (totalWeight <= 0 || currentWeight <= 0) return 'Infinity';
 
-            const firstProgress = await this.prismaService.subtopicProgress.findFirst({
-                where: { 
-                    subtopicId: { in: subtopicIds },
-                    percent: { gt: 0 }
-                },
-                select: { updatedAt: true },
-                orderBy: { updatedAt: 'asc' },
-            });
+            const [firstSub, firstTask] = await Promise.all([
+                subtopicIds.length ? this.prismaService.subtopicProgress.findFirst({
+                    where: { userId, subtopicId: { in: subtopicIds }, percent: { gt: 0 } },
+                    orderBy: { updatedAt: 'asc' },
+                    select: { updatedAt: true }
+                }) : null,
+                topicIds.length ? this.prismaService.task.findFirst({
+                    where: { userId, topicId: { in: topicIds }, finished: true, percent: { gt: 0 } },
+                    orderBy: { updatedAt: 'asc' },
+                    select: { updatedAt: true }
+                }) : null
+            ]);
 
-            const learningStartDate = firstProgress?.updatedAt || new Date();
+            const startDate = firstSub && firstTask 
+                ? (firstSub.updatedAt < firstTask.updatedAt ? firstSub.updatedAt : firstTask.updatedAt)
+                : firstSub?.updatedAt ?? firstTask?.updatedAt ?? now;
 
-            const nowUTC = this.timezoneService.localToUTC(now);
-            const learningStartDateUTC = this.timezoneService.localToUTC(learningStartDate);
+            const days = Math.max(1, Math.floor(
+                (this.timezoneService.localToUTC(now).getTime() - this.timezoneService.localToUTC(startDate).getTime()) / 86400000
+            ));
 
-            const learningPeriodDays = Math.max(
-                1,
-                Math.floor((nowUTC.getTime() - learningStartDateUTC.getTime()) / (1000 * 60 * 60 * 24))
-            );
+            const speed = currentWeight / days;
+            const remaining = Math.max(0, totalWeight - currentWeight);
+            const predictionDays = Math.max(1, remaining / Math.max(speed, 0.001));
 
-            const learningSpeed = currentWeight / learningPeriodDays;
-            const remainingWeight = Math.max(0, totalWeight - currentWeight);
-
-            const MINIMAL_LEARNING_SPEED = 0.001;
-            
-            let predictionDays: number;
-            if (learningSpeed > MINIMAL_LEARNING_SPEED) {
-                predictionDays = remainingWeight / learningSpeed;
-                predictionDays = Math.max(1, predictionDays);
-            } else {
-                const conservativeSpeed = Math.max(MINIMAL_LEARNING_SPEED, currentWeight / 7);
-                predictionDays = remainingWeight / conservativeSpeed;
-                predictionDays = Math.max(7, predictionDays);
-            }
-
-            const resultDate = new Date(now);
-            resultDate.setDate(resultDate.getDate() + Math.ceil(predictionDays));
-
-            const localResultDate = this.timezoneService.utcToLocal(resultDate);
-            const dd = String(localResultDate.getDate()).padStart(2, '0');
-            const mm = String(localResultDate.getMonth() + 1).padStart(2, '0');
-            const yyyy = localResultDate.getFullYear();
-
-            return `${dd}.${mm}.${yyyy}`;
-        } catch (error) {
-            console.error('Prediction calculation error:', error);
+            const result = new Date(now);
+            result.setDate(result.getDate() + Math.ceil(predictionDays));
+            const local = this.timezoneService.utcToLocal(result);
+            return `${String(local.getDate()).padStart(2, '0')}.${String(local.getMonth() + 1).padStart(2, '0')}.${local.getFullYear()}`;
+        } catch {
             return 'Infinity';
         }
     }
 
-    private async batchCalculateTopicPercents(topics: any[], weekOffset: number) {
-        if (topics.length === 0) return [];
+    private async batchCalculateTopicPercents(userId: number, topicIds: number[]) {
+        if (topicIds.length === 0) return new Map();
 
-        const topicIds = topics.map(t => t.id);
-        const now = new Date();
-        
-        let endOfRange: Date;
-        
-        if (weekOffset === 0) {
-            endOfRange = new Date();
-            if (now.getDay() === 0) {
-                endOfRange.setHours(23, 59, 59, 999);
-            }
-        } else {
-            endOfRange = DateUtils.getSunday(now, weekOffset);
-            endOfRange.setHours(23, 59, 59, 999);
-        }
+        const endOfRangeUTC = this.timezoneService.localToUTC(new Date());
+        const tasks = await this.prismaService.task.findMany({
+            where: {
+                userId,
+                topicId: { in: topicIds },
+                finished: true,
+                parentTaskId: null,
+                updatedAt: { lte: endOfRangeUTC },
+            },
+            select: { topicId: true, percent: true },
+        });
 
-        const endOfRangePrevious = DateUtils.getSunday(now, weekOffset - 1);
-        endOfRangePrevious.setHours(23, 59, 59, 999);
+        const tasksByTopicId: Record<number, any[]> = {};
+        tasks.forEach(task => {
+            if (!tasksByTopicId[task.topicId]) tasksByTopicId[task.topicId] = [];
+            tasksByTopicId[task.topicId].push(task);
+        });
 
-        const endOfRangeUTC = this.timezoneService.localToUTC(endOfRange);
-        const endOfRangePreviousUTC = this.timezoneService.localToUTC(endOfRangePrevious);
-
-        const [currentTasks, previousTasks] = await Promise.all([
-            this.prismaService.task.findMany({
-                where: {
-                    topicId: { in: topicIds },
-                    finished: true,
-                    parentTaskId: null,
-                    updatedAt: { lte: endOfRangeUTC },
-                },
-                select: { topicId: true, percent: true },
-            }),
-            this.prismaService.task.findMany({
-                where: {
-                    topicId: { in: topicIds },
-                    finished: true,
-                    parentTaskId: null,
-                    updatedAt: { lte: endOfRangePreviousUTC },
-                },
-                select: { topicId: true, percent: true },
-            })
-        ]);
-
-        const tasksByTopicId = currentTasks.reduce((acc, task) => {
-            if (!acc[task.topicId]) acc[task.topicId] = [];
-            acc[task.topicId].push(task);
-            return acc;
-        }, {} as Record<number, any[]>);
-
-        const previousTasksByTopicId = previousTasks.reduce((acc, task) => {
-            if (!acc[task.topicId]) acc[task.topicId] = [];
-            acc[task.topicId].push(task);
-            return acc;
-        }, {} as Record<number, any[]>);
-
-        return topics.map(topic => {
-            const tasks = tasksByTopicId[topic.id] || [];
-            const prevTasks = previousTasksByTopicId[topic.id] || [];
-
+        const result = new Map();
+        topicIds.forEach(topicId => {
+            const tasks = tasksByTopicId[topicId] || [];
             const percent = tasks.length > 0
                 ? Math.min(100, tasks.reduce((acc, t) => acc + t.percent, 0) / tasks.length)
                 : 0;
-
-            const previousPercent = prevTasks.length > 0
-                ? Math.min(100, prevTasks.reduce((acc, t) => acc + t.percent, 0) / prevTasks.length)
-                : 0;
-
-            const delta = percent - previousPercent;
-
-            return { id: topic.id, percent, delta };
+            result.set(topicId, { id: topicId, percent });
         });
+
+        return result;
     }
 
     private calculateTopicStatus(percent: number, threshold: number): Status {
-        if (percent === 0)
-            return 'started';
-        else if (percent >= threshold)
-            return 'completed';
-        else
-            return 'progress'
+        if (percent === 0) return 'started';
+        else if (percent >= threshold) return 'completed';
+        else return 'progress';
     }
 
-    private async processSectionsWithTopics(
-        sections: any[],
-        subjectId: number,
-        updatedSubtopics: any[],
-        previousSubtopics: any[],
-        withSubtopics: boolean,
-        weekOffset: number,
-        threshold: number
-    ) {
-        const previousMap = new Map(previousSubtopics.map(sub => [sub.id, sub]));
-        const updatedSubtopicsWithDelta = updatedSubtopics.map(sub => ({
+    private async processSectionsWithTopics(userId: number, sections: any[], subjectId: number, updatedSubtopics: any[], threshold: number) {
+        const updatedSubtopicsWithPercent = updatedSubtopics.map(sub => ({
             ...sub,
-            percent: Math.min(100, sub.percent),
-            delta: weekOffset !== 0 ? (Math.min(100, sub.percent) - Math.min(100, previousMap.get(sub.id)?.percent || 0)) : 0
+            percent: Math.min(100, sub.percent)
         }));
 
-        const subtopicsGrouped = withSubtopics 
-            ? updatedSubtopicsWithDelta.reduce((acc, sub) => {
-                if (!acc[sub.topicId]) acc[sub.topicId] = [];
-                acc[sub.topicId].push(sub);
-                return acc;
-            }, {} as Record<number, any[]>)
-            : {};
+        const subtopicsGrouped: Record<number, any[]> = {};
+        updatedSubtopicsWithPercent.forEach(sub => {
+            if (!subtopicsGrouped[sub.topicId]) subtopicsGrouped[sub.topicId] = [];
+            subtopicsGrouped[sub.topicId].push(sub);
+        });
 
         const topicsFromDB = await this.prismaService.topic.findMany({
             where: { subjectId },
             orderBy: { partId: 'asc' },
         });
 
-        const topicsWithoutSubtopics = topicsFromDB.filter(topic => 
-            !withSubtopics || !subtopicsGrouped[topic.id]?.length
-        );
-        
-        const topicsWithCalculatedPercents = await this.batchCalculateTopicPercents(
-            topicsWithoutSubtopics, 
-            weekOffset
-        );
+        const topicIdsWithoutSubtopics = topicsFromDB
+            .filter(topic => !subtopicsGrouped[topic.id]?.length)
+            .map(t => t.id);
 
-        const topicPercentMap = new Map(
-            topicsWithCalculatedPercents.map(t => [t.id, {
-                ...t,
-                percent: Math.min(100, t.percent),
-                delta: Math.max(-100, Math.min(100, t.delta))
-            }])
-        );
+        const topicPercentMap = await this.batchCalculateTopicPercents(userId, topicIdsWithoutSubtopics);
 
         const allTopics = topicsFromDB.map(topic => {
-            const subtopics = withSubtopics ? (subtopicsGrouped[topic.id] || []) : [];
-            
+            const subtopics = subtopicsGrouped[topic.id] || [];
             let percent = 0;
-            let delta = 0;
 
             if (subtopics.length > 0) {
                 const totalPercent = subtopics.reduce((acc, s) => acc + Math.min(100, s.percent), 0);
                 percent = totalPercent / subtopics.length;
-                
-                const validDeltas = subtopics
-                    .filter(s => s.delta !== 0)
-                    .map(s => Math.max(-100, Math.min(100, s.delta ?? 0)));
-                
-                delta = validDeltas.length > 0 
-                    ? validDeltas.reduce((acc, d) => acc + d, 0) / validDeltas.length 
-                    : 0;
             } else {
                 const calculated = topicPercentMap.get(topic.id);
-                if (calculated) {
-                    percent = Math.min(100, calculated.percent);
-                    delta = Math.max(-100, Math.min(100, calculated.delta));
-                }
+                if (calculated) percent = Math.min(100, calculated.percent);
             }
 
             percent = Math.min(100, Math.ceil(percent));
-            const deltaStatus: DeltaStatus = delta >= 0 ? 'completed' : 'error';
-
             return { 
                 ...topic, 
                 subtopics, 
-                percent, 
-                delta, 
-                deltaStatus,
+                percent,
                 status: this.calculateTopicStatus(percent, threshold)
             };
         });
 
-        const topicsBySection = allTopics.reduce((acc, topic) => {
-            if (!acc[topic.sectionId]) acc[topic.sectionId] = [];
-            acc[topic.sectionId].push(topic);
-            return acc;
-        }, {} as Record<number, any[]>);
+        const topicsBySection: Record<number, any[]> = {};
+        allTopics.forEach(topic => {
+            if (!topicsBySection[topic.sectionId]) topicsBySection[topic.sectionId] = [];
+            topicsBySection[topic.sectionId].push(topic);
+        });
 
-        const enrichedSections = sections
+        return sections
             .map(section => {
                 const topics = topicsBySection[section.id] || [];
                 if (!topics.length) return null;
 
                 const totalPercent = topics.reduce((acc, t) => acc + Math.min(100, t.percent), 0);
                 const percent = Math.min(100, Math.ceil(totalPercent / topics.length));
-                
-                const validDeltas = topics
-                    .filter(t => t.delta !== 0)
-                    .map(t => Math.max(-100, Math.min(100, t.delta ?? 0)));
-                
-                const delta = validDeltas.length > 0
-                    ? validDeltas.reduce((acc, d) => acc + d, 0) / validDeltas.length
-                    : 0;
 
-                const allCompleted = topics.every(t => t.deltaStatus === 'completed');
-                const allError = topics.every(t => t.deltaStatus === 'error');
-                const deltaStatus: DeltaStatus = allCompleted
-                    ? 'completed'
-                    : allError
-                    ? 'error'
-                    : 'completed error';
-
-                return { ...section, topics, percent, delta, deltaStatus };
+                return { ...section, topics, percent };
             })
             .filter(Boolean) as any[];
-        return enrichedSections;
     }
 
     private calculateTotalPercent(sectionsWithStatus: any[]) {
@@ -414,11 +262,8 @@ export class SectionService {
 
         sectionsWithStatus.forEach(section => {
             const p = Math.min(100, section.percent ?? 0);
-
-            if (section.status === "completed")
-                sumPercentCompleted += p;
-            else if (section.status === "progress")
-                sumPercentProgress += p;
+            if (section.status === "completed") sumPercentCompleted += p;
+            else if (section.status === "progress") sumPercentProgress += p;
         });
 
         const maxPercent = totalSections * 100;
@@ -439,285 +284,155 @@ export class SectionService {
         return totalPercent;
     }
 
-    async findSections(
-        subjectId: number,
-        withSubject = false,
-        withTopics = false,
-        withSubtopics = false,
-        weekOffset: number = 0
-    ) {
+    private extractStoriesTopicsWithPercents(enrichedSections: any[]): any[] {
+        const storiesTopics: any[] = [];
+        
+        enrichedSections.forEach(section => {
+            if (!section?.topics) return;
+            
+            section.topics.forEach(topic => {
+                const sectionType = topic.section?.type || section.type || section.section?.type;
+                if (sectionType === "Stories") {
+                    storiesTopics.push({
+                        id: topic.id,
+                        percent: topic.percent || 0,
+                        sectionId: topic.sectionId || section.id,
+                        sectionType: "Stories",
+                        topicName: topic.name || "",
+                        subtopicsCount: topic.subtopics?.length || 0
+                    });
+                }
+            });
+        });
+        
+        return storiesTopics;
+    }
+
+    async findSections(userId: number, subjectId: number) {
         try {
             const [subject, sections] = await Promise.all([
-                this.prismaService.subject.findUnique({
-                    where: { id: subjectId },
-                }),
-                this.prismaService.section.findMany({
-                    where: { subjectId },
-                    orderBy: { partId: 'asc' },
-                })
+                this.prismaService.subject.findUnique({ where: { id: subjectId } }),
+                this.prismaService.section.findMany({ where: { subjectId }, orderBy: { partId: 'asc' } })
             ]);
 
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
-            const calculateCurrent = this.calculateSubtopicsPercent(subjectId, weekOffset);
-            const calculatePrevious = weekOffset !== 0 
-                ? this.calculateSubtopicsPercent(subjectId, weekOffset - 1)
-                : Promise.resolve([]);
+            const userSubject = await this.prismaService.userSubject.findUnique({
+                where: { userId_subjectId: { subjectId, userId } },
+                select: { threshold: true, detailLevel: true }
+            });
 
-            const [updatedSubtopics, previousSubtopics] = await Promise.all([
-                calculateCurrent,
-                calculatePrevious
-            ]);
+            const detailLevel = userSubject?.detailLevel ?? SubjectDetailLevel.MANDATORY;
+            const threshold = userSubject?.threshold ?? 50;
+            const updatedSubtopics = await this.calculateSubtopicsPercent(userId, subjectId, detailLevel);
 
-            let enrichedSections: any[] = [];
-            const threshold = Number(subject.threshold) || 0;
+            const startOfTodayUTC = this.timezoneService.getStartOfTodayUTC();
+            const lastTasks = await this.prismaService.task.findMany({
+                where: { userId, topic: { subjectId }, finished: true, updatedAt: { lt: startOfTodayUTC } },
+                select: { topicId: true, updatedAt: true },
+                orderBy: { updatedAt: 'desc' },
+            });
 
-            const HIGH_FREQUENCY_THRESHOLD = 70;
-            const MEDIUM_FREQUENCY_THRESHOLD = 40;
-            const HIGH_FREQ_REPEAT_DAYS = 30;
-            const MEDIUM_FREQ_REPEAT_DAYS = 60;
+            const lastTaskDates = new Map<number, Date>();
+            lastTasks.forEach(task => {
+                if (!lastTaskDates.has(task.topicId) || task.updatedAt > lastTaskDates.get(task.topicId)!) {
+                    lastTaskDates.set(task.topicId, task.updatedAt);
+                }
+            });
 
-            const getFullCalendarDaysDiff = (lastTaskDate: Date): number => {
-                return this.timezoneService.getDaysDifference(lastTaskDate);
-            };
+            const enrichedSections = await this.processSectionsWithTopics(
+                userId, sections, subjectId, updatedSubtopics, threshold
+            );
 
-            let lastTaskDates = new Map<number, Date>();
-            if (withTopics) {
-                const startOfTodayUTC = this.timezoneService.getStartOfTodayUTC();
+            const REPEAT_DAYS = 30;
+            const enrichedSectionsWithTopics = enrichedSections.map(section => ({
+                ...section,
+                topics: section.topics.map(topic => {
+                    const lastTaskDate = lastTaskDates.get(topic.id);
+                    let repeat = false;
+                    let daysDiff = 0;
 
-                const lastTasks = await this.prismaService.task.findMany({
-                    where: {
-                        topic: { subjectId },
-                        finished: true,
-                        updatedAt: {
-                            lt: startOfTodayUTC
-                        }
-                    },
-                    select: {
-                        topicId: true,
-                        updatedAt: true,
-                    },
-                    orderBy: {
-                        updatedAt: 'desc',
-                    },
-                });
-
-                lastTaskDates = lastTasks.reduce((map, task) => {
-                    if (!map.has(task.topicId) || task.updatedAt > map.get(task.topicId)!) {
-                        map.set(task.topicId, task.updatedAt);
+                    if (lastTaskDate) {
+                        daysDiff = this.timezoneService.getDaysDifference(lastTaskDate);
+                        if (topic.percent >= threshold) repeat = daysDiff >= REPEAT_DAYS;
                     }
-                    return map;
-                }, new Map<number, Date>());
-            }
 
-            if (withTopics) {
-                enrichedSections = await this.processSectionsWithTopics(
-                    sections,
-                    subjectId,
-                    updatedSubtopics,
-                    previousSubtopics,
-                    withSubtopics,
-                    weekOffset,
-                    threshold
-                );
+                    return {
+                        ...topic,
+                        frequency: Math.ceil(topic.frequency - (topic.percent * topic.frequency / 100)),
+                        baseFrequency: topic.frequency,
+                        repeat,
+                        daysSinceLastTask: daysDiff,
+                    };
+                })
+            }));
 
-                enrichedSections = enrichedSections.map(section => ({
-                    ...section,
-                    topics: section.topics.map(topic => {
-                        const lastTaskDate = lastTaskDates.get(topic.id);
-                        let repeat = false;
-                        let daysDiff = 0;
-
-                        if (lastTaskDate) {
-                            daysDiff = getFullCalendarDaysDiff(lastTaskDate);
-                            
-                            if (topic.frequency >= HIGH_FREQUENCY_THRESHOLD) {
-                                repeat = daysDiff >= HIGH_FREQ_REPEAT_DAYS;
-                            } else if (topic.frequency >= MEDIUM_FREQUENCY_THRESHOLD) {
-                                repeat = daysDiff >= MEDIUM_FREQ_REPEAT_DAYS;
-                            }
-                        }
-
-                        return {
-                            ...topic,
-                            frequency: Math.ceil(topic.frequency - (topic.percent * topic.frequency / 100)),
-                            baseFrequency: topic.frequency,
-                            repeat,
-                            daysSinceLastTask: daysDiff,
-                        };
-                    })
-                }));
-            } else {
-                enrichedSections = sections.map(section => ({
-                    ...section,
-                    topics: [],
-                    percent: 0,
-                    delta: 0,
-                    deltaStatus: 'completed',
-                    repeat: false,
-                }));
-            }
-
-            const sectionsWithStatus = this.calculateSectionsWithStatus(enrichedSections, subject.threshold);
-            
-            const [statistics, totalPercent] = await Promise.all([
-                this.calculateStatSections(subjectId, weekOffset, updatedSubtopics, previousSubtopics),
-                Promise.resolve(this.calculateTotalPercent(sectionsWithStatus))
-            ]);
+            const sectionsWithStatus = this.calculateSectionsWithStatus(enrichedSectionsWithTopics, threshold);
 
             const sectionsWithRepeat = sectionsWithStatus.map(section => ({
                 ...section,
                 repeat: section.topics?.some(topic => topic.repeat) || false,
             }));
 
-            const response: any = {
-                statusCode: 200,
-                message: 'Działy zostały pomyślnie pobrane',
-                sections: sectionsWithRepeat,
-                total: totalPercent,
-                statistics,
-            };
-
-            if (withSubject) {
-                response.subject = subject;
-            }
-
-            return response;
-        } catch (error) {
-            throw new InternalServerErrorException('Nie udało się pobrać działów');
-        }
-    }
-
-    async calculateStatSections(
-        subjectId: number,
-        weekOffset = 0,
-        subtopicsNow: any[],
-        subtopicsThen: any[]
-    ) {
-        try {
-            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
-            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
-
-            if (weekOffset > 0) weekOffset = 0;
-
-            const topics = await this.prismaService.topic.findMany({
-                where: { subjectId },
-                orderBy: { partId: 'asc' },
-            });
-
             const now = new Date();
-            
-            let startOfRange: Date;
-            let endOfRange: Date;
-            
-            if (weekOffset === 0) {
-                startOfRange = DateUtils.getMonday(now, 0);
-                endOfRange = new Date();
-                if (now.getDay() === 0) {
-                    endOfRange = DateUtils.getSunday(now, 0);
-                    endOfRange.setHours(23, 59, 59, 999);
-                }
-            } else {
-                startOfRange = DateUtils.getMonday(now, weekOffset);
-                endOfRange = DateUtils.getSunday(now, weekOffset);
+            const startOfRange = DateUtils.getMonday(now, 0);
+            let endOfRange = new Date();
+            if (now.getDay() === 0) {
+                endOfRange = DateUtils.getSunday(now, 0);
                 endOfRange.setHours(23, 59, 59, 999);
             }
 
             const startOfRangeUTC = this.timezoneService.localToUTC(startOfRange);
             const endOfRangeUTC = this.timezoneService.localToUTC(endOfRange);
 
-            const groupByTopic = (subs: any[]) =>
-                subs.reduce<Record<number, any[]>>((acc, sub) => {
-                if (!acc[sub.topicId]) acc[sub.topicId] = [];
-                acc[sub.topicId].push(sub);
-                return acc;
-                }, {});
-
-            const subsNowByTopic = groupByTopic(subtopicsNow);
-            const subsThenByTopic = groupByTopic(subtopicsThen);
-
-            let totalSubsNow = 0;
-            let totalSubsThen = 0;
-            let totalTopicsNow = 0;
-            let totalTopicsThen = 0;
-
-            for (const topic of topics) {
-                const nowSubs = subsNowByTopic[topic.id] || [];
-                const thenSubs = subsThenByTopic[topic.id] || [];
-                const closedNow = nowSubs.filter(sub => Math.min(100, sub.percent) >= subject.threshold);
-                const closedThen = thenSubs.filter(sub => Math.min(100, sub.percent) >= subject.threshold);
-
-                totalSubsNow += closedNow.length;
-                totalSubsThen += closedThen.length;
-                if (nowSubs.length && closedNow.length === nowSubs.length) totalTopicsNow++;
-                if (thenSubs.length && closedThen.length === thenSubs.length) totalTopicsThen++;
-            }
-
-            const formatDate = (d: Date) => {
-                const localDate = this.timezoneService.utcToLocal(d);
-                return `${String(localDate.getDate()).padStart(2, '0')}.${String(localDate.getMonth() + 1).padStart(2, '0')}`;
-            };
-
-            let predictionResult: string | null = null;
-
-            if (weekOffset === 0) {
-                predictionResult = await this.calculatePrediction(
-                    now,
-                    subjectId,
-                    subject,
-                    subtopicsNow
-                );
-            }
-
-            const solvedTasksCount = await this.prismaService.task.count({
-                where: {
-                    finished: true,
-                    parentTaskId: null,
-                    updatedAt: { gte: startOfRangeUTC, lte: endOfRangeUTC },
-                    topic: { subjectId },
-                },
+            const subtopicsByTopic: Record<number, any[]> = {};
+            updatedSubtopics.forEach(sub => {
+                if (!subtopicsByTopic[sub.topicId]) subtopicsByTopic[sub.topicId] = [];
+                subtopicsByTopic[sub.topicId].push(sub);
             });
 
-            const solvedTasksCountCompleted = await this.prismaService.task.count({
-                where: {
-                    finished: true,
-                    parentTaskId: null,
-                    updatedAt: { gte: startOfRangeUTC, lte: endOfRangeUTC },
-                    percent: { gte: subject.threshold },
-                    topic: { subjectId },
-                },
+            let closedSubtopics = 0;
+            let closedTopics = 0;
+            const topics = await this.prismaService.topic.findMany({ where: { subjectId } });
+            topics.forEach(topic => {
+                const subtopics = subtopicsByTopic[topic.id] || [];
+                const completed = subtopics.filter(s => Math.min(100, s.percent) >= threshold).length;
+                closedSubtopics += completed;
+                if (subtopics.length > 0 && completed === subtopics.length) closedTopics++;
             });
 
-            const weekLabel = weekOffset < 0 ? `${weekOffset} tydz.` : 'bieżący';
+            const [solvedTasks, solvedTasksCompleted, prediction, totalPercent] = await Promise.all([
+                this.prismaService.task.count({
+                    where: { userId, finished: true, parentTaskId: null, updatedAt: { gte: startOfRangeUTC, lte: endOfRangeUTC }, topic: { subjectId } },
+                }),
+                this.prismaService.task.count({
+                    where: { userId, finished: true, parentTaskId: null, updatedAt: { gte: startOfRangeUTC, lte: endOfRangeUTC }, percent: { gte: threshold }, topic: { subjectId } },
+                }),
+                this.calculatePrediction(userId, now, subjectId, threshold, updatedSubtopics, this.extractStoriesTopicsWithPercents(enrichedSections)),
+                Promise.resolve(this.calculateTotalPercent(sectionsWithStatus))
+            ]);
 
             return {
-                solvedTasksCount,
-                solvedTasksCountCompleted,
-                closedSubtopicsCount: totalSubsNow - totalSubsThen,
-                closedTopicsCount: totalTopicsNow - totalTopicsThen,
-                startDateStr: formatDate(startOfRange),
-                endDateStr: formatDate(endOfRange),
-                weekLabel,
-                prediction: predictionResult
+                statusCode: 200,
+                message: 'Działy zostały pomyślnie pobrane',
+                sections: sectionsWithRepeat,
+                total: totalPercent,
+                statistics: {
+                    solvedTasksCount: solvedTasks,
+                    solvedTasksCountCompleted: solvedTasksCompleted,
+                    closedSubtopicsCount: closedSubtopics,
+                    closedTopicsCount: closedTopics,
+                    prediction
+                },
+                subject
             };
-        } catch {
-            return {
-                solvedTasksCountCompleted: 0,
-                solvedTasksCount: 0,
-                closedSubtopicsCount: 0,
-                closedTopicsCount: 0,
-                startDateStr: '',
-                endDateStr: '',
-                weekLabel: '',
-                prediction: null,
-                dayPrediction: null
-            };
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się pobrać działów');
         }
     }
 
     async findSectionById(
+        userId: number,
         subjectId: number,
         id: number,
         withSubject = true,
@@ -742,12 +457,14 @@ export class SectionService {
             }
 
             const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
+            const subtopicsStatusPromptOwn = Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== "");
             const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
             const solutionPromptOwn = Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== "");
             const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
             const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
             const subQuestionsPromptOwn = Boolean(section.subQuestionsPrompt && section.subQuestionsPrompt.trim() !== "");
             const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
+            const wordsPromptOwn = Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== "");
             const topicExpansionPromptOwn = Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== "");
 
             const prompts = {
@@ -756,6 +473,9 @@ export class SectionService {
 
                 subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
                 subtopicsPromptOwn: subtopicsPromptOwn,
+
+                subtopicsStatusPrompt: subtopicsStatusPromptOwn ? section.subtopicsStatusPrompt.trim() : (subject.subtopicsStatusPrompt || ""),
+                subtopicsStatusPromptOwn: subtopicsStatusPromptOwn,
 
                 questionPrompt: questionPromptOwn ? section.questionPrompt.trim() : (subject.questionPrompt || ""),
                 questionPromptOwn: questionPromptOwn,
@@ -774,6 +494,9 @@ export class SectionService {
 
                 vocabluaryPrompt: vocabluaryPromptOwn ? section.vocabluaryPrompt.trim() : (subject.vocabluaryPrompt || ""),
                 vocabluaryPromptOwn: vocabluaryPromptOwn,
+
+                wordsPrompt: wordsPromptOwn ? section.wordsPrompt.trim() : (subject.wordsPrompt || ""),
+                wordsPromptOwn: wordsPromptOwn,
             };
 
             let enrichedSection: any = {
@@ -787,6 +510,24 @@ export class SectionService {
                 const topics = await this.prismaService.topic.findMany({
                     where: { subjectId, sectionId: section.id },
                     orderBy: { partId: 'asc' },
+                    include: {
+                        tasks: {
+                            where: {
+                                userId,
+                                finished: true,
+                                parentTaskId: null,
+                            },
+                            select: {
+                                percent: true,
+                            },
+                        },
+                        words: {
+                            where: { userId },
+                            select: {
+                                frequency: true,
+                            },
+                        },
+                    },
                 });
 
                 let subtopicsGrouped: Record<number, any[]> = {};
@@ -796,14 +537,29 @@ export class SectionService {
                     const subtopics = await this.prismaService.subtopic.findMany({
                         where: { topicId: { in: topicIds } },
                         orderBy: { name: 'asc' },
-                        select: {
-                            id: true,
-                            topicId: true,
-                            name: true,
+                        include: {
+                            progresses: {
+                                where: { userId },
+                                select: {
+                                    percent: true,
+                                },
+                            },
                         },
                     });
 
-                    subtopicsGrouped = subtopics.reduce((acc, sub) => {
+                    const subtopicsWithProgress = subtopics.map(subtopic => {
+                        const userProgress = subtopic.progresses[0];
+                        const percent = userProgress ? Math.min(100, userProgress.percent) : 0;
+
+                        return {
+                            id: subtopic.id,
+                            topicId: subtopic.topicId,
+                            name: subtopic.name,
+                            percent: percent,
+                        };
+                    });
+
+                    subtopicsGrouped = subtopicsWithProgress.reduce((acc, sub) => {
                         if (!acc[sub.topicId]) acc[sub.topicId] = [];
                         acc[sub.topicId].push(sub);
                         return acc;
@@ -812,28 +568,42 @@ export class SectionService {
 
                 const topicsWithPercent = topics.map(topic => {
                     const subtopics = withSubtopics ? subtopicsGrouped[topic.id] || [] : [];
-                    const validSubtopics = subtopics.filter(s => !s.blocked);
-                    const percent =
-                        validSubtopics.length > 0
-                            ? validSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) / validSubtopics.length
-                            : 0;
+                    
+                    let percent = 0;
+
+                    if (subtopics.length > 0) {
+                        if (subtopics.length > 0) {
+                            percent = subtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0) / subtopics.length;
+                        }
+                    } else if (topic.tasks && topic.tasks.length > 0) {
+                        const taskPercents = topic.tasks.map(t => Math.min(100, t.percent));
+                        percent = taskPercents.reduce((acc, p) => acc + p, 0) / taskPercents.length;
+                    }
 
                     return {
                         ...topic,
-                        percent,
+                        percent: Math.min(100, Math.ceil(percent)),
                         subtopics,
+                        frequency: topic.words && topic.words.length > 0
+                            ? Math.ceil(topic.frequency - (percent * topic.frequency / 100))
+                            : topic.frequency,
+                        baseFrequency: topic.frequency,
                     };
                 });
 
-                const validTopics = topicsWithPercent.filter(t => t.subtopics.some(s => !s.blocked));
-                const percent =
-                    validTopics.length > 0
-                        ? validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length
-                        : 0;
+                const validTopics = topicsWithPercent.filter(t => 
+                    withSubtopics 
+                        ? t.subtopics.length > 0
+                        : true
+                );
+                
+                const percent = validTopics.length > 0
+                    ? validTopics.reduce((acc, t) => acc + t.percent, 0) / validTopics.length
+                    : 0;
 
                 enrichedSection = {
                     ...enrichedSection,
-                    percent,
+                    percent: Math.min(100, Math.ceil(percent)),
                     topics: topicsWithPercent,
                 };
             }
@@ -850,6 +620,7 @@ export class SectionService {
 
             return response;
         } catch (error) {
+            console.error('Error in findSectionById:', error);
             throw new InternalServerErrorException('Nie udało się pobrać działu');
         }
     }

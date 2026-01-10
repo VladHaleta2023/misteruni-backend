@@ -29,6 +29,11 @@ export class TaskCreateRequest {
   @IsString({ each: true })
   taskSubtopics: string[]
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  words?: string[]
+
   @IsString()
   solution: string
 }

@@ -5,17 +5,20 @@ import {
   Param,
   ParseIntPipe,
   Post,
-  Put,
-  Get,
   UploadedFile,
   UseInterceptors,
   Delete,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
 import { OptionsService } from './options.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AudioTranscribeDto } from './dto/audioTranscribe.dto';
 import { SplitIntoSentencesDto } from './dto/splitIntoSentences.dto';
 import { File } from '../file.type';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { User } from '@prisma/client';
+import { Request } from 'express';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -94,19 +97,28 @@ export class OptionsController {
     return this.optionsService.createSubtopicsTransaction(subtopics);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('tasks/:id/tss')
   async generateTTS(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { text: string, partId: number, language?: string }
+    @Body() body: { text: string, partId: number, language?: string },
+    @Req() req: Request
   ) {
     const { text, partId, language } = body;
 
-    return this.optionsService.generateTTS(id, text, partId, language ?? "ru");
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+    
+    return this.optionsService.generateTTS(userId, id, text, partId, language ?? "ru");
   }
 
+  @UseGuards(JwtAuthGuard)
   @Delete('tasks/:id/audio')
-  async deleteAudioFileByTaskId(@Param('id', ParseIntPipe) id: number) {
-    return this.optionsService.deleteAudioFileByTaskId(id);
+  async deleteAudioFileByTaskId(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+
+    return this.optionsService.deleteAudioFileByTaskId(userId, id);
   }
 
   /*

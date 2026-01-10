@@ -34,6 +34,36 @@ export class SubtopicsAIGenerate {
   errors: string[];
 }
 
+export class SubtopicsStatusAIGenerate {
+  @IsString()
+  prompt: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsArray()
+  subtopics: [string, string][];
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+}
+
 export class TopicExpansionAIGenerate {
   @IsString()
   prompt: string;

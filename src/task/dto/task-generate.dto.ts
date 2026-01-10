@@ -103,6 +103,15 @@ export class InteractiveTaskAIGenerate {
   @IsArray()
   @IsOptional()
   subtopics?: [string, number][];
+
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  words?: string[]
+
+  @IsArray()
+  @IsString({ each: true })
+  outputWords: string[];
 }
 
 export class QuestionsTaskAIGenerate {
@@ -261,7 +270,7 @@ export class ProblemsAIGenerate {
   explanation: string
 }
 
-export class WordAIGenerate {
+export class VocabluaryAIGenerate {
   @IsOptional()
   @IsString()
   prompt?: string;

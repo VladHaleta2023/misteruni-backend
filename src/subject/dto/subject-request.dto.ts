@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class SubjectCreateRequest {
   @IsString()
@@ -27,6 +27,10 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  subtopicsStatusPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   questionPrompt?: string;
 
   @IsOptional()
@@ -51,6 +55,10 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  wordsPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   closedSubtopicsPrompt?: string;
 
   @IsOptional()
@@ -60,8 +68,4 @@ export class SubjectUpdateRequest {
   @IsOptional()
   @IsString()
   type?: string;
-
-  @IsOptional()
-  @IsInt()
-  threshold?: number;
 }

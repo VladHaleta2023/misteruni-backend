@@ -5,6 +5,7 @@ import { HttpModule } from '@nestjs/axios';
 import { SubjectService } from './subject.service'; 
 import { SubtopicModule } from '../subtopic/subtopic.module';
 import { TimezoneModule } from '../timezone/timezone.module';
+import { AuthModule } from 'src/auth/auth.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { TimezoneModule } from '../timezone/timezone.module';
       maxRedirects: 5,
     }),
     StorageModule,
+    AuthModule,
     SubtopicModule,
     TimezoneModule
   ],

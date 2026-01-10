@@ -4,6 +4,9 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   PutObjectCommandInput,
+  ListObjectsV2CommandInput,
+  ListObjectsV2Command,
+  ListObjectsV2CommandOutput,
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { File } from '../file.type';
@@ -90,5 +93,44 @@ export class StorageService {
     });
 
     return this.s3.send(command);
+  }
+
+  async getAllFileUrls(prefix?: string): Promise<string[]> {
+    try {
+      const urls: string[] = [];
+      let continuationToken: string | undefined;
+
+      do {
+        const params: ListObjectsV2CommandInput = {
+          Bucket: this.bucketName,
+          Prefix: prefix,
+          MaxKeys: 1000,
+          ContinuationToken: continuationToken,
+        };
+
+        const command = new ListObjectsV2Command(params);
+        const response: ListObjectsV2CommandOutput = await this.s3.send(command);
+
+        if (response.Contents && response.Contents.length > 0) {
+          for (const object of response.Contents) {
+            if (object.Key) {
+              const encodedKey = encodeURIComponent(object.Key).replace(/%2F/g, '/');
+              const url = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${encodedKey}`;
+              urls.push(url);
+            }
+          }
+        }
+
+        continuationToken = response.NextContinuationToken;
+      } while (continuationToken);
+
+      return urls;
+
+    } catch (error) {
+      throw new HttpException(
+        `Błąd Pobierania Wszystkich plików S3: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

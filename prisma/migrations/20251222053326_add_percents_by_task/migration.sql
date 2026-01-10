@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Task" ADD COLUMN     "percentAudio" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "percentWords" INTEGER NOT NULL DEFAULT 0;

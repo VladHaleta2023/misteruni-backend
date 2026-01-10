@@ -11,6 +11,10 @@ import { OptionsModule } from './options/options.module';
 import { SubtopicModule } from './subtopic/subtopic.module';
 import { TaskModule } from './task/task.module';
 import { TimezoneModule } from './timezone/timezone.module';
+import { WordModule } from './word/word.module';
+import { UserModule } from './user/user.module';
+import { AuthModule } from './auth/auth.module';
+import { UserSubjectModule } from './user-subject/user-subject.module';
 
 @Module({
   imports: [
@@ -24,9 +28,14 @@ import { TimezoneModule } from './timezone/timezone.module';
     SubtopicModule,
     TaskModule,
     TimezoneModule,
+    WordModule,
+    UserModule,
+    AuthModule,
+    UserSubjectModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 
 export class AppModule {}
+export { StorageModule }
