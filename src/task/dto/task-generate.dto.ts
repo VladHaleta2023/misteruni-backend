@@ -1,9 +1,9 @@
 import {
   IsArray,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
+  IsBoolean,
 } from 'class-validator';
 
 export class TaskAIGenerate {
@@ -35,16 +35,6 @@ export class TaskAIGenerate {
 
   @IsString()
   text: string;
-
-  @IsString()
-  note: string;
-
-  @IsString()
-  mode: string;
-
-  @IsOptional()
-  @IsNumber()
-  taskId?: number | null;
 
   @IsInt()
   @IsOptional()
@@ -114,41 +104,6 @@ export class InteractiveTaskAIGenerate {
   outputWords: string[];
 }
 
-export class QuestionsTaskAIGenerate {
-  @IsOptional()
-  @IsString()
-  prompt?: string;
-
-  @IsOptional()
-  @IsString()
-  subject?: string;
-
-  @IsOptional()
-  @IsString()
-  section?: string;
-
-  @IsOptional()
-  @IsString()
-  topic?: string;
-
-  @IsString()
-  changed: string;
-
-  @IsInt()
-  attempt: number;
-
-  @IsString()
-  text: string;
-
-  @IsArray()
-  @IsString({ each: true })
-  questions: string[];
-
-  @IsArray()
-  @IsString({ each: true })
-  errors: string[];
-}
-
 export class SolutionAIGenerate {
   @IsOptional()
   @IsString()
@@ -196,6 +151,9 @@ export class OptionsAIGenerate {
   @IsString({ each: true })
   options: string[];
 
+  @IsInt()
+  correctOptionIndex: number;
+
   @IsArray()
   @IsString({ each: true })
   explanations: string[];
@@ -213,6 +171,9 @@ export class OptionsAIGenerate {
 
   @IsInt()
   random2: number;
+
+  @IsInt()
+  randomOption: number;
 }
 
 export class ProblemsAIGenerate {
@@ -254,6 +215,9 @@ export class ProblemsAIGenerate {
   @IsString()
   userSolution: string;
 
+  @IsString()
+  userOption: string;
+
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
@@ -268,6 +232,66 @@ export class ProblemsAIGenerate {
 
   @IsString()
   explanation: string
+}
+
+export class ChatAIGenerate {
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsString()
+  text: string;
+
+  @IsString()
+  solution: string;
+
+  @IsString()
+  userSolution: string;
+
+  @IsString()
+  userOption: string;
+
+  @IsString()
+  correctOption: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  subtopics: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  options: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+
+  @IsString()
+  chat: string;
+
+  @IsBoolean()
+  chatFinished: boolean;
+
+  @IsString()
+  mode: string;
 }
 
 export class VocabluaryAIGenerate {

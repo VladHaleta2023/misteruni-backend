@@ -1,8 +1,10 @@
 import { HttpService } from '@nestjs/axios';
 import {
     BadRequestException,
+    forwardRef,
     HttpException,
     HttpStatus,
+    Inject,
     Injectable,
     InternalServerErrorException
 } from '@nestjs/common';
@@ -50,6 +52,7 @@ export class OptionsService {
     constructor (
         private readonly prismaService: PrismaService,
         private readonly subtopicService: SubtopicService,
+        @Inject(forwardRef(() => SubjectService))
         private readonly subjectService: SubjectService,
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { TopicService } from './topic.service';
-import { TopicUpdateRequest, Word, WordsAIGenerate } from './dto/topic-request.dto';
+import { TopicUpdateRequest, WordsAIGenerate } from './dto/topic-request.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
@@ -28,28 +28,38 @@ export class TopicController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Req() req: Request,
     @Query('withSubject') withSubject?: string,
     @Query('withSection') withSection?: string,
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withSectionBool = !(withSection?.toLowerCase() === 'false');
 
+    return this.topicService.findTopicbyId(subjectId, sectionId, id, withSubjectBool, withSectionBool);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/completed')
+  async findTopicCompletedById(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request
+  ) {
     const user: User = (req as any).user;
     const userId: number = user.id;
 
-    return this.topicService.findTopicbyId(userId, subjectId, sectionId, id, withSubjectBool, withSectionBool);
+    return this.topicService.findTopicCompletedById(userId, subjectId, sectionId, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Put(":id")
-  async updateTopic(
+  async updateTopicTransaction(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() data: TopicUpdateRequest
   ) {
-    return this.topicService.updateTopic(subjectId, sectionId, id, data);
+    return this.topicService.updateTopicTransaction(subjectId, sectionId, id, data);
   }
 
   @UseGuards(JwtAuthGuard)

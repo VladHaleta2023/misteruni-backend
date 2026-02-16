@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { StorageModule } from '../storage/storage.module';
 import { SubjectController } from './subject.controller';
 import { HttpModule } from '@nestjs/axios';
@@ -6,6 +6,7 @@ import { SubjectService } from './subject.service';
 import { SubtopicModule } from '../subtopic/subtopic.module';
 import { TimezoneModule } from '../timezone/timezone.module';
 import { AuthModule } from 'src/auth/auth.module';
+import { TaskModule } from 'src/task/task.module';
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { AuthModule } from 'src/auth/auth.module';
     StorageModule,
     AuthModule,
     SubtopicModule,
-    TimezoneModule
+    TimezoneModule,
+    forwardRef(() => TaskModule),
   ],
   controllers: [SubjectController],
   providers: [

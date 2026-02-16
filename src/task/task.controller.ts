@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { TaskService } from './task.service';
-import { InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, QuestionsTaskAIGenerate, SolutionAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
-import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
+import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
@@ -16,8 +16,7 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Req() req: Request,
-    @Query('weekOffset') weekOffset?: string
+    @Req() req: Request
   ) {
     let aborted = false;
 
@@ -31,8 +30,7 @@ export class TaskController {
 
     const user: User = (req as any).user;
     const userId: number = user.id;
-    const weekOffsetInt = Number(weekOffset) || 0;
-    const result = await this.taskService.findTasks(userId, subjectId, sectionId, topicId, weekOffsetInt);
+    const result = await this.taskService.findTasks(userId, subjectId, sectionId, topicId);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);
@@ -62,6 +60,37 @@ export class TaskController {
     const user: User = (req as any).user;
     const userId: number = user.id;
     const result = await this.taskService.findPendingTask(userId, subjectId, sectionId, topicId);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':id/chat')
+  async updateChatTaskById(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: TaskUpdateChatRequest,
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+    const result = await this.taskService.updateChatTaskById(userId, subjectId, sectionId, topicId, id, data);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);
@@ -132,44 +161,6 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Put(':id/percents')
-  async updatePercents(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('topicId', ParseIntPipe) topicId: number,
-    @Param('id', ParseIntPipe) id: number,
-    @Body('userOptions') userOptions: number[],
-    @Req() req: Request
-  ) {
-    let aborted = false;
-
-    req.on('close', () => {
-      aborted = true;
-    });
-
-    if (aborted) {
-      throw new HttpException('Client aborted', 499);
-    }
-
-    const user: User = (req as any).user;
-    const userId: number = user.id;
-    const result = await this.taskService.updatePercents(
-      userId,
-      subjectId,
-      sectionId,
-      topicId,
-      id,
-      userOptions,
-    );
-
-    if (aborted) {
-      throw new HttpException('Client aborted', 499);
-    }
-
-    return result;
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post('task-generate')
   async taskAIGenerate(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -212,30 +203,6 @@ export class TaskController {
       const user: User = (req as any).user;
       const userId: number = user.id;
       const result = await this.taskService.interactiveTaskAIGenerate(userId, subjectId, sectionId, topicId, data, controller.signal);
-      return result;
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new HttpException('Client aborted', 499);
-      }
-      throw error;
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('questions-task-generate')
-  async questionsTaskAIGenerate(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: QuestionsTaskAIGenerate,
-    @Req() req: Request
-  ) {
-    const controller = new AbortController();
-
-    req.on('close', () => controller.abort());
-
-    try {
-      const result = await this.taskService.questionsTaskAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -318,6 +285,30 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('chat-generate')
+  async chatAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Body() data: ChatAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.chatAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('task-transaction')
   async upsertTaskTransaction(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -339,37 +330,6 @@ export class TaskController {
     const user: User = (req as any).user;
     const userId: number = user.id;
     const result = await this.taskService.createTaskTransaction(userId, subjectId, sectionId, topicId, taskData);
-
-    if (aborted) {
-      throw new HttpException('Client aborted', 499);
-    }
-
-    return result;
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':taskId/questions-task-transaction')
-  async upsertQuestionsTaskTransaction(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('topicId', ParseIntPipe) topicId: number,
-    @Param('taskId', ParseIntPipe) taskId: number,
-    @Body('tasks') taskData: TaskCreateRequest[],
-    @Req() req: Request
-  ) {
-    let aborted = false;
-
-    req.on('close', () => {
-      aborted = true;
-    });
-
-    if (aborted) {
-      throw new HttpException('Client aborted', 499);
-    }
-
-    const user: User = (req as any).user;
-    const userId: number = user.id;
-    const result = await this.taskService.createSubTasksTransaction(userId, subjectId, sectionId, topicId, taskId, taskData);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);

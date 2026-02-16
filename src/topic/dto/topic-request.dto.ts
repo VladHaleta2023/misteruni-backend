@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TopicUpdateRequest {
   @IsOptional()
@@ -16,6 +16,10 @@ export class TopicUpdateRequest {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsArray()
+  outputSubtopics?: [string, number][];
 }
 
 export class WordsAIGenerate {
@@ -33,6 +37,10 @@ export class WordsAIGenerate {
   @IsOptional()
   @IsString()
   topic?: string;
+
+  @IsOptional()
+  @IsString()
+  difficulty?: string;
 
   @IsString()
   changed: string;

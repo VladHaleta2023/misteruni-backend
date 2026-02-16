@@ -1,11 +1,11 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { OptionsService } from './options.service';
 import { OptionsController } from './options.controller';
 import { HttpModule } from '@nestjs/axios';
 import { AuthModule } from 'src/auth/auth.module';
 import { SubjectModule } from '../subject/subject.module';
 import { SubtopicModule } from '../subtopic/subtopic.module';
-import { StorageModule } from '../subject/subject.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -14,7 +14,7 @@ import { StorageModule } from '../subject/subject.module';
       maxRedirects: 5,
     }),
     AuthModule,
-    SubjectModule,
+    forwardRef(() => SubjectModule),
     SubtopicModule,
     StorageModule,
   ],

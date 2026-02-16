@@ -1,7 +1,7 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from '../subtopic/dto/subtopic-request.dto';
-import { SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
+import { FrequencyAIGenerate, SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -27,7 +27,6 @@ export interface SubtopicTask {
 export interface SubtopicWithProgressResponse {
     id: number;
     name: string;
-    importance: number;
     tasks: SubtopicTask[];
     percent?: number;
     status?: Status;
@@ -57,315 +56,203 @@ export class SubtopicService {
         userId: number,
         subjectId: number,
         sectionId: number,
-        topicId: number,
-        weekOffset: number = 0
+        topicId: number
     ) {
         try {
-            const subject = await this.prismaService.subject.findUnique({
-                where: { id: subjectId },
-            });
+            const data = await this.prismaService.$queryRaw<any[]>`
+                WITH 
+                user_settings AS (
+                    SELECT COALESCE(threshold, 50) as threshold,
+                        COALESCE("detailLevel", 'MANDATORY') as detail_level
+                    FROM "UserSubject"
+                    WHERE "userId" = ${userId} AND "subjectId" = ${subjectId}
+                    LIMIT 1
+                ),
+                topic_info AS (
+                    SELECT 
+                        t.id, t.name, t.note, t."partId", t.frequency,
+                        COALESCE(ut.percent, 0) as percent,
+                        (SELECT threshold FROM user_settings) as threshold
+                    FROM "Topic" t
+                    LEFT JOIN "UserTopic" ut ON ut."userId" = ${userId} 
+                        AND ut."subjectId" = ${subjectId}
+                        AND ut."topicId" = t.id
+                    WHERE t.id = ${topicId}
+                )
+                SELECT 
+                    -- Тема
+                    ti.id as "topicId",
+                    ti.name as "topicName",
+                    ti.note as "topicNote",
+                    ti."partId" as "topicPartId",
+                    ti.frequency as "topicFrequency",
+                    ti.percent as "topicPercent",
+                    CASE 
+                        WHEN ti.percent >= ti.threshold THEN 'completed'
+                        WHEN ti.percent > 0 THEN 'progress'
+                        ELSE 'started'
+                    END as "topicStatus",
+                    
+                    -- Подтема
+                    s.id as "subtopicId",
+                    s.name as "subtopicName",
+                    s.importance,
+                    s."partId",
+                    COALESCE(us.percent, 0) as "subtopicPercent",
+                    CASE 
+                        WHEN COALESCE(us.percent, 0) >= ti.threshold THEN 'completed'
+                        WHEN COALESCE(us.percent, 0) > 0 THEN 'progress'
+                        ELSE 'started'
+                    END as "subtopicStatus"
+                    
+                FROM topic_info ti
+                LEFT JOIN "Subtopic" s ON s."topicId" = ti.id
+                    AND s."sectionId" = ${sectionId}
+                    AND s."subjectId" = ${subjectId}
+                    AND s."detailLevel"::text = ANY(
+                        CASE (SELECT detail_level FROM user_settings)
+                            WHEN 'OPTIONAL' THEN ARRAY['MANDATORY', 'DESIRABLE', 'OPTIONAL']::text[]
+                            WHEN 'DESIRABLE' THEN ARRAY['MANDATORY', 'DESIRABLE']::text[]
+                            ELSE ARRAY['MANDATORY']::text[]
+                        END
+                    )
+                LEFT JOIN "UserSubtopic" us ON us."subtopicId" = s.id
+                    AND us."userId" = ${userId}
+                    AND us."subjectId" = ${subjectId}
+                WHERE ti.id IS NOT NULL
+                ORDER BY s."partId" ASC
+            `;
 
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
-
-            const topic = await this.prismaService.topic.findUnique({
-                where: { id: topicId },
-                select: { 
-                    id: true, 
-                    name: true, 
-                    note: true,
-                    partId: true,
-                    frequency: true
-                }
-            });
-
-            if (!topic) {
+            // Проверяем что тема найдена
+            if (data.length === 0 || !data[0].topicId) {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
 
-            const userSubject = await this.prismaService.userSubject.findUnique({
-                where: {
-                    userId_subjectId: {
-                        userId: userId,
-                        subjectId: subjectId
-                    }
-                },
-                select: {
-                    threshold: true,
-                    detailLevel: true
-                }
-            });
+            // Первая строка содержит данные темы
+            const topicRow = data[0];
+            const topic = {
+                id: topicRow.topicId,
+                name: topicRow.topicName,
+                note: topicRow.topicNote,
+                partId: topicRow.topicPartId,
+                frequency: topicRow.topicFrequency,
+                percent: topicRow.topicPercent,
+                status: topicRow.topicStatus as Status
+            };
 
-            const threshold = userSubject?.threshold ?? 50; 
+            // Формируем подтемы (фильтруем строки где есть subtopicId)
+            const subtopics = data
+                .filter(row => row.subtopicId !== null)
+                .map(row => ({
+                    id: row.subtopicId,
+                    name: row.subtopicName,
+                    importance: row.importance ?? 0,
+                    percent: row.subtopicPercent,
+                    status: row.subtopicStatus as Status,
+                    tasks: []
+                }));
 
-            const subtopicsFromDb = await this.prismaService.subtopic.findMany({
-                where: { subjectId, sectionId, topicId },
-                orderBy: { name: 'asc' },
-                select: { 
-                    id: true, 
-                    name: true,
-                    importance: true,
-                    progresses: {
-                        where: {
-                            userId,
-                            task: { finished: true, userId }
-                        },
-                        select: {
-                            percent: true,
-                            updatedAt: true,
-                            task: {
-                                select: {
-                                    id: true,
-                                    text: true,
-                                    percent: true,
-                                    updatedAt: true,
-                                }
-                            }
-                        },
-                        orderBy: { updatedAt: 'asc' }
-                    }
-                }
-            });
+            // Статистика
+            const totalCount = subtopics.length;
+            let started = 0;
+            let progress = 0;
+            let completed = 0;
 
-            const uniqueTasksMap = new Map<number, any>();
-            
-            subtopicsFromDb.forEach(sub => {
-                sub.progresses.forEach(progress => {
-                    const taskId = progress.task.id;
-                    
-                    if (!uniqueTasksMap.has(taskId)) {
-                        const localDate = this.timezoneService.utcToLocal(progress.task.updatedAt);
-                        const dd = String(localDate.getDate()).padStart(2, '0');
-                        const mm = String(localDate.getMonth() + 1).padStart(2, '0');
-                        const yyyy = localDate.getFullYear();
-                        const dateStr = `${dd}.${mm}.${yyyy}`;
+            for (const s of subtopics) {
+                if (s.status === 'started') started++;
+                else if (s.status === 'progress') progress++;
+                else if (s.status === 'completed') completed++;
+            }
 
-                        let taskStatus: Status = "started";
-                        if (progress.task.percent === 0) {
-                            taskStatus = 'started';
-                        } else if (progress.task.percent < threshold) {
-                            taskStatus = 'progress';
-                        } else {
-                            taskStatus = 'completed';
-                        }
-
-                        uniqueTasksMap.set(taskId, {
-                            id: progress.task.id,
-                            text: progress.task.text,
-                            percent: Math.round(progress.task.percent),
-                            date: dateStr,
-                            status: taskStatus,
-                            subtopics: [{
-                                id: sub.id,
-                                name: sub.name,
-                                percent: Math.round(progress.percent)
-                            }]
-                        });
-                    } else {
-                        const existingTask = uniqueTasksMap.get(taskId);
-                        if (!existingTask.subtopics.some(st => st.id === sub.id)) {
-                            existingTask.subtopics.push({
-                                id: sub.id,
-                                name: sub.name,
-                                percent: Math.round(progress.percent)
-                            });
-                        }
-                    }
-                });
-            });
-
-            const allUniqueTasks = Array.from(uniqueTasksMap.values()).sort((a, b) => {
-                return new Date(b.date.split('.').reverse().join('-')).getTime() - 
-                    new Date(a.date.split('.').reverse().join('-')).getTime();
-            });
-
-            let subtopics: SubtopicWithProgressResponse[] = subtopicsFromDb.map(sub => {
-                const tasksForThisSubtopic = allUniqueTasks
-                    .filter(task => task.subtopics.some(st => st.id === sub.id))
-                    .map(task => {
-                        const { subtopics, ...taskWithoutSubtopics } = task;
-                        return taskWithoutSubtopics;
-                    });
-
-                const progresses = sub.progresses;
-                let percent = 0;
-                const alpha = 0.7;
-                
-                if (progresses.length > 0) {
-                    const sortedProgresses = [...progresses].sort((a, b) => 
-                        new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-                    );
-                    
-                    let emaValue: number | null = null;
-                    for (const progress of sortedProgresses) {
-                        const currentPercent = Math.min(100, progress.percent);
-                        if (emaValue === null) {
-                            emaValue = currentPercent;
-                        } else {
-                            emaValue = (emaValue * (1 - alpha)) + (currentPercent * alpha);
-                        }
-                    }
-                    percent = Math.min(100, Math.ceil(emaValue!));
-                }
-                
-                return {
-                    id: sub.id,
-                    name: sub.name,
-                    importance: sub.importance,
-                    tasks: tasksForThisSubtopic,
-                    percent
+            const total = totalCount === 0
+                ? { started: 100, progress: 0, completed: 0 }
+                : {
+                    started: Math.round((started / totalCount) * 100),
+                    progress: Math.round((progress / totalCount) * 100),
+                    completed: Math.round((completed / totalCount) * 100),
                 };
-            });
-
-            if (subtopics.length === 0) {
-                subtopics = [{
-                    id: topic.id,
-                    name: topic.name,
-                    importance: 0,
-                    tasks: [],
-                    percent: 0
-                }];
-            }
-
-            const updatedSubtopics = subtopics.map(sub => {
-                const pct = sub.percent ?? 0;
-                let status: Status;
-
-                if (pct === 0) status = 'started';
-                else if (pct < threshold) status = 'progress';
-                else status = 'completed';
-
-                return { ...sub, status };
-            });
-
-            let topicPercent = 0;
-
-            if (updatedSubtopics.length > 0) {
-                const totalPercent = updatedSubtopics.reduce((acc, s) => acc + (s.percent ?? 0), 0);
-                topicPercent = Math.ceil(totalPercent / updatedSubtopics.length);
-            }
-
-            let topicStatus: Status;
-            if (topicPercent === 0) {
-                topicStatus = 'started';
-            } else if (topicPercent >= threshold) {
-                topicStatus = 'completed';
-            } else {
-                topicStatus = 'progress';
-            }
-
-            const totalSubtopics = updatedSubtopics.length || 1;
-
-            let sumPercentCompleted = 0;
-            let sumPercentProgress = 0;
-
-            updatedSubtopics.forEach(sub => {
-                const p = sub.percent ?? 0;
-                if (sub.status == "completed")
-                    sumPercentCompleted += p;
-                else if (sub.status == "progress")
-                    sumPercentProgress += p;
-            });
-
-            const maxPercent = totalSubtopics * 100;
-
-            const percentCompleted = Math.min(Math.round((sumPercentCompleted / maxPercent) * 100), 100);
-            const percentProgress = Math.min(Math.round((sumPercentProgress / maxPercent) * 100), 100);
-            const percentStarted = Math.max(Math.min(100 - percentCompleted - percentProgress, 100), 0);
-
-            const totalPercentByStatus: Record<Status, number> = {
-                started: percentStarted ?? 0,
-                progress: percentProgress ?? 0,
-                completed: percentCompleted ?? 0,
-            };
-
-            if (
-                totalPercentByStatus.started === 0 &&
-                totalPercentByStatus.progress === 0 &&
-                totalPercentByStatus.completed === 0
-            ) {
-                totalPercentByStatus.started = 100;
-            }
-
-            const now = new Date();
-            const startOfWeek = DateUtils.getMonday(now, weekOffset);
-            const endOfWeek = DateUtils.getSunday(now, weekOffset);
-
-            const startOfWeekUTC = this.timezoneService.localToUTC(startOfWeek);
-            const endOfWeekUTC = this.timezoneService.localToUTC(endOfWeek);
-
-            const solvedTasksCount = await this.prismaService.task.count({
-                where: {
-                    userId,
-                    topicId,
-                    finished: true,
-                    parentTaskId: null,
-                    updatedAt: {
-                        gte: startOfWeekUTC,
-                        lte: endOfWeekUTC,
-                    },
-                },
-            });
-
-            const solvedTasksCountCompleted = await this.prismaService.task.count({
-                where: {
-                    userId,
-                    topicId,
-                    finished: true,
-                    parentTaskId: null,
-                    percent: {
-                        gte: threshold,
-                    },
-                    updatedAt: {
-                        gte: startOfWeekUTC,
-                        lte: endOfWeekUTC,
-                    },
-                },
-            });
-
-            let weekLabel = "bieżący";
-            if (weekOffset < 0) weekLabel = `${weekOffset} tydz.`;
-
-            const formatDate = (date: Date) => {
-                const localDate = this.timezoneService.utcToLocal(date);
-                const dd = String(localDate.getDate()).padStart(2, '0');
-                const mm = String(localDate.getMonth() + 1).padStart(2, '0');
-                return `${dd}.${mm}`;
-            };
-
-            const startDateStr = formatDate(startOfWeek);
-            const endDateStr = formatDate(endOfWeek);
 
             return {
                 statusCode: 200,
                 message: 'Pobrano listę podtematów pomyślnie',
-                topic: {
-                    id: topic.id,
-                    name: topic.name,
-                    note: topic.note,
-                    partId: topic.partId,
-                    frequency: topic.frequency,
-                    percent: topicPercent,
-                    status: topicStatus
-                },
-                subtopics: updatedSubtopics,
-                total: totalPercentByStatus,
-                statistics: {
-                    solvedTasksCountCompleted,
-                    solvedTasksCount,
-                    closedSubtopicsCount: null,
-                    closedTopicsCount: null,
-                    startDateStr,
-                    weekLabel,
-                    endDateStr,
-                    prediction: null
-                }
+                topic,
+                subtopics,
+                total,
+                prediction: null,
+            };
+        } catch (error) {
+            console.error('Error in findSubtopics:', error);
+            throw new InternalServerErrorException(
+                `Nie udało się pobrać podtematów: ${error.message || error}`
+            );
+        }
+    }
+
+    async findAdminSubtopics(
+        subjectId: number,
+        sectionId: number,
+        topicId: number
+    ) {
+        try {
+            const data = await this.prismaService.$queryRaw<any[]>`
+                SELECT 
+                    -- Тема
+                    t.id as "topicId",
+                    t.name as "topicName",
+                    t.note as "topicNote",
+                    t."partId" as "topicPartId",
+                    t.frequency as "topicFrequency",
+                    
+                    -- Подтема
+                    s.id as "subtopicId",
+                    s.name as "subtopicName",
+                    s.importance,
+                    s."partId",
+                    s."detailLevel"
+                    
+                FROM "Topic" t
+                LEFT JOIN "Subtopic" s ON s."topicId" = t.id
+                    AND s."sectionId" = ${sectionId}
+                    AND s."subjectId" = ${subjectId}
+                WHERE t.id = ${topicId}
+                ORDER BY s."partId" ASC
+            `;
+
+            if (data.length === 0 || !data[0].topicId) {
+                throw new BadRequestException('Temat nie został znaleziony');
+            }
+
+            const topicRow = data[0];
+            const topic = {
+                id: topicRow.topicId,
+                name: topicRow.topicName,
+                note: topicRow.topicNote,
+                partId: topicRow.topicPartId,
+                frequency: topicRow.topicFrequency,
             };
 
+            const subtopics = data
+                .filter(row => row.subtopicId !== null)
+                .map(row => ({
+                    id: row.subtopicId,
+                    name: row.subtopicName,
+                    importance: row.importance ?? 0,
+                    detailLevel: row.detailLevel,
+                    partId: row.partId,
+                    tasks: []
+                }));
+
+            return {
+                statusCode: 200,
+                message: 'Pobrano wszystkie podtematy pomyślnie',
+                topic,
+                subtopics,
+                totalCount: subtopics.length,
+            };
         } catch (error) {
+            console.error('Error in getAllSubtopics:', error);
             throw new InternalServerErrorException(
-                `Nie udało się pobrać podtematów: ${error}`
+                `Nie udało się pobrać podtematów: ${error.message || error}`
             );
         }
     }
@@ -394,7 +281,7 @@ export class SubtopicService {
 
             const subtopics = await this.prismaService.subtopic.findMany({
                 where: { subjectId, sectionId, topicId },
-                orderBy: { name: 'asc' }
+                orderBy: { partId: 'asc' }
             });
 
             const formattedSubtopics = subtopics.map(st => [st.name, st.detailLevel]);
@@ -1010,7 +897,7 @@ export class SubtopicService {
 
             return {
                 statusCode: 201,
-                message: "Generacja statusów podtematów udana",
+                message: "Generacja ważności podtematów udana",
                 ...r
             };
         } catch (error) {
@@ -1088,7 +975,86 @@ export class SubtopicService {
 
             return {
                 statusCode: 201,
-                message: "Generacja właściwości tematu udana",
+                message: "Generacja notatki tematu udana",
+                ...r
+            };
+        } catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    async frequencyAIGenerate(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        data: FrequencyAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/frequency-generate`;
+
+        try {
+            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const subtopics = await this.prismaService.subtopic.findMany({
+                where: { topicId: topicId },
+                select: { name: true },
+            });
+
+            const subtopicNames: string[] = subtopics.map(sub => sub.name);
+
+            data.subject = data.subject ?? subject.name;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
+            data.frequency = data.frequency ?? topic.frequency;
+            data.subtopics = data.subtopics ?? subtopicNames;
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                !r?.prompt ||
+                !r?.changed ||
+                !r?.subject ||
+                !r?.section ||
+                !r?.topic ||
+                !Array.isArray(r.subtopics) ||
+                !Array.isArray(r.outputSubtopics) ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number' ||
+                typeof r.literature !== 'string' ||
+                typeof r.frequency !== 'number'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.subtopics.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Subtopics musi być listą stringów');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja częstotliwości tematu udana",
                 ...r
             };
         } catch (error) {

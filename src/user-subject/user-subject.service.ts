@@ -27,12 +27,12 @@ export class UserSubjectService {
             
             return {
                 statusCode: 200,
-                message: `Pobieranie wybranych przedmiotów pomyślnie`,
+                message: `Pobieranie przedmiotów pomyślnie`,
                 subjects
             };
         }
         catch (error) {
-            throw new InternalServerErrorException('Błąd podczas pobierania wybranych przedmiotów użytkownika');
+            throw new InternalServerErrorException('Błąd podczas pobierania przedmiotów');
         }
     }
 
@@ -48,7 +48,7 @@ export class UserSubjectService {
             });
             
             if (!subject) {
-                throw new NotFoundException('Przedmiot nie został znaleziony dla tego użytkownika');
+                throw new NotFoundException('Przedmiot nie został znaleziony');
             }
 
             const userSubject = await this.prismaService.userSubject.findUnique({
@@ -65,96 +65,136 @@ export class UserSubjectService {
             
             return {
                 statusCode: 200,
-                message: `Pobieranie wybranych przedmiotów pomyślnie`,
+                message: `Pobieranie przedmiotu pomyślnie`,
                 subject: userSubject
             };
         }
         catch (error) {
-            throw new InternalServerErrorException('Błąd podczas pobierania wybranego przedmiotu użytkownika');
+            throw new InternalServerErrorException('Błąd podczas pobierania przedmiotu');
         }
     }
 
     async createUserSubject(
         userId: number,
-        id: number,
+        subjectId: number,
         data: UserSubjectCreateRequest
     ) {
         try {
-            const adminUser: User | null = await this.prismaService.user.findFirst({
-                where: { role: "ADMIN" }
+            const adminUser = await this.prismaService.user.findFirst({
+                where: { role: "ADMIN" },
+                select: { id: true }
             });
 
             const adminUserId = adminUser?.id ?? 1;
 
             const subject = await this.prismaService.subject.findUnique({
-                where: { id }
+                where: { id: subjectId }
             });
-            
+
             if (!subject) {
-                throw new NotFoundException('Przedmiot nie został znaleziony dla tego użytkownika');
+                throw new NotFoundException('Przedmiot nie został znaleziony');
             }
-            
+
             const result = await this.prismaService.$transaction(async (tx) => {
                 const userSubject = await tx.userSubject.create({
                     data: {
-                        subjectId: id,
-                        userId,
-                        ...data
+                    userId,
+                    subjectId,
+                    ...data
                     }
                 });
 
                 const userWordsCount = await tx.word.count({
                     where: {
-                        userId,
-                        subjectId: id,
-                        topicId: { not: null }
+                    userId,
+                    subjectId,
+                    topicId: { not: null }
                     }
                 });
 
-                console.log(`User has ${userWordsCount} words with topics for subject ${id}`);
-
                 if (userWordsCount === 0) {
                     await tx.$executeRaw`
-                        INSERT INTO "Word" (
-                            "text",
-                            "frequency",
-                            "userId",
-                            "subjectId",
-                            "topicId",
-                            "updatedAt"
-                        )
-                        SELECT 
-                            w."text",
-                            w."frequency",
-                            ${userId},
-                            w."subjectId",
-                            w."topicId",
-                            COALESCE(w."updatedAt", NOW())
-                        FROM "Word" w
-                        WHERE w."subjectId" = ${id}
+                    INSERT INTO "Word" (
+                        "text",
+                        "frequency",
+                        "userId",
+                        "subjectId",
+                        "topicId",
+                        "updatedAt"
+                    )
+                    SELECT
+                        w."text",
+                        w."frequency",
+                        ${userId},
+                        w."subjectId",
+                        w."topicId",
+                        COALESCE(w."updatedAt", NOW())
+                    FROM "Word" w
+                    WHERE w."subjectId" = ${subjectId}
                         AND w."userId" = ${adminUserId}
                         AND w."topicId" IS NOT NULL
-                        ON CONFLICT ("userId", "subjectId", "text") 
-                        DO NOTHING
+                    ON CONFLICT ("userId", "subjectId", "text") DO NOTHING
                     `;
                 }
 
+                await tx.$executeRaw`
+                    INSERT INTO "UserSection" (
+                        "userId", "subjectId", "sectionId", "percent", "updatedAt"
+                    )
+                    SELECT
+                        ${userId},
+                        s."subjectId",
+                        s."id",
+                        0,
+                        NOW()
+                    FROM "Section" s
+                    WHERE s."subjectId" = ${subjectId}
+                    ON CONFLICT ("userId", "subjectId", "sectionId") DO NOTHING
+                `;
+
+                await tx.$executeRaw`
+                    INSERT INTO "UserTopic" (
+                        "userId", "subjectId", "sectionId", "topicId", "percent", "updatedAt"
+                    )
+                    SELECT
+                        ${userId},
+                        t."subjectId",
+                        t."sectionId",
+                        t."id",
+                        0,
+                        NOW()
+                    FROM "Topic" t
+                    WHERE t."subjectId" = ${subjectId}
+                    ON CONFLICT ("userId", "subjectId", "topicId") DO NOTHING
+                `;
+
+                await tx.$executeRaw`
+                    INSERT INTO "UserSubtopic" (
+                        "userId", "subjectId", "sectionId", "topicId", "subtopicId", "percent", "updatedAt"
+                    )
+                    SELECT
+                        ${userId},
+                        s."subjectId",
+                        s."sectionId",
+                        s."topicId",
+                        s."id",
+                        0,
+                        NOW()
+                    FROM "Subtopic" s
+                    WHERE s."subjectId" = ${subjectId}
+                    ON CONFLICT ("userId", "subjectId", "subtopicId") DO NOTHING
+                `;
+
                 return userSubject;
-            }, {
-                timeout: 900000
-            });
+            }, { timeout: 900000 });
 
             return {
                 statusCode: 200,
-                message: `Dodawanie wybranego przedmiotu użytkownika pomyślnie`,
+                message: 'Dodawanie przedmiotu pomyślnie',
                 subject: result
-            }
-        }
-        catch (error) {
-            console.error('Error in createUserSubject:', error);
-            throw new InternalServerErrorException(
-                `Błąd podczas dodawania wybranego przedmiotu użytkownika: ${error.message}`
-            );
+            };
+        } catch (error) {
+            throw new InternalServerErrorException(`Błąd podczas dodawania przedmiotu: ${error.message}`);
         }
     }
 
@@ -170,7 +210,7 @@ export class UserSubjectService {
             });
             
             if (!subject) {
-                throw new NotFoundException('Przedmiot nie został znaleziony dla tego użytkownika');
+                throw new NotFoundException('Przedmiot nie został znaleziony');
             }
 
             const userSubject = await this.prismaService.userSubject.delete({
@@ -184,12 +224,12 @@ export class UserSubjectService {
 
             return {
                 statusCode: 200,
-                message: `Usuwanie wybranego przedmiotu użytkownika pomyślnie`,
+                message: `Usuwanie przedmiotu pomyślnie`,
                 subject: userSubject
             }
         }
         catch (error) {
-            throw new InternalServerErrorException('Błąd podczas usuwania wybranego przedmiotu użytkownika');
+            throw new InternalServerErrorException('Błąd podczas usuwania przedmiotu');
         }
     }
 
@@ -206,7 +246,7 @@ export class UserSubjectService {
             });
             
             if (!subject) {
-                throw new NotFoundException('Przedmiot nie został znaleziony dla tego użytkownika');
+                throw new NotFoundException('Przedmiot nie został znaleziony');
             }
 
             const userSubject = await this.prismaService.userSubject.update({
@@ -221,12 +261,12 @@ export class UserSubjectService {
 
             return {
                 statusCode: 200,
-                message: `Aktualizacja wybranego przedmiotu użytkownika pomyślnie`,
+                message: `Aktualizacja przedmiotu pomyślnie`,
                 subject: userSubject
             }
         }
         catch (error) {
-            throw new InternalServerErrorException('Błąd podczas aktualizacji wybranego przedmiotu użytkownika');
+            throw new InternalServerErrorException('Błąd podczas aktualizacji przedmiotu');
         }
     }
 }

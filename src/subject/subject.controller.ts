@@ -44,8 +44,8 @@ export class SubjectController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get(':id/topics')
-  async findTopics(
+  @Get(':id/sections/admin')
+  async findAdminSections(
     @Param('id', ParseIntPipe) id: number,
     @Query('withSubject') withSubject?: string,
     @Query('withSections') withSections?: string,
@@ -63,9 +63,9 @@ export class SubjectController {
     const minSectionPartNumber =
       minSectionPart !== undefined && !isNaN(Number(minSectionPart))
         ? Number(minSectionPart)
-        : 0;
+        : 1;
 
-    return this.subjectService.findTopics(id, withSubjectBool, withSectionsBool, withSubtopicsBool, notStoriesBool, minSectionPartNumber);
+    return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, notStoriesBool, minSectionPartNumber);
   }
 
   @UseGuards(JwtAuthGuard)

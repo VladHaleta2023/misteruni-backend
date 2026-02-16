@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { SectionService } from './section.service';
 import { SectionUpdateRequest } from './dto/section-request.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -15,14 +15,10 @@ export class SectionController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Req() req: Request
   ) {
-
     const user: User = (req as any).user;
     const userId: number = user.id;
 
-    return this.sectionService.findSections(
-      userId,
-      subjectId
-    );
+    return await this.sectionService.findSections(userId, subjectId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -30,27 +26,28 @@ export class SectionController {
   async findSectionById(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Req() req: Request,
-    @Query('withSubject') withSubject?: string,
-    @Query('withTopics') withTopics?: string,
-    @Query('withSubtopics') withSubtopics?: string
+    @Query('withSubject') withSubject?: string
   ) {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
-    const withTopicsBool = !(withTopics?.toLowerCase() === 'false');
-    const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
-
-    const user: User = (req as any).user;
-    const userId: number = user.id;
 
     return this.sectionService.findSectionById(
-      userId,
       subjectId,
       id,
       withSubjectBool,
-      withTopicsBool,
-      withSubtopicsBool
     );
- }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('topics/first-uncompleted')
+  async findFirstUncompletedTopic(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Req() req: Request
+  ) {
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+
+    return await this.sectionService.findFirstUncompletedTopic(userId, subjectId);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Put(':id')

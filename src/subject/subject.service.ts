@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, forwardRef, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { HttpService } from '@nestjs/axios';
@@ -8,6 +8,7 @@ import axios from "axios";
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { File } from '../file.type';
+import { TaskService } from 'src/task/task.service';
 
 @Injectable()
 export class SubjectService {
@@ -17,7 +18,9 @@ export class SubjectService {
         private readonly prismaService: PrismaService,
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        @Inject(forwardRef(() => TaskService))
+        private readonly taskService: TaskService,
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -27,40 +30,6 @@ export class SubjectService {
         else {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
         }
-    }
-
-    async calculateSubtopicsPercent(
-        userId: number,
-        subjectId: number,
-        sectionId?: number,
-        topicId?: number,
-    ) {
-        const whereClause: any = { subjectId };
-        if (sectionId) whereClause.sectionId = sectionId;
-        if (topicId) whereClause.topicId = topicId;
-
-        const subtopics = await this.prismaService.subtopic.findMany({
-            where: whereClause,
-            include: {
-                progresses: {
-                    where: { userId, task: { finished: true, userId } },
-                },
-            },
-        });
-
-        const updatedSubtopics = await Promise.all(
-            subtopics.map(async (subtopic) => {
-                const progresses = subtopic.progresses || [];
-                const percent =
-                    progresses.length > 0
-                        ? Math.round(progresses.reduce((acc, p) => acc + p.percent, 0) / progresses.length)
-                        : 0;
-
-                return { ...subtopic, percent };
-            }),
-        );
-
-        return updatedSubtopics;
     }
 
     async deleteAllSectionsBySubjectId(id: number) {
@@ -274,10 +243,11 @@ export class SubjectService {
                     solutionPromptOwn: true,
                     answersPromptOwn: true,
                     closedSubtopicsPromptOwn: true,
-                    subQuestionsPromptOwn: true,
                     vocabluaryPromptOwn: true,
                     wordsPromptOwn: true,
-                    topicExpansionPromptOwn: true
+                    chatPromptOwn: true,
+                    topicExpansionPromptOwn: true,
+                    topicFrequencyPromptOwn: true
                 }
             };
         } catch (error) {
@@ -452,18 +422,18 @@ export class SubjectService {
         }
     }
 
-    async findTopics(
+    async findAdminSections(
         subjectId: number,
         withSubject = true,
         withSections = true,
         withSubtopics = true,
         notStories = true,
-        minSectionPart = 0
+        minSectionPart = 1
     ) {
         try {
             const response: any = {
                 statusCode: 200,
-                message: 'Pobrano listę tematów pomyślnie',
+                message: 'Pobrano listę sekcji pomyślnie',
             };
 
             const subject = await this.prismaService.subject.findUnique({
@@ -491,14 +461,24 @@ export class SubjectService {
 
             const sections = await this.prismaService.section.findMany({
                 where: sectionWhere,
+                include: {
+                    topics: {
+                        include: {
+                            subtopics: withSubtopics ? {
+                                orderBy: { partId: 'asc' },
+                            } : false
+                        },
+                        orderBy: { partId: 'asc' },
+                    }
+                },
                 orderBy: { partId: 'asc' },
             });
 
             const sectionSubtopicsPromptMap = new Map<number, string>();
             const sectionSubtopicsStatusPromptMap = new Map<number, string>();
             const sectionTopicExpansionPromptMap = new Map<number, string>();
+            const sectionTopicFrequencyPromptMap = new Map<number, string>();
             const sectionWordsPromptMap = new Map<number, string>();
-            const sectionPartIdMap = new Map<number, number>();
 
             for (const section of sections) {
                 const resolvedSubtopicsPrompt =
@@ -516,6 +496,11 @@ export class SubjectService {
                         ? subject.topicExpansionPrompt ?? null
                         : section.topicExpansionPrompt;
 
+                const resolvedTopicFrequencyPrompt =
+                    !section.topicFrequencyPrompt || section.topicFrequencyPrompt.trim() === ''
+                        ? subject.topicFrequencyPrompt ?? null
+                        : section.topicFrequencyPrompt;
+
                 const resolvedWordsPrompt =
                     !section.wordsPrompt || section.wordsPrompt.trim() === ''
                         ? subject.wordsPrompt ?? null
@@ -524,73 +509,88 @@ export class SubjectService {
                 sectionSubtopicsPromptMap.set(section.id, resolvedSubtopicsPrompt);
                 sectionSubtopicsStatusPromptMap.set(section.id, resolvedSubtopicsStatusPrompt);
                 sectionTopicExpansionPromptMap.set(section.id, resolvedTopicExpansionPrompt);
+                sectionTopicFrequencyPromptMap.set(section.id, resolvedTopicFrequencyPrompt);
                 sectionWordsPromptMap.set(section.id, resolvedWordsPrompt);
-                sectionPartIdMap.set(section.id, section.partId);
             }
 
-            const topicWhere: any = {
-                section: {
-                    subjectId,
-                    partId: { gte: minSectionPart },
-                },
-            };
+            const sectionsWithResolvedPrompts = sections.map(section => {
+                const resolvedSubtopicsPrompt = sectionSubtopicsPromptMap.get(section.id) ?? null;
+                const resolvedSubtopicsStatusPrompt = sectionSubtopicsStatusPromptMap.get(section.id) ?? null;
+                const resolvedTopicExpansionPrompt = sectionTopicExpansionPromptMap.get(section.id) ?? null;
+                const resolvedTopicFrequencyPrompt = sectionTopicFrequencyPromptMap.get(section.id) ?? null;
+                const resolvedWordsPrompt = sectionWordsPromptMap.get(section.id) ?? null;
 
-            if (notStories === true) {
-                topicWhere.section.type = { not: 'Stories' };
-            } else if (notStories === false) {
-                topicWhere.section.type = 'Stories';
-            }
-
-            const topics = await this.prismaService.topic.findMany({
-                where: topicWhere,
-                include: {
-                    section: withSections,
-                    subtopics: withSubtopics,
-                },
-                orderBy: { partId: 'asc' },
-            });
-
-            const resolvedTopics = topics
-                .map(topic => {
-                    const sectionId = topic.sectionId;
-                    const subtopicsPrompt = sectionSubtopicsPromptMap.get(sectionId) ?? null;
-                    const subtopicsStatusPrompt = sectionSubtopicsStatusPromptMap.get(sectionId) ?? null;
-                    const topicExpansionPrompt = sectionTopicExpansionPromptMap.get(sectionId) ?? null;
-                    const wordsPrompt = sectionWordsPromptMap.get(sectionId) ?? null;
-                    const sectionPartId = sectionPartIdMap.get(sectionId) ?? 0;
-
-                    const result = {
-                        ...topic,
-                        subtopicsPrompt,
-                        subtopicsStatusPrompt,
-                        topicExpansionPrompt,
-                        wordsPrompt,
-                        _sectionPartId: sectionPartId,
+                const topicsWithPrompts = section.topics.map(topic => {
+                    const topicData: any = {
+                        id: topic.id,
+                        name: topic.name,
+                        partId: topic.partId,
+                        sectionId: topic.sectionId,
+                        note: topic.note,
+                        frequency: topic.frequency,
+                        subtopicsPrompt: resolvedSubtopicsPrompt,
+                        subtopicsStatusPrompt: resolvedSubtopicsStatusPrompt,
+                        topicExpansionPrompt: resolvedTopicExpansionPrompt,
+                        topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
+                        wordsPrompt: resolvedWordsPrompt,
                     };
 
-                    if (!withSections) {
-                        delete (result as any).section;
+                    if (withSections) {
+                        topicData.section = {
+                            id: section.id,
+                            name: section.name,
+                            partId: section.partId,
+                            type: section.type
+                        };
                     }
 
-                    if (!withSubtopics) {
-                        delete (result as any).subtopics;
+                    if (withSubtopics) {
+                        topicData.subtopics = topic.subtopics?.map(subtopic => ({
+                            id: subtopic.id,
+                            name: subtopic.name,
+                            partId: subtopic.partId,
+                            importance: subtopic.importance,
+                            detailLevel: subtopic.detailLevel,
+                            topicId: subtopic.topicId
+                        })) || [];
                     }
 
-                    return result;
-                })
-                .sort((a, b) => {
-                    if (a._sectionPartId !== b._sectionPartId) {
-                        return a._sectionPartId - b._sectionPartId;
-                    }
-                    return a.partId - b.partId;
+                    return topicData;
                 });
 
-            const finalTopics = resolvedTopics.map(({ _sectionPartId, ...rest }) => rest);
+                return {
+                    id: section.id,
+                    name: section.name,
+                    partId: section.partId,
+                    type: section.type,
+                    subjectId: section.subjectId,
+                    subtopicsPrompt: section.subtopicsPrompt,
+                    subtopicsStatusPrompt: section.subtopicsStatusPrompt,
+                    topicExpansionPrompt: section.topicExpansionPrompt,
+                    topicFrequencyPrompt: section.topicFrequencyPrompt,
+                    wordsPrompt: section.wordsPrompt,
+                    closedSubtopicsPrompt: section.closedSubtopicsPrompt,
+                    resolvedSubtopicsPrompt,
+                    resolvedSubtopicsStatusPrompt,
+                    resolvedTopicExpansionPrompt,
+                    resolvedTopicFrequencyPrompt,
+                    resolvedWordsPrompt,
+                    topics: topicsWithPrompts
+                };
+            });
 
-            response.topics = finalTopics;
+            const sectionsWithNonEmptyTopics = sectionsWithResolvedPrompts.filter(
+                section => section.topics.length > 0
+            );
+
+            response.sections = sectionsWithNonEmptyTopics;
+
             return response;
+
         } catch (error) {
-            throw new InternalServerErrorException(`Nie udało się pobrać tematów: ${error.message}`);
+            throw new InternalServerErrorException(
+                `Nie udało się pobrać sekcji: ${error.message}`
+            );
         }
     }
 
@@ -608,40 +608,29 @@ export class SubjectService {
 
             const task = await this.prismaService.task.findUnique({
                 where: { id, userId },
-                include: {
-                    audioFiles: true
-                }
             });
 
-            if (!task) {
-                throw new BadRequestException('Zadanie nie zostało znalezione');
-            }
+            if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
 
-            if (task.audioFiles && task.audioFiles.length > 0) {
-                for (const audioFile of task.audioFiles) {
-                    if (audioFile.url) {
-                        try {
-                            const audioKey = this.extractKeyFromUrl(audioFile.url);
-                            if (audioKey) {
-                                await this.storageService.deleteFile(audioKey);
-                            }
-                        } catch (deleteError) {
-                            console.error(`Nie udało się usunąć pliku audio z S3 (ID: ${audioFile.id}):`, deleteError);
-                        }
-                    }
-                }
-            }
-
-            await this.prismaService.task.delete({
-                where: { id, userId }
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: task.topicId },
             });
 
-            await this.calculateSubtopicsPercent(userId, subjectId);
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            return {
-                statusCode: 200,
-                message: 'Usuwanie zadania zostało udane',
-            };
+            const section = await this.prismaService.section.findUnique({
+                where: { id: topic.sectionId },
+            });
+
+            if (!section) throw new BadRequestException('Rozdział nie został znaleziony');
+
+            return await this.taskService.deleteTask(
+                userId,
+                subjectId,
+                section.id,
+                topic.id,
+                id
+            );
         }
         catch (error) {
             console.error('Błąd podczas usuwania zadania:', error);

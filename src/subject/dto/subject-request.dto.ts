@@ -47,10 +47,6 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
-  subQuestionsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
   vocabluaryPrompt?: string;
 
   @IsOptional()
@@ -59,11 +55,19 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  chatPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   closedSubtopicsPrompt?: string;
 
   @IsOptional()
   @IsString()
   topicExpansionPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  topicFrequencyPrompt?: string;
 
   @IsOptional()
   @IsString()

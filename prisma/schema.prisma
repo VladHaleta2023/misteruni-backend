@@ -8,6 +8,374 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model User {
+  id            Int                @id @default(autoincrement())
+  email         String?            @unique
+  username      String?            @unique
+  passwordHash  String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  role          UserRole           @default(USER)
+  progresses    SubtopicProgress[]
+  tasks         Task[]
+  providers     UserAuthProvider[]
+  userSections  UserSection[]
+  subjects      UserSubject[]
+  userSubtopics UserSubtopic[]
+  userTopics    UserTopic[]
+  words         Word[]
+}
+
+model UserAuthProvider {
+  id         Int          @id @default(autoincrement())
+  userId     Int
+  provider   AuthProvider
+  providerId String
+  email      String?
+  createdAt  DateTime     @default(now())
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+}
+
+model Subject {
+  id                    Int                @id @default(autoincrement())
+  name                  String             @unique
+  prompt                String             @default("")
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  url                   String             @default("")
+  type                  String             @default("")
+  subtopicsPrompt       String             @default("")
+  questionPrompt        String             @default("")
+  solutionPrompt        String             @default("")
+  answersPrompt         String             @default("")
+  closedSubtopicsPrompt String             @default("")
+  vocabluaryPrompt      String             @default("")
+  topicExpansionPrompt  String             @default("")
+  wordsPrompt           String             @default("")
+  isVisible             Boolean            @default(false)
+  subtopicsStatusPrompt String             @default("")
+  minDetailLevel        SubjectDetailLevel @default(MANDATORY)
+  chatPrompt            String             @default("")
+  topicFrequencyPrompt  String             @default("")
+  sections              Section[]
+  subtopics             Subtopic[]
+  topics                Topic[]
+  userSections          UserSection[]
+  users                 UserSubject[]
+  userSubtopics         UserSubtopic[]
+  userTopics            UserTopic[]
+  words                 Word[]
+
+  @@index([createdAt], map: "idx_subject_createdAt")
+}
+
+model UserSubject {
+  id                Int                @id @default(autoincrement())
+  userId            Int
+  subjectId         Int
+  createdAt         DateTime           @default(now())
+  detailLevel       SubjectDetailLevel @default(MANDATORY)
+  threshold         Int                @default(50)
+  updatedAt         DateTime           @updatedAt
+  dailyStudyMinutes Int                @default(60)
+  subject           Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectId])
+  @@index([detailLevel], map: "idx_usersubject_detailLevel")
+  @@index([userId, detailLevel], map: "idx_usersubject_user_detail")
+  @@index([userId, subjectId, threshold], map: "idx_usersubject_covering_threshold")
+}
+
+model UserSection {
+  id        Int      @id @default(autoincrement())
+  subjectId Int
+  sectionId Int
+  userId    Int
+  percent   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectId, sectionId])
+  @@index([userId, subjectId], map: "idx_usersection_user_subject")
+  @@index([userId, sectionId], map: "idx_usersection_user_section")
+  @@index([subjectId, sectionId], map: "idx_usersection_subject_section")
+  @@index([userId, subjectId, percent], map: "idx_usersection_user_subject_percent")
+  @@index([userId, subjectId, sectionId, percent], map: "idx_usersection_user_subject_section_percent")
+}
+
+model UserTopic {
+  id         Int      @id @default(autoincrement())
+  subjectId  Int
+  sectionId  Int
+  topicId    Int
+  userId     Int
+  percent    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  section    Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectId, topicId])
+  @@index([userId, subjectId, sectionId], map: "idx_usertopic_user_subject_section")
+  @@index([userId, topicId], map: "idx_usertopic_user_topic")
+  @@index([subjectId, topicId], map: "idx_usertopic_subject_topic")
+  @@index([sectionId, topicId], map: "idx_usertopic_section_topic")
+  @@index([userId, subjectId, percent], map: "idx_usertopic_user_subject_percent")
+  @@index([userId, subjectId, topicId, percent], map: "idx_usertopic_user_subject_topic_percent")
+  @@index([userId, subjectId, topicId], map: "idx_usertopic_user_subject_topic_fast")
+}
+
+model UserSubtopic {
+  id         Int      @id @default(autoincrement())
+  subjectId  Int
+  sectionId  Int
+  topicId    Int
+  subtopicId Int
+  userId     Int
+  percent    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  section    Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subtopic   Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectId, subtopicId])
+  @@index([userId, subjectId, topicId], map: "idx_usersubtopic_user_subject_topic")
+  @@index([userId, subjectId, sectionId], map: "idx_usersubtopic_user_subject_section")
+  @@index([userId, subtopicId], map: "idx_usersubtopic_user_subtopic")
+  @@index([subjectId, topicId, subtopicId], map: "idx_usersubtopic_subject_topic_subtopic")
+  @@index([sectionId, topicId, subtopicId], map: "idx_usersubtopic_section_topic_subtopic")
+  @@index([userId, subjectId, percent], map: "idx_usersubtopic_user_subject_percent")
+  @@index([userId, subjectId, subtopicId, percent], map: "idx_usersubtopic_user_subject_subtopic_percent")
+  @@index([userId, subjectId, subtopicId], map: "idx_usersubtopic_user_subject_subtopic_fast")
+}
+
+model Section {
+  id                    Int            @id @default(autoincrement())
+  name                  String
+  subjectId             Int
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  partId                Int            @default(-1)
+  type                  String         @default("")
+  subtopicsPrompt       String         @default("")
+  questionPrompt        String         @default("")
+  solutionPrompt        String         @default("")
+  answersPrompt         String         @default("")
+  closedSubtopicsPrompt String         @default("")
+  vocabluaryPrompt      String         @default("")
+  topicExpansionPrompt  String         @default("")
+  difficulty            String         @default("")
+  wordsPrompt           String         @default("")
+  subtopicsStatusPrompt String         @default("")
+  chatPrompt            String         @default("")
+  topicFrequencyPrompt  String         @default("")
+  subject               Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subtopics             Subtopic[]
+  topics                Topic[]
+  userSections          UserSection[]
+  userSubtopics         UserSubtopic[]
+  userTopics            UserTopic[]
+
+  @@index([subjectId, partId], map: "idx_section_subject_part")
+  @@index([subjectId, type], map: "idx_section_subject_type")
+  @@index([subjectId, partId, id], map: "idx_section_subject_part_id")
+  @@index([subjectId], map: "idx_section_subject_base")
+}
+
+model Topic {
+  id                    Int            @id @default(autoincrement())
+  name                  String
+  sectionId             Int
+  subjectId             Int
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  partId                Int            @default(-1)
+  questionPrompt        String         @default("")
+  solutionPrompt        String         @default("")
+  answersPrompt         String         @default("")
+  closedSubtopicsPrompt String         @default("")
+  subtopicsPrompt       String         @default("")
+  vocabluaryPrompt      String         @default("")
+  literature            String         @default("")
+  frequency             Int            @default(0)
+  topicExpansionPrompt  String         @default("")
+  note                  String         @default("")
+  wordsPrompt           String         @default("")
+  subtopicsStatusPrompt String         @default("")
+  chatPrompt            String         @default("")
+  topicFrequencyPrompt  String         @default("")
+  subtopics             Subtopic[]
+  tasks                 Task[]
+  section               Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject               Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  userSubtopics         UserSubtopic[]
+  userTopics            UserTopic[]
+  words                 Word[]
+
+  @@index([sectionId, partId], map: "idx_topic_section_part")
+  @@index([subjectId, sectionId], map: "idx_topic_subject_section")
+  @@index([subjectId, sectionId, id], map: "idx_topic_subject_section_id")
+  @@index([sectionId, subjectId], map: "idx_topic_section_subject")
+  @@index([subjectId, sectionId, partId, id], map: "idx_topic_subject_section_part_id")
+  @@index([subjectId], map: "idx_topic_subject_base")
+  @@index([id, sectionId], map: "idx_topic_id_section_covering")
+}
+
+model Subtopic {
+  id            Int                @id @default(autoincrement())
+  name          String
+  sectionId     Int
+  subjectId     Int
+  topicId       Int
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  importance    Int                @default(0)
+  detailLevel   SubjectDetailLevel @default(MANDATORY)
+  partId        Int                @default(-1)
+  section       Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject       Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topic         Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  progresses    SubtopicProgress[]
+  userSubtopics UserSubtopic[]
+
+  @@index([topicId, sectionId, subjectId], map: "idx_subtopic_topic_section_subject")
+  @@index([topicId, detailLevel], map: "idx_subtopic_topic_detail")
+  @@index([subjectId, sectionId, topicId, detailLevel], map: "idx_subtopic_subject_section_topic_detail")
+  @@index([subjectId, detailLevel], map: "idx_subtopic_subject_detail_1")
+  @@index([subjectId, topicId], map: "idx_subtopic_subject_topic")
+  @@index([subjectId, topicId, detailLevel, id], map: "idx_subtopic_subject_topic_detail_id")
+  @@index([subjectId, detailLevel, importance], map: "idx_subtopic_subject_detail_importance")
+  @@index([topicId], map: "idx_subtopic_topic_base")
+  @@index([subjectId, topicId, detailLevel, importance, id], map: "idx_subtopic_subject_topic_detail_importance_id")
+  @@index([subjectId, sectionId, topicId, detailLevel, id], map: "idx_subtopic_performance_main")
+  @@index([topicId, sectionId, subjectId, detailLevel, id, name, importance], map: "idx_subtopic_covering_all")
+  @@index([subjectId, sectionId, topicId, detailLevel, id, name, importance], map: "idx_subtopic_covering_filter")
+}
+
+model SubtopicProgress {
+  id         Int      @id @default(autoincrement())
+  percent    Int      @default(0)
+  subtopicId Int
+  taskId     Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  userId     Int
+  subtopic   Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, subtopicId])
+  @@index([taskId, userId])
+  @@index([subtopicId, userId])
+  @@index([userId, subtopicId, updatedAt])
+  @@index([userId, updatedAt])
+  @@index([userId, percent])
+  @@index([userId, subtopicId, percent])
+  @@index([userId, subtopicId, taskId], map: "idx_subtopicprogress_covering_task")
+  @@index([taskId, userId, subtopicId], map: "idx_subtopicprogress_task_user_subtopic")
+}
+
+model Task {
+  id                 Int                @id @default(autoincrement())
+  text               String             @default("")
+  options            String[]           @default([])
+  correctOptionIndex Int                @default(0)
+  solution           String             @default("")
+  userSolution       String             @default("")
+  userOptionIndex    Int                @default(0)
+  order              Int                @default(0)
+  finished           Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  topicId            Int
+  stage              Int                @default(0)
+  answered           Boolean            @default(false)
+  percent            Int                @default(0)
+  explanation        String             @default("")
+  explanations       String[]           @default([])
+  percentAudio       Int                @default(0)
+  percentWords       Int                @default(0)
+  userId             Int
+  mode               ChatMode           @default(STUDENT_ANSWER)
+  chatFinished       Boolean            @default(false)
+  chat               String             @default("")
+  audioFiles         AudioFile[]
+  progresses         SubtopicProgress[]
+  topic              Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  words              TaskWord[]
+
+  @@index([userId, topicId, finished])
+  @@index([topicId, userId])
+  @@index([userId, finished, updatedAt])
+  @@index([userId, topicId, finished, updatedAt])
+  @@index([userId, finished, percent])
+  @@index([id], map: "idx_task_id_fast")
+  @@index([id, text, percent, updatedAt], map: "idx_task_covering_main")
+  @@index([userId, topicId, finished, order], map: "idx_task_user_topic_finished_order")
+}
+
+model AudioFile {
+  id        Int      @id @default(autoincrement())
+  url       String   @default("")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  taskId    Int
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model Word {
+  id                 Int        @id @default(autoincrement())
+  text               String
+  finished           Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  streakCorrectCount Int        @default(0)
+  totalAttemptCount  Int        @default(0)
+  totalCorrectCount  Int        @default(0)
+  topicId            Int?
+  frequency          Int        @default(0)
+  userId             Int
+  subjectId          Int?
+  tasks              TaskWord[]
+  subject            Subject?   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topic              Topic?     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectId, text], name: "word_user_subject_unique")
+  @@index([userId, topicId])
+  @@index([userId, subjectId])
+  @@index([text])
+  @@index([userId, subjectId, topicId])
+  @@index([userId, finished])
+  @@index([userId, frequency])
+}
+
+model TaskWord {
+  taskId Int
+  wordId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  word   Word @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, wordId])
+  @@index([taskId])
+  @@index([wordId])
+}
+
 enum AuthProvider {
   LOCAL
   GOOGLE
@@ -25,270 +393,7 @@ enum SubjectDetailLevel {
   OPTIONAL
 }
 
-model User {
-  id           Int      @id @default(autoincrement())
-  email        String?  @unique
-  username     String?  @unique
-  passwordHash String?
-  role         UserRole @default(USER)
-
-  providers    UserAuthProvider[]
-
-  tasks        Task[]
-  words        Word[]
-  progresses   SubtopicProgress[]
-  subjects     UserSubject[]
-
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model UserAuthProvider {
-  id           Int      @id @default(autoincrement())
-  userId       Int
-  provider     AuthProvider
-  providerId   String
-  email        String?
-  createdAt    DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerId])
-}
-
-model Subject {
-  id                    Int                 @id @default(autoincrement())
-  name                  String              @unique
-  prompt                String              @default("")
-  isVisible             Boolean             @default(false)
-  minDetailLevel        SubjectDetailLevel  @default(MANDATORY)
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  url                   String              @default("")
-  type                  String              @default("")
-  subtopicsPrompt       String              @default("")
-  subtopicsStatusPrompt String              @default("")
-  questionPrompt        String              @default("")
-  solutionPrompt        String              @default("")
-  answersPrompt         String              @default("")
-  closedSubtopicsPrompt String              @default("")
-  subQuestionsPrompt    String              @default("")
-  vocabluaryPrompt      String              @default("")
-  wordsPrompt           String              @default("")
-  topicExpansionPrompt  String              @default("")
-  
-  sections              Section[]
-  subtopics             Subtopic[]
-  topics                Topic[]
-  users                 UserSubject[]
-  words                 Word[]
-
-  @@index([createdAt])
-}
-
-model UserSubject {
-  id          Int        @id      @default(autoincrement())
-  detailLevel SubjectDetailLevel  @default(MANDATORY)
-  threshold   Int                 @default(50)
-
-  userId      Int
-  subjectId   Int
-
-  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject     Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  @@unique([userId, subjectId])
-  @@index([detailLevel])
-  @@index([userId, detailLevel])
-}
-
-model Section {
-  id                    Int        @id @default(autoincrement())
-  name                  String
-  subjectId             Int
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
-  partId                Int        @default(-1)
-  type                  String     @default("")
-  subtopicsPrompt       String     @default("")
-  subtopicsStatusPrompt String     @default("")
-  questionPrompt        String     @default("")
-  solutionPrompt        String     @default("")
-  answersPrompt         String     @default("")
-  closedSubtopicsPrompt String     @default("")
-  subQuestionsPrompt    String     @default("")
-  vocabluaryPrompt      String     @default("")
-  wordsPrompt           String     @default("")
-  topicExpansionPrompt  String     @default("")
-  difficulty            String     @default("")
-  subject               Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  subtopics             Subtopic[]
-  topics                Topic[]
-
-  @@index([subjectId, partId])
-}
-
-model Topic {
-  id                    Int        @id @default(autoincrement())
-  name                  String
-  sectionId             Int
-  subjectId             Int
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
-  partId                Int        @default(-1)
-  questionPrompt        String     @default("")
-  solutionPrompt        String     @default("")
-  answersPrompt         String     @default("")
-  closedSubtopicsPrompt String     @default("")
-  subtopicsPrompt       String     @default("")
-  subtopicsStatusPrompt String     @default("")
-  subQuestionsPrompt    String     @default("")
-  vocabluaryPrompt      String     @default("")
-  wordsPrompt           String     @default("")
-  literature            String     @default("")
-  frequency             Int        @default(0)
-  topicExpansionPrompt  String     @default("")
-  note                  String     @default("")
-
-  subtopics             Subtopic[]
-  tasks                 Task[]
-  words                 Word[]
-
-  section               Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject               Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-
-  @@index([sectionId, partId])
-}
-
-model Subtopic {
-  id          Int                 @id @default(autoincrement())
-  name        String
-  sectionId   Int
-  subjectId   Int
-  topicId     Int
-  detailLevel SubjectDetailLevel  @default(MANDATORY)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  importance  Int                 @default(0)
-
-  section     Section             @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject     Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  topic       Topic               @relation(fields: [topicId], references: [id], onDelete: Cascade)
-
-  progresses  SubtopicProgress[]
-
-  @@index([topicId, sectionId, subjectId])
-  @@index([topicId, detailLevel])
-  @@index([subjectId, sectionId, topicId, detailLevel])
-}
-
-model SubtopicProgress {
-  id         Int      @id @default(autoincrement())
-  percent    Int      @default(0)
-  subtopicId Int
-  taskId     Int
-  userId     Int?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  subtopic   Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
-  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, subtopicId])
-  @@index([taskId, userId])
-  @@index([subtopicId, userId])
-}
-
-model Task {
-  id                 Int                @id @default(autoincrement())
-  text               String             @default("")
-  options            String[]           @default([])
-  correctOptionIndex Int                @default(0)
-  solution           String             @default("")
-  userSolution       String             @default("")
-  userOptionIndex    Int                @default(0)
-  order              Int                @default(0)
-  finished           Boolean            @default(false)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  topicId            Int
-  parentTaskId       Int?
-  userId             Int?
-  stage              Int                @default(0)
-  answered           Boolean            @default(false)
-  percent            Int                @default(0)
-  percentAudio       Int                @default(0)
-  percentWords       Int                @default(0)
-  note               String             @default("")
-  explanation        String             @default("")
-  explanations       String[]           @default([])
-
-  audioFiles         AudioFile[]
-  progresses         SubtopicProgress[]
-
-  parentTask         Task?              @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
-  subTasks           Task[]             @relation("SubTasks")
-
-  topic              Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  words              TaskWord[]
-
-  user               User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, topicId, finished])
-  @@index([userId, parentTaskId])
-  @@index([topicId, userId])
-}
-
-model AudioFile {
-  id        Int      @id @default(autoincrement())
-  url       String   @default("")
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  taskId    Int
-
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-}
-
-model Word {
-  id                 Int      @id @default(autoincrement())
-  text               String
-  finished           Boolean  @default(false)
-  frequency          Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  streakCorrectCount Int      @default(0)
-  totalAttemptCount  Int      @default(0)
-  totalCorrectCount  Int      @default(0)
-  
-  userId             Int
-  subjectId          Int?
-  topicId            Int?
-  
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  topic              Topic?   @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  subject            Subject?  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  
-  tasks              TaskWord[]
-
-  @@unique([userId, subjectId, text], name: "word_user_subject_unique")
-  
-  @@index([userId, topicId])
-  @@index([userId, subjectId])
-  @@index([text])
-}
-
-model TaskWord {
-  taskId Int
-  wordId Int
-
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  word Word @relation(fields: [wordId], references: [id], onDelete: Cascade)
-
-  @@id([taskId, wordId])
+enum ChatMode {
+  STUDENT_ANSWER
+  STUDENT_QUESTION
 }

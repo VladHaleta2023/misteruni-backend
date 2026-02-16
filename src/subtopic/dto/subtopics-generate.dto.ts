@@ -98,6 +98,45 @@ export class TopicExpansionAIGenerate {
   @IsString()
   note: string;
 
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+}
+
+export class FrequencyAIGenerate {
+  @IsString()
+  prompt: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsOptional()
+  @IsString()
+  literature?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subtopics?: string[];
+
+  @IsArray()
+  outputSubtopics: [string, number][];
+
   @IsInt()
   frequency: number;
 
