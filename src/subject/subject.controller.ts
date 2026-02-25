@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post
 import { SubjectService } from './subject.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SubjectUploadDto } from './dto/subject-upload.dto';
-import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
+import { LiteratureAIGenerate, LiteratureUpdateRequest, SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { FullPlanRequestDto } from './dto/full-plan-request.dto';
 import { Request } from 'express';
 import { File } from '../file.type';
@@ -66,6 +66,55 @@ export class SubjectController {
         : 1;
 
     return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, notStoriesBool, minSectionPartNumber);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/literatures')
+  async findLiteratures(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startPosition') startPosition?: number
+  ) {
+    return this.subjectService.findLiteratures(id, startPosition !== undefined ? startPosition : 1);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/literature')
+  async updateLiteratureByName(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: LiteratureUpdateRequest
+  ) {
+    return this.subjectService.updateLiteratureByName(id, data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/literature')
+  async findLiteratureByName(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('name') name: string
+  ) {
+    return this.subjectService.findLiteratureByName(id, name);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/literature-generate')
+  async literatureAIGenerate(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: LiteratureAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      return this.subjectService.literatureAIGenerate(id, data);
+    }
+     catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @UseGuards(JwtAuthGuard)

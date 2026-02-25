@@ -78,6 +78,28 @@ export class SubtopicService {
                         AND ut."subjectId" = ${subjectId}
                         AND ut."topicId" = t.id
                     WHERE t.id = ${topicId}
+                ),
+                -- Получаем литературу темы
+                topic_literature AS (
+                    SELECT 
+                        t.id as "topicId",
+                        COALESCE(
+                            ARRAY_AGG(
+                                DISTINCT TRIM(lit)
+                                ORDER BY TRIM(lit)
+                            ) FILTER (
+                                WHERE lit IS NOT NULL 
+                                AND TRIM(lit) <> ''
+                                AND NOT (TRIM(lit) LIKE '[%' AND TRIM(lit) LIKE '%]%')
+                            ),
+                            ARRAY[]::text[]
+                        ) as literatures  -- Переименовано с literature на literatures
+                    FROM "Topic" t
+                    LEFT JOIN LATERAL unnest(
+                        string_to_array(t.literature, E'\n')
+                    ) as lit ON true
+                    WHERE t.id = ${topicId}
+                    GROUP BY t.id
                 )
                 SELECT 
                     -- Тема
@@ -87,6 +109,7 @@ export class SubtopicService {
                     ti."partId" as "topicPartId",
                     ti.frequency as "topicFrequency",
                     ti.percent as "topicPercent",
+                    tl.literatures as "topicLiteratures",  -- Переименовано с literature на literatures
                     CASE 
                         WHEN ti.percent >= ti.threshold THEN 'completed'
                         WHEN ti.percent > 0 THEN 'progress'
@@ -106,6 +129,7 @@ export class SubtopicService {
                     END as "subtopicStatus"
                     
                 FROM topic_info ti
+                LEFT JOIN topic_literature tl ON tl."topicId" = ti.id
                 LEFT JOIN "Subtopic" s ON s."topicId" = ti.id
                     AND s."sectionId" = ${sectionId}
                     AND s."subjectId" = ${subjectId}
@@ -137,10 +161,10 @@ export class SubtopicService {
                 partId: topicRow.topicPartId,
                 frequency: topicRow.topicFrequency,
                 percent: topicRow.topicPercent,
-                status: topicRow.topicStatus as Status
+                status: topicRow.topicStatus as Status,
+                literatures: topicRow.topicLiteratures || []
             };
 
-            // Формируем подтемы (фильтруем строки где есть subtopicId)
             const subtopics = data
                 .filter(row => row.subtopicId !== null)
                 .map(row => ({
@@ -152,7 +176,6 @@ export class SubtopicService {
                     tasks: []
                 }));
 
-            // Статистика
             const totalCount = subtopics.length;
             let started = 0;
             let progress = 0;

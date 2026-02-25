@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class SubjectCreateRequest {
   @IsString()
@@ -71,5 +71,40 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  literaturePrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
+}
+
+export class LiteratureUpdateRequest {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
+export class LiteratureAIGenerate {
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  note: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
 }

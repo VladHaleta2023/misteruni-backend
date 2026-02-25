@@ -1,6 +1,6 @@
-import { BadRequestException, forwardRef, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Catch, forwardRef, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
+import { LiteratureAIGenerate, LiteratureUpdateRequest, SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { StorageService } from '../storage/storage.service';
@@ -237,6 +237,7 @@ export class SubjectService {
                 message: "Przedmiot został pomyślnie pobrany",
                 subject: {
                     ...subject,
+                    literaturePromptOwn: true,
                     subtopicsPromptOwn: true,
                     subtopicsStatusPromptOwn: true,
                     questionPromptOwn: true,
@@ -474,6 +475,7 @@ export class SubjectService {
                 orderBy: { partId: 'asc' },
             });
 
+            const sectionLiteraturePromptMap = new Map<number, string>();
             const sectionSubtopicsPromptMap = new Map<number, string>();
             const sectionSubtopicsStatusPromptMap = new Map<number, string>();
             const sectionTopicExpansionPromptMap = new Map<number, string>();
@@ -481,6 +483,11 @@ export class SubjectService {
             const sectionWordsPromptMap = new Map<number, string>();
 
             for (const section of sections) {
+                const resolvedLiteraturePrompt =
+                    !section.literaturePrompt || section.literaturePrompt.trim() === ''
+                        ? subject.literaturePrompt ?? null
+                        : section.literaturePrompt;
+
                 const resolvedSubtopicsPrompt =
                     !section.subtopicsPrompt || section.subtopicsPrompt.trim() === ''
                         ? subject.subtopicsPrompt ?? null
@@ -506,6 +513,7 @@ export class SubjectService {
                         ? subject.wordsPrompt ?? null
                         : section.wordsPrompt;
 
+                sectionLiteraturePromptMap.set(section.id, resolvedLiteraturePrompt);
                 sectionSubtopicsPromptMap.set(section.id, resolvedSubtopicsPrompt);
                 sectionSubtopicsStatusPromptMap.set(section.id, resolvedSubtopicsStatusPrompt);
                 sectionTopicExpansionPromptMap.set(section.id, resolvedTopicExpansionPrompt);
@@ -514,6 +522,7 @@ export class SubjectService {
             }
 
             const sectionsWithResolvedPrompts = sections.map(section => {
+                const resolvedLiteraturePrompt = sectionLiteraturePromptMap.get(section.id) ?? null;
                 const resolvedSubtopicsPrompt = sectionSubtopicsPromptMap.get(section.id) ?? null;
                 const resolvedSubtopicsStatusPrompt = sectionSubtopicsStatusPromptMap.get(section.id) ?? null;
                 const resolvedTopicExpansionPrompt = sectionTopicExpansionPromptMap.get(section.id) ?? null;
@@ -533,6 +542,7 @@ export class SubjectService {
                         topicExpansionPrompt: resolvedTopicExpansionPrompt,
                         topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
                         wordsPrompt: resolvedWordsPrompt,
+                        literaturePrompt: resolvedLiteraturePrompt
                     };
 
                     if (withSections) {
@@ -568,6 +578,7 @@ export class SubjectService {
                     subtopicsStatusPrompt: section.subtopicsStatusPrompt,
                     topicExpansionPrompt: section.topicExpansionPrompt,
                     topicFrequencyPrompt: section.topicFrequencyPrompt,
+                    literaturePrompt: section.literaturePrompt,
                     wordsPrompt: section.wordsPrompt,
                     closedSubtopicsPrompt: section.closedSubtopicsPrompt,
                     resolvedSubtopicsPrompt,
@@ -575,6 +586,7 @@ export class SubjectService {
                     resolvedTopicExpansionPrompt,
                     resolvedTopicFrequencyPrompt,
                     resolvedWordsPrompt,
+                    resolvedLiteraturePrompt,
                     topics: topicsWithPrompts
                 };
             });
@@ -635,6 +647,196 @@ export class SubjectService {
         catch (error) {
             console.error('Błąd podczas usuwania zadania:', error);
             throw new InternalServerErrorException('Nie udało się usunąć zadanie');
+        }
+    }
+
+    async findLiteratures(
+        id: number,
+        startPosition: number
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id },
+            });
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const result = await this.prismaService.$queryRaw<
+                { num: number; literature: string }[]
+            >`
+                SELECT 
+                    ROW_NUMBER() OVER (ORDER BY literature ASC) AS num,
+                    literature
+                FROM (
+                    SELECT DISTINCT TRIM(lit) AS literature
+                    FROM "Topic",
+                        unnest(string_to_array("Topic"."literature", E'\n')) AS lit
+                    WHERE "Topic"."subjectId" = ${id}
+                    AND lit IS NOT NULL
+                    AND TRIM(lit) <> ''
+                    AND NOT (TRIM(lit) LIKE '\[%' AND TRIM(lit) LIKE '%\]%')
+                ) t
+                ORDER BY literature ASC;
+            `;
+
+            if (!startPosition || startPosition < 1) {
+                return {
+                    statusCode: 200,
+                    message: "Pobrano literaturę pomyślnie",
+                    literatures: result.map(r => r.literature),
+                    totalCount: result.length,
+                    startPosition: 1
+                };
+            }
+
+            const filteredLiteratures = result
+                .filter(item => item.num >= startPosition)
+                .map(item => item.literature);
+
+            return {
+                statusCode: 200,
+                message: "Pobrano literaturę pomyślnie",
+                literatures: filteredLiteratures,
+                totalCount: result.length,
+                startPosition: startPosition
+            };
+        }
+        catch (error) {
+            console.error('Error in findLiteratures:', error);
+            throw new InternalServerErrorException('Nie udało się pobrać literaturę');
+        }
+    }
+
+    async updateLiteratureByName(
+        id: number,
+        data: LiteratureUpdateRequest
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            await this.prismaService.literature.upsert({
+                where: {
+                    subjectId_name: {
+                        subjectId: id,
+                        name: data.name,
+                    },
+                },
+                update: {
+                    note: data.note ?? "",
+                },
+                create: {
+                    subjectId: id,
+                    name: data.name,
+                    note: data.note ?? "",
+                },
+            });
+
+            return {
+                statusCode: 200,
+                message: "Aktualizacja literatury pomyślnie",
+            };
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+
+            throw new InternalServerErrorException(
+                'Nie udało się zaktualizować literatury'
+            );
+        }
+    }
+
+    async findLiteratureByName(
+        id: number,
+        name: string
+    ) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            const literature = await this.prismaService.literature.findUnique({
+                where: {
+                    subjectId_name: {
+                        subjectId: id,
+                        name: name,
+                    },
+                },
+            });
+
+            return {
+                statusCode: 200,
+                message: "Pobranie literatury pomyślnie",
+                literature
+            };
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+
+            throw new InternalServerErrorException(
+                'Nie udało się zaktualizować literatury'
+            );
+        }
+    }
+
+    async literatureAIGenerate(
+        id: number,
+        data: LiteratureAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/literature-generate`;
+
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+            data.prompt = data.prompt ?? subject.literaturePrompt;
+
+            if (
+                typeof r.prompt !== 'string' ||
+                typeof r.changed !== 'string' ||
+                typeof r.name !== 'string' ||
+                typeof r.note !== 'string' ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja literatury udane",
+                ...r,
+            };
+        } catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
         }
     }
 }

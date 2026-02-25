@@ -10,11 +10,6 @@ export class AppController {
     return this.appService.cleanupOrphanedFiles();
   }
 
-  @Post('copy-subject')
-  async copySubject() {
-    return this.appService.copySubject();
-  }
-
   @Post('copy-words')
   async copyWords() {
     return this.appService.copyWords();

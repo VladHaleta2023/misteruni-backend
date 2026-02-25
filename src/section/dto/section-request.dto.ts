@@ -51,7 +51,15 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  literaturePrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
 
   @IsOptional()
   @IsString()

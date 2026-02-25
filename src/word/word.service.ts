@@ -38,45 +38,29 @@ export class WordService {
                 where: { id: subjectId },
             });
 
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
             let topic: any = null;
-            if (topicId !== null && topicId !== undefined) {
+            if (topicId != null) {
                 topic = await this.prismaService.topic.findUnique({
-                    where: { id: topicId },
+                    where: { id: topicId }
                 });
             }
 
             const userSubject = await this.prismaService.userSubject.findUnique({
-                where: {
-                    userId_subjectId: {
-                        userId: userId,
-                        subjectId: subjectId
-                    }
-                },
-                select: {
-                    threshold: true,
-                    detailLevel: true
-                }
+                where: { userId_subjectId: { userId, subjectId } },
+                select: { threshold: true, detailLevel: true }
             });
 
             const threshold = userSubject?.threshold ?? 50;
 
             const whereCondition: any = {
                 userId,
-                subjectId: subjectId,
-                ...(topicId == null ? { topicId: null } : { topicId }),
-                ...(taskId != null ? {
-                    tasks: {
-                        some: {
-                            taskId: taskId,
-                            userId
-                        },
-                    },
-                }
-                : {}),
+                subjectId,
+                topicId: topicId ?? null,
+                ...(taskId != null
+                    ? { tasks: { some: { taskId, userId } } }
+                    : {})
             };
 
             const words = await this.prismaService.word.findMany({
@@ -89,69 +73,70 @@ export class WordService {
                                     id: true,
                                     text: true,
                                     topic: {
-                                        select: {
-                                            id: true,
-                                            sectionId: true,
-                                            subjectId: true,
-                                        },
+                                        select: { id: true, sectionId: true, subjectId: true }
                                     },
-                                },
-                            },
-                        },
-                    },
+                                }
+                            }
+                        }
+                    }
                 }
             });
 
-            let sortedWords = words;
+            const formattedWords = words.map(word => {
+                const percent = word.totalAttemptCount > 0
+                    ? Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100))
+                    : 0;
 
+                let status: Status;
+                if (percent === 0) status = 'started';
+                else if (percent < threshold) status = 'progress';
+                else status = 'completed';
 
-            sortedWords = words.sort((a, b) => {
-                if (a.frequency !== b.frequency) return b.frequency - a.frequency;
-                return a.text.localeCompare(b.text);
-            });
-
-            const formattedWords = sortedWords.map(word => {
-                let percent = 0;
-                if (word.totalAttemptCount > 0) {
-                    percent = Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100));
-                }
-                
                 return {
                     ...word,
-                    percent: percent,
+                    percent,
+                    status,
                     tasks: word.tasks.map(tw => tw.task),
                 };
             });
 
-            let totalPercent = 0;
-            let wordsWithAttempts = 0;
-
-            formattedWords.forEach(word => {
-                totalPercent += word.percent;
-                wordsWithAttempts++;
-            });
-
-            const averagePercentByWords = wordsWithAttempts > 0 
-                ? Math.ceil(totalPercent / wordsWithAttempts)
+            const totalPercent = formattedWords.reduce((sum, w) => sum + w.percent, 0);
+            const averagePercentByWords = formattedWords.length > 0
+                ? Math.ceil(totalPercent / formattedWords.length)
                 : 0;
 
             let wordsStatus: Status;
-            if (averagePercentByWords === 0) {
-                wordsStatus = 'started';
-            } else if (averagePercentByWords < threshold) {
-                wordsStatus = 'progress';
-            } else {
-                wordsStatus = 'completed';
-            }
+            if (averagePercentByWords === 0) wordsStatus = 'started';
+            else if (averagePercentByWords < threshold) wordsStatus = 'progress';
+            else wordsStatus = 'completed';
+
+            const sortedWords = formattedWords.sort((a, b) => {
+                const getPriority = (percent: number) => {
+                    if (percent === 0) return 1;
+                    if (percent < threshold) return 0;
+                    return 2;
+                };
+
+                const aPriority = getPriority(a.percent);
+                const bPriority = getPriority(b.percent);
+
+                if (aPriority !== bPriority) return aPriority - bPriority;
+                if (a.frequency !== b.frequency) return b.frequency - a.frequency;
+                if (a.totalCorrectCount !== b.totalCorrectCount)
+                    return b.totalCorrectCount - a.totalCorrectCount;
+
+                return a.text.localeCompare(b.text);
+            });
 
             return {
                 statusCode: 200,
                 message: 'Słowa zostały pobrane pomyślnie',
-                words: formattedWords,
+                words: sortedWords,
                 topic,
                 wordsStatus,
                 wordsPercent: averagePercentByWords
             };
+
         } catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać słów tematu');
         }
@@ -161,54 +146,40 @@ export class WordService {
         userId: number,
         subjectId: number,
         topicId: number | null | undefined,
-        taskId: number | null | undefined
+        taskId: number | null | undefined,
+        wordIds?: number[]
     ) {
         try {
-            const wordsThreshold = 3;
-
             const subject = await this.prismaService.subject.findUnique({
                 where: { id: subjectId },
             });
 
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
             let topic: any = null;
-            if (topicId !== null && topicId !== undefined) {
+            if (topicId != null) {
                 topic = await this.prismaService.topic.findUnique({
-                    where: { id: topicId },
+                    where: { id: topicId }
                 });
             }
 
             const userSubject = await this.prismaService.userSubject.findUnique({
-                where: {
-                    userId_subjectId: {
-                        userId: userId,
-                        subjectId: subjectId
-                    }
-                },
-                select: {
-                    threshold: true,
-                    detailLevel: true
-                }
+                where: { userId_subjectId: { userId, subjectId } },
+                select: { threshold: true, detailLevel: true }
             });
 
             const threshold = userSubject?.threshold ?? 50;
 
             const whereCondition: any = {
                 userId,
-                subjectId: subjectId,
-                ...(topicId == null ? { topicId: null } : { topicId }),
-                ...(taskId != null ? {
-                    tasks: {
-                        some: {
-                            taskId: taskId,
-                            userId
-                        },
-                    },
-                }
-                : {}),
+                subjectId,
+                topicId: topicId ?? null,
+                ...(taskId != null
+                    ? { tasks: { some: { taskId, userId } } }
+                    : {}),
+                ...(Array.isArray(wordIds) && wordIds.length > 0
+                    ? { id: { in: wordIds } }
+                    : {}),
             };
 
             const words = await this.prismaService.word.findMany({
@@ -221,99 +192,70 @@ export class WordService {
                                     id: true,
                                     text: true,
                                     topic: {
-                                        select: {
-                                            id: true,
-                                            sectionId: true,
-                                            subjectId: true,
-                                        },
+                                        select: { id: true, sectionId: true, subjectId: true }
                                     },
-                                },
-                            },
-                        },
-                    },
-                }
-            });
-
-            let sortedWords = words;
-
-            sortedWords = words.sort((a, b) => {
-                if (a.streakCorrectCount !== b.streakCorrectCount) {
-                    const getStreakPriority = (streak: number) => {
-                        if (streak === wordsThreshold - 1) return 0;
-                        
-                        for (let i = wordsThreshold - 2; i >= 1; i--) {
-                            if (streak === i) return wordsThreshold - 1 - i;
+                                }
+                            }
                         }
-                        
-                        if (streak === 0) return wordsThreshold - 1;
-                        if (streak === wordsThreshold) return wordsThreshold;
-                        
-                        return streak + 1;
-                    };
-
-                    const aPriority = getStreakPriority(a.streakCorrectCount);
-                    const bPriority = getStreakPriority(b.streakCorrectCount);
-                    
-                    return aPriority - bPriority;
+                    }
                 }
-
-                if (a.frequency !== b.frequency) {
-                    return b.frequency - a.frequency;
-                }
-
-                if (a.totalCorrectCount !== b.totalCorrectCount) {
-                    return b.totalCorrectCount - a.totalCorrectCount;
-                }
-
-                if (a.totalAttemptCount !== b.totalAttemptCount) {
-                    return b.totalAttemptCount - a.totalAttemptCount;
-                }
-
-                return a.text.localeCompare(b.text);
             });
-            
-            const formattedWords = sortedWords.map(word => {
-                let percent = 0;
-                if (word.totalAttemptCount > 0) {
-                    percent = Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100));
-                }
-                
+
+            const formattedWords = words.map(word => {
+                const percent = word.totalAttemptCount > 0
+                    ? Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100))
+                    : 0;
+
+                let status: Status;
+                if (percent === 0) status = 'started';
+                else if (percent < threshold) status = 'progress';
+                else status = 'completed';
+
                 return {
                     ...word,
-                    percent: percent,
+                    percent,
+                    status,
                     tasks: word.tasks.map(tw => tw.task),
                 };
             });
 
-            let totalPercent = 0;
-            let wordsWithAttempts = 0;
-
-            formattedWords.forEach(word => {
-                totalPercent += word.percent;
-                wordsWithAttempts++;
-            });
-
-            const averagePercentByWords = wordsWithAttempts > 0 
-                ? Math.ceil(totalPercent / wordsWithAttempts)
+            const totalPercent = formattedWords.reduce((sum, w) => sum + w.percent, 0);
+            const averagePercentByWords = formattedWords.length > 0
+                ? Math.ceil(totalPercent / formattedWords.length)
                 : 0;
 
             let wordsStatus: Status;
-            if (averagePercentByWords === 0) {
-                wordsStatus = 'started';
-            } else if (averagePercentByWords < threshold) {
-                wordsStatus = 'progress';
-            } else {
-                wordsStatus = 'completed';
-            }
+            if (averagePercentByWords === 0) wordsStatus = 'started';
+            else if (averagePercentByWords < threshold) wordsStatus = 'progress';
+            else wordsStatus = 'completed';
+
+            const sortedWords = formattedWords.sort((a, b) => {
+                const getPriority = (percent: number) => {
+                    if (percent === 0) return 1;
+                    if (percent < threshold) return 0;
+                    return 2;
+                };
+
+                const aPriority = getPriority(a.percent);
+                const bPriority = getPriority(b.percent);
+
+                if (aPriority !== bPriority) return aPriority - bPriority;
+                if (a.frequency !== b.frequency) return b.frequency - a.frequency;
+                if (a.totalCorrectCount !== b.totalCorrectCount)
+                    return b.totalCorrectCount - a.totalCorrectCount;
+
+                return a.text.localeCompare(b.text);
+            });
 
             return {
                 statusCode: 200,
                 message: 'Słowa zostały pobrane pomyślnie',
-                words: formattedWords,
+                words: sortedWords,
                 topic,
                 wordsStatus,
                 wordsPercent: averagePercentByWords
             };
+
         } catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać słów tematu');
         }
@@ -401,36 +343,20 @@ export class WordService {
         wordIds?: number[]
     ) {
         try {
-            const subject = await this.prismaService.subject.findUnique({
-                where: { id: subjectId },
-            });
-
-            if (!subject) {
-                throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
-
-            if (!Array.isArray(wordIds) || wordIds.length === 0) {
+            if (!Array.isArray(wordIds) || wordIds.length === 0)
                 throw new BadRequestException('Brak listy ID słów');
-            }
 
             const words = await this.prismaService.word.findMany({
-                where: {
-                    userId,
-                    id: { in: wordIds },
-                    subjectId
-                },
+                where: { userId, id: { in: wordIds }, subjectId },
             });
 
-            if (words.length === 0) {
+            if (words.length === 0)
                 throw new BadRequestException('Nie znaleziono słów dla podanych ID');
-            }
 
-            const validWordIds = words.map(word => word.id);
+            const validWordIds = words.map(w => w.id);
             const invalidWordIds = wordIds.filter(id => !validWordIds.includes(id));
-            
-            if (invalidWordIds.length > 0) {
+            if (invalidWordIds.length > 0)
                 throw new BadRequestException(`Niektóre słowa nie należą do tego przedmiotu: ${invalidWordIds.join(', ')}`);
-            }
 
             const normalizedOutputWords = outputWords
                 .filter(w => typeof w === 'string')
@@ -438,35 +364,21 @@ export class WordService {
 
             await this.prismaService.$transaction(
                 words.map(word => {
-                    const isProblematic = normalizedOutputWords.includes(
-                        word.text.trim().toLowerCase()
-                    );
+                    const isCorrect = !normalizedOutputWords.includes(word.text.trim().toLowerCase());
 
                     return this.prismaService.word.update({
-                        where: {
-                            id: word.id,
-                            userId,
-                        },
+                        where: { id: word.id, userId },
                         data: {
-                            finished: !isProblematic,
+                            finished: isCorrect,
                             totalAttemptCount: { increment: 1 },
-                            totalCorrectCount: !isProblematic
-                                ? { increment: 1 }
-                                : undefined,
-                            streakCorrectCount: isProblematic
-                                ? 0
-                                : { increment: 1 },
-                        },
+                            totalCorrectCount: isCorrect ? { increment: 1 } : undefined,
+                        }
                     });
                 })
             );
 
             const updatedWords = await this.prismaService.word.findMany({
-                where: {
-                    userId,
-                    id: { in: validWordIds },
-                    subjectId
-                },
+                where: { userId, id: { in: validWordIds }, subjectId },
                 orderBy: [{ finished: 'desc' }],
             });
 
@@ -475,10 +387,9 @@ export class WordService {
                 message: 'Wyrazy zostały zaktualizowane pomyślnie',
                 words: updatedWords,
             };
+
         } catch (error) {
-            throw new InternalServerErrorException(
-                'Nie udało się zaktualizować wyrazów'
-            );
+            throw new InternalServerErrorException('Nie udało się zaktualizować wyrazów');
         }
     }
 

@@ -7,7 +7,6 @@ import { SubtopicService } from '../subtopic/subtopic.service';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
-import { TimezoneService } from '../timezone/timezone.service';
 import { StorageService } from 'src/storage/storage.service';
 import { Prisma } from '@prisma/client';
 
@@ -23,8 +22,7 @@ export class TaskService {
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
         private readonly optionsService: OptionsService,
-        private readonly configService: ConfigService,
-        private readonly timezoneService: TimezoneService
+        private readonly configService: ConfigService
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -54,6 +52,24 @@ export class TaskService {
                     FROM "UserSubject"
                     WHERE "userId" = ${userId} AND "subjectId" = ${subjectId}
                 ),
+                topic_literature AS (
+                    SELECT 
+                        ${topicId} as "topicId",
+                        COALESCE(
+                            ARRAY_AGG(
+                                DISTINCT TRIM(lit)
+                                ORDER BY TRIM(lit)
+                            ) FILTER (
+                                WHERE lit IS NOT NULL 
+                                AND TRIM(lit) <> ''
+                                AND NOT (TRIM(lit) LIKE '[%' AND TRIM(lit) LIKE '%]%')
+                            ),
+                            ARRAY[]::text[]
+                        ) as literatures
+                    FROM unnest(
+                        string_to_array((SELECT literature FROM "Topic" WHERE id = ${topicId}), E'\n')
+                    ) as lit
+                ),
                 data AS (
                     SELECT 
                         -- Тема
@@ -62,6 +78,7 @@ export class TaskService {
                         t.note as "topicNote",
                         t."partId" as "topicPartId",
                         t.frequency as "topicFrequency",
+                        tl.literatures as "topicLiteratures",
                         COALESCE(ut.percent, 0) as "topicPercent",
                         CASE 
                             WHEN COALESCE(ut.percent, 0) >= (SELECT val FROM threshold_val) THEN 'completed'
@@ -103,6 +120,7 @@ export class TaskService {
                         ) as tasks_by_date
                         
                     FROM "Topic" t
+                    CROSS JOIN topic_literature tl
                     LEFT JOIN "UserTopic" ut ON ut."userId" = ${userId} 
                         AND ut."subjectId" = ${subjectId}
                         AND ut."topicId" = t.id
@@ -123,7 +141,8 @@ export class TaskService {
                 partId: row.topicPartId,
                 frequency: row.topicFrequency,
                 percent: row.topicPercent,
-                status: row.topicStatus as Status
+                status: row.topicStatus as Status,
+                literatures: row.topicLiteratures || [] // Переименовано с literature на literatures
             };
 
             // 🔹 Формируем elements из JSON
@@ -177,14 +196,9 @@ export class TaskService {
         try {
             const userSubject = await this.prismaService.userSubject.findUnique({
                 where: {
-                    userId_subjectId: {
-                        userId,
-                        subjectId
-                    }
+                    userId_subjectId: { userId, subjectId }
                 },
-                select: {
-                    threshold: true
-                }
+                select: { threshold: true }
             });
 
             const threshold = userSubject?.threshold ?? 50;
@@ -194,58 +208,67 @@ export class TaskService {
                     SELECT
                         t.*,
                         tp.note AS "topicNote",
-                        tp.name AS "topicName",
-                        CASE
-                            WHEN t.percent = 0 THEN 'started'
-                            WHEN t.percent >= ${threshold} THEN 'completed'
-                            ELSE 'progress'
-                        END AS status
+                        tp.name AS "topicName"
                     FROM "Task" t
                     JOIN "Topic" tp ON tp.id = t."topicId"
-                    LEFT JOIN "UserTopic" ut
-                        ON ut."topicId" = t."topicId"
-                    AND ut."userId" = ${userId}
                     WHERE
                         t."userId" = ${userId}
                         AND t.id = ${id}
                 ),
-                words_agg AS (
-                    SELECT tw."taskId",
-                        json_agg(DISTINCT jsonb_build_object(
-                            'id', w.id,
-                            'text', w.text,
-                            'finished', w.finished,
-                            'createdAt', w."createdAt",
-                            'updatedAt', w."updatedAt",
-                            'topicId', w."topicId",
-                            'streakCorrectCount', w."streakCorrectCount",
-                            'totalAttemptCount', w."totalAttemptCount",
-                            'totalCorrectCount', w."totalCorrectCount"
-                        )) AS words
+
+                words_detailed AS (
+                    SELECT 
+                        tw."taskId",
+                        w.id,
+                        w.text,
+                        w."totalAttemptCount",
+                        w."totalCorrectCount",
+
+                        CASE
+                            WHEN w."totalAttemptCount" = 0 THEN 0
+                            ELSE LEAST(
+                                100,
+                                CEIL(w."totalCorrectCount" * 100.0 / w."totalAttemptCount")
+                            )
+                        END AS percent
+
                     FROM "TaskWord" tw
-                    JOIN "Word" w ON w.id = tw."wordId" AND w."topicId" IS NOT NULL
-                    GROUP BY tw."taskId"
+                    JOIN "Word" w ON w.id = tw."wordId"
                 ),
+
+                words_agg AS (
+                    SELECT 
+                        wd."taskId",
+
+                        json_agg(
+                            jsonb_build_object(
+                                'id', wd.id,
+                                'text', wd.text,
+                                'totalAttemptCount', wd."totalAttemptCount",
+                                'totalCorrectCount', wd."totalCorrectCount",
+                                'percent', wd.percent
+                            )
+                        ) AS words,
+
+                        BOOL_AND(wd.percent >= ${threshold}) AS "wordsCompleted"
+
+                    FROM words_detailed wd
+                    GROUP BY wd."taskId"
+                ),
+
                 audio_agg AS (
                     SELECT "taskId",
                         json_agg(url) AS "audioFiles"
                     FROM "AudioFile"
                     GROUP BY "taskId"
-                ),
-                subtopics_agg AS (
-                    SELECT sp."taskId",
-                        json_agg(jsonb_build_object('name', s.name, 'percent', sp.percent)) AS subtopics
-                    FROM "SubtopicProgress" sp
-                    JOIN "Subtopic" s ON s.id = sp."subtopicId"
-                    GROUP BY sp."taskId"
                 )
+
                 SELECT
                     t.*,
-                    COALESCE(sta.subtopics, '[]') AS subtopics,
                     COALESCE(wa.words, '[]') AS words,
+                    COALESCE(wa."wordsCompleted", false) AS "wordsCompleted",
                     COALESCE(aa."audioFiles", '[]') AS "audioFiles"
                 FROM task_main t
-                LEFT JOIN subtopics_agg sta ON sta."taskId" = t.id
                 LEFT JOIN words_agg wa ON wa."taskId" = t.id
                 LEFT JOIN audio_agg aa ON aa."taskId" = t.id
             `;
@@ -255,8 +278,9 @@ export class TaskService {
                 message: 'Pobrano zadanie pomyślnie',
                 task: task[0] || null
             };
+
         } catch (error: any) {
-            console.error('SQL Error in findPendingTask:', error);
+            console.error('SQL Error in findTaskById:', error);
             throw new InternalServerErrorException(`Błąd SQL: ${error.message}`);
         }
     }
@@ -314,15 +338,11 @@ export class TaskService {
         try {
             const userSubject = await this.prismaService.userSubject.findUnique({
                 where: {
-                    userId_subjectId: {
-                        userId,
-                        subjectId,
-                    },
+                    userId_subjectId: { userId, subjectId },
                 },
-                select: {
-                    threshold: true,
-                },
+                select: { threshold: true },
             });
+
             const threshold = userSubject?.threshold ?? 50;
 
             const task = await this.prismaService.$queryRaw<any[]>`
@@ -333,9 +353,6 @@ export class TaskService {
                         tp.name AS "topicName"
                     FROM "Task" t
                     JOIN "Topic" tp ON tp.id = t."topicId"
-                    LEFT JOIN "UserTopic" ut
-                        ON ut."topicId" = t."topicId"
-                    AND ut."userId" = ${userId}
                     WHERE
                         t."userId" = ${userId}
                         AND t."topicId" = ${topicId}
@@ -343,47 +360,60 @@ export class TaskService {
                     ORDER BY t."order" ASC
                     LIMIT 1
                 ),
-                words_agg AS (
-                    SELECT tw."taskId",
-                        json_agg(DISTINCT jsonb_build_object(
-                            'id', w.id,
-                            'text', w.text,
-                            'finished', w.finished,
-                            'createdAt', w."createdAt",
-                            'updatedAt', w."updatedAt",
-                            'topicId', w."topicId",
-                            'streakCorrectCount', w."streakCorrectCount",
-                            'totalAttemptCount', w."totalAttemptCount",
-                            'totalCorrectCount', w."totalCorrectCount"
-                        )) AS words
+
+                words_detailed AS (
+                    SELECT 
+                        tw."taskId",
+                        w.id,
+                        w.text,
+                        w."totalAttemptCount",
+                        w."totalCorrectCount",
+
+                        CASE
+                            WHEN w."totalAttemptCount" = 0 THEN 0
+                            ELSE LEAST(
+                                100,
+                                CEIL(w."totalCorrectCount" * 100.0 / w."totalAttemptCount")
+                            )
+                        END AS percent
+
                     FROM "TaskWord" tw
-                    JOIN "Word" w ON w.id = tw."wordId" AND w."topicId" IS NOT NULL
-                    GROUP BY tw."taskId"
+                    JOIN "Word" w ON w.id = tw."wordId"
                 ),
+
+                words_agg AS (
+                    SELECT 
+                        wd."taskId",
+
+                        json_agg(
+                            jsonb_build_object(
+                                'id', wd.id,
+                                'text', wd.text,
+                                'totalAttemptCount', wd."totalAttemptCount",
+                                'totalCorrectCount', wd."totalCorrectCount",
+                                'percent', wd.percent
+                            )
+                        ) AS words,
+
+                        BOOL_AND(wd.percent >= ${threshold}) AS "wordsCompleted"
+
+                    FROM words_detailed wd
+                    GROUP BY wd."taskId"
+                ),
+
                 audio_agg AS (
                     SELECT "taskId",
                         json_agg(url) AS "audioFiles"
                     FROM "AudioFile"
                     GROUP BY "taskId"
-                ),
-                subtopics_agg AS (
-                    SELECT sp."taskId",
-                        json_agg(jsonb_build_object('name', s.name, 'percent', sp.percent)) AS subtopics
-                    FROM "SubtopicProgress" sp
-                    JOIN "Subtopic" s ON s.id = sp."subtopicId"
-                    GROUP BY sp."taskId"
                 )
-                SELECT t.*,
-                    COALESCE(sta.subtopics, '[]') AS subtopics,
+
+                SELECT 
+                    t.*,
                     COALESCE(wa.words, '[]') AS words,
-                    COALESCE(aa."audioFiles", '[]') AS "audioFiles",
-                    CASE 
-                        WHEN t.percent = 0 THEN 'started'
-                        WHEN t.percent >= ${threshold} THEN 'completed'
-                        ELSE 'progress'
-                    END AS status
+                    COALESCE(wa."wordsCompleted", false) AS "wordsCompleted",
+                    COALESCE(aa."audioFiles", '[]') AS "audioFiles"
                 FROM task_main t
-                LEFT JOIN subtopics_agg sta ON sta."taskId" = t.id
                 LEFT JOIN words_agg wa ON wa."taskId" = t.id
                 LEFT JOIN audio_agg aa ON aa."taskId" = t.id
             `;
@@ -401,6 +431,7 @@ export class TaskService {
                 message: 'Pobrano ostatnie zadanie pomyślnie',
                 task: task[0],
             };
+
         } catch (error: any) {
             console.error('SQL Error in findPendingTask:', error);
             throw new InternalServerErrorException(`Błąd SQL: ${error.message}`);
@@ -418,7 +449,6 @@ export class TaskService {
         const url = `${this.fastapiUrl}/admin/task-generate`;
 
         try {
-            // Проверяем сущности
             const [subject, section, topic] = await Promise.all([
                 this.prismaService.subject.findUnique({ where: { id: subjectId } }),
                 this.prismaService.section.findUnique({ where: { id: sectionId } }),
@@ -441,6 +471,7 @@ export class TaskService {
             const subtopics = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
                     st.name,
+                    st."partId",
                     COALESCE(ust.percent, 0) AS "percent",
                     st.importance
                 FROM "Subtopic" st
@@ -458,7 +489,9 @@ export class TaskService {
                             ELSE ARRAY['MANDATORY']::text[]
                         END
                     )
-                ORDER BY st.importance ASC;
+                ORDER BY 
+                    st."partId" ASC,
+                    st.importance ASC;
             `;
 
             // Фильтруем по threshold
@@ -526,7 +559,6 @@ export class TaskService {
                 message: "Generacja tekstu zadania udane",
                 ...r,
             };
-
         } catch (error) {
             if (error.response && error.response.data) {
                 const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
@@ -544,7 +576,6 @@ export class TaskService {
         data: InteractiveTaskAIGenerate,
         signal?: AbortSignal
     ) {
-        const wordsThreshold = 3;
         const url = `${this.fastapiUrl}/admin/interactive-task-generate`;
 
         try {
@@ -599,8 +630,7 @@ export class TaskService {
                 SELECT 
                     w.id,
                     w.text, 
-                    w.frequency, 
-                    w."streakCorrectCount", 
+                    w.frequency,
                     w."totalCorrectCount", 
                     w."totalAttemptCount"
                 FROM "Word" w
@@ -609,7 +639,6 @@ export class TaskService {
                     AND w."subjectId" = ${subjectId};
             `;
 
-            // Фильтрация слов: минимальное количество заданий
             const wordTasks = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
                     wt."wordId", 
@@ -634,19 +663,11 @@ export class TaskService {
                 wordIdsWithMinTasks.includes(w.id) || minTasks === 0
             );
 
-            // Сортировка слов по частоте и статистике
             const sortedWords = filteredWords.sort((a, b) => {
                 if (a.frequency !== b.frequency) return b.frequency - a.frequency;
 
-                const aGroup = a.streakCorrectCount < wordsThreshold ? 0 : a.streakCorrectCount === 0 ? 1 : 2;
-                const bGroup = b.streakCorrectCount < wordsThreshold ? 0 : b.streakCorrectCount === 0 ? 1 : 2;
-
-                if (aGroup !== bGroup) return aGroup - bGroup;
-
-                if (aGroup === 0) return b.streakCorrectCount - a.streakCorrectCount;
-                if (aGroup === 2) return a.streakCorrectCount - b.streakCorrectCount;
-
                 if (a.totalCorrectCount !== b.totalCorrectCount) return a.totalCorrectCount - b.totalCorrectCount;
+
                 if (a.totalAttemptCount !== b.totalAttemptCount) return a.totalAttemptCount - b.totalAttemptCount;
 
                 return a.text.localeCompare(b.text);
@@ -654,7 +675,6 @@ export class TaskService {
 
             const wordsForData: string[] = sortedWords.map(w => w.text);
 
-            // Формируем объект для AI
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
@@ -670,7 +690,6 @@ export class TaskService {
 
             data.prompt = resolvedQuestionPrompt ?? "";
 
-            // Валидация
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
                 Array.isArray(item) &&
                 item.length === 2 &&
@@ -682,7 +701,6 @@ export class TaskService {
                 throw new BadRequestException('Errors musi być listą stringów');
             }
 
-            // Отправка на FastAPI
             const response$ = this.httpService.post(url, data, { signal });
             const response = await firstValueFrom(response$);
             const r = response.data;
@@ -1446,12 +1464,38 @@ export class TaskService {
             select: { percent: true }
         });
 
-        const topicPercent = tasks.length
+        const averageTaskPercent = tasks.length
             ? Math.min(
                 100,
                 Math.ceil(tasks.reduce((a, t) => a + (t.percent ?? 0), 0) / tasks.length)
             )
             : 0;
+
+        const words = await tx.word.findMany({
+            where: {
+                userId,
+                topicId,
+                subjectId
+            },
+            select: {
+                totalAttemptCount: true
+            }
+        });
+
+        const totalWords = words.length;
+
+        const wordsWithAttempts = words.filter(
+            w => (w.totalAttemptCount ?? 0) > 0
+        ).length;
+
+        const coveragePercent = totalWords > 0
+            ? Math.ceil((wordsWithAttempts / totalWords) * 100)
+            : 0;
+
+        const topicPercent = Math.min(
+            100,
+            Math.ceil((averageTaskPercent * coveragePercent) / 100)
+        );
 
         await tx.userTopic.updateMany({
             where: { userId, subjectId, topicId },
@@ -1480,7 +1524,7 @@ export class TaskService {
 
         return {
             statusCode: 200,
-            message: 'Procenty tematu i działu zostały zaktualizowane (tasks)'
+            message: 'Procenty tematu i działu zostały zaktualizowane (tasks + coverage)'
         };
     }
 
@@ -1647,13 +1691,11 @@ export class TaskService {
         try {
             text = text.toLowerCase();
 
-            let word = await this.prismaService.word.findUnique({
+            let word = await this.prismaService.word.findFirst({
                 where: {
-                    word_user_subject_unique: {
-                        userId,
-                        subjectId,
-                        text,
-                    },
+                    userId,
+                    subjectId,
+                    text,
                 },
             });
 
@@ -1662,7 +1704,6 @@ export class TaskService {
                     data: {
                         text,
                         finished: false,
-                        streakCorrectCount: 0,
                         topicId: null,
                         userId,
                         subjectId
@@ -1673,7 +1714,6 @@ export class TaskService {
                     where: { id: word.id },
                     data: {
                         finished: false,
-                        streakCorrectCount: 0,
                     },
                 });
             }

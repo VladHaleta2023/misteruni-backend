@@ -12,39 +12,58 @@ export class SectionService {
     ) {}
 
     async calculatePrediction(
-        threshold: number, 
-        subtopicsNow: any[],
-        dailyStudyMinutes: number
+        threshold: number,
+        items: Array<{ percent: number; isSubtopic?: boolean }>,
+        dailyStudyMinutes: number,
+        userId: number,
+        subjectId: number
     ) {
         try {
             const now = new Date();
-            
-            const pendingSubtopics = subtopicsNow.filter(subtopic => subtopic.percent < threshold);
 
-            if (!pendingSubtopics.length) {
-                const result = new Date(now);
-                const local = this.timezoneService.utcToLocal(result);
+            const pendingItems = items
+                .map(item => {
+                    const remainingToThreshold = Math.max(0, threshold - item.percent);
+                    return { ...item, remainingToThreshold };
+                })
+                .filter(item => item.remainingToThreshold > 0);
+
+            if (!pendingItems.length) {
+                const local = this.timezoneService.utcToLocal(now);
                 return `${String(local.getDate()).padStart(2,'0')}.${String(local.getMonth()+1).padStart(2,'0')}.${local.getFullYear()}`;
             }
 
             let totalTimeMinutes = 0;
-            const baseTime = 20; // базовое время на подтему в минутах
 
-            for (const subtopic of pendingSubtopics) {
-                const difficultyCoefficient = (subtopic.importance || 0) / 100; // переводим проценты в коэффициент 0..1
-                const remainingPercent = threshold - subtopic.percent; // сколько осталось до порога
-                const subtopicTime = baseTime * difficultyCoefficient * (remainingPercent / 100);
+            for (const item of pendingItems) {
 
-                totalTimeMinutes += subtopicTime;
+                let baseTimeMinutes = 0;
+
+                if (item.isSubtopic) {
+                    baseTimeMinutes = 30;
+                } else {
+                    baseTimeMinutes = 5;
+                }
+
+                const fractionOfFull = item.remainingToThreshold / 100;
+
+                const time = baseTimeMinutes * fractionOfFull;
+
+                totalTimeMinutes += time;
             }
 
-            const daysNeeded = totalTimeMinutes > 0 ? totalTimeMinutes / dailyStudyMinutes : 0;
+            const daysNeeded = totalTimeMinutes / dailyStudyMinutes;
 
-            const predictionDate = new Date(now.getTime() + daysNeeded * 24 * 60 * 60 * 1000);
+            const predictionDate = new Date(
+                now.getTime() + daysNeeded * 24 * 60 * 60 * 1000
+            );
+
             const local = this.timezoneService.utcToLocal(predictionDate);
 
             return `${String(local.getDate()).padStart(2,'0')}.${String(local.getMonth()+1).padStart(2,'0')}.${local.getFullYear()}`;
-        } catch {
+
+        } catch (error) {
+            console.error('Error in calculatePrediction:', error);
             return 'Infinity';
         }
     }
@@ -52,17 +71,15 @@ export class SectionService {
     async findSections(userId: number, subjectId: number) {
         try {
             const [subject, userSubject] = await Promise.all([
-                this.prismaService.subject.findUnique({
-                    where: { id: subjectId }
-                }),
+                this.prismaService.subject.findUnique({ where: { id: subjectId } }),
                 this.prismaService.userSubject.findUnique({
                     where: { userId_subjectId: { userId, subjectId } },
                     select: { threshold: true, detailLevel: true, dailyStudyMinutes: true }
                 })
             ]);
-            
+
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
-            
+
             const threshold = userSubject?.threshold ?? 50;
             const detailLevel = userSubject?.detailLevel ?? 'MANDATORY';
             const dailyStudyMinutes = userSubject?.dailyStudyMinutes ?? 120;
@@ -80,21 +97,38 @@ export class SectionService {
                     t.frequency AS "topicFrequency",
                     COALESCE(ut.percent, 0) AS "topicPercent"
                 FROM "Section" s
-                LEFT JOIN "UserSection" us
-                    ON us."sectionId" = s.id AND us."userId" = ${userId}
-                LEFT JOIN "Topic" t
-                    ON t."sectionId" = s.id
-                LEFT JOIN "UserTopic" ut
-                    ON ut."topicId" = t.id AND ut."userId" = ${userId}
+                LEFT JOIN "UserSection" us ON us."sectionId" = s.id AND us."userId" = ${userId}
+                LEFT JOIN "Topic" t ON t."sectionId" = s.id
+                LEFT JOIN "UserTopic" ut ON ut."topicId" = t.id AND ut."userId" = ${userId}
                 WHERE s."subjectId" = ${subjectId}
                 ORDER BY s."partId" ASC, t."partId" ASC;
             `;
 
-            const predictionSubtopics = await this.getPredictionSubtopics(
-                userId, 
-                subjectId, 
-                detailLevel
-            );
+            const predictionSubtopics = await this.getPredictionSubtopics(userId, subjectId, detailLevel);
+
+            const wordsForPrediction = await this.prismaService.$queryRaw<any[]>`
+                SELECT 
+                    w.id,
+                    w.text,
+                    w.frequency,
+                    w."totalAttemptCount",
+                    w."totalCorrectCount"
+                FROM "Word" w
+                WHERE w."subjectId" = ${subjectId}
+                AND w."userId" = ${userId};
+            `;
+
+            const pendingWords = wordsForPrediction
+                .map(w => {
+                    const percent = w.totalAttemptCount === 0 ? 0 : Math.ceil((w.totalCorrectCount * 100) / w.totalAttemptCount);
+                    return { percent, importance: 100 - w.frequency };
+                })
+                .filter(w => w.percent < threshold);
+
+            const predictionItems = [
+                ...predictionSubtopics.map(st => ({ percent: st.percent, importance: st.importance || 100 })),
+                ...pendingWords
+            ];
 
             const sectionMap = new Map<number, any>();
             let firstUncompletedTopic: { sectionId: number, topicId: number, sectionType: string } | null = null;
@@ -119,7 +153,7 @@ export class SectionService {
                     const topicStatus = this.getStatus(row.topicPercent, threshold);
                     const isUncompleted = topicStatus !== 'completed';
 
-                    if (firstUncompletedTopic === null && isUncompleted) {
+                    if (!firstUncompletedTopic && isUncompleted) {
                         firstUncompletedTopic = {
                             sectionId: row.sectionId,
                             topicId: row.topicId,
@@ -127,7 +161,7 @@ export class SectionService {
                         };
                     }
 
-                    if (topicWithMinPercent === null || row.topicPercent < topicWithMinPercent.percent) {
+                    if (!topicWithMinPercent || row.topicPercent < topicWithMinPercent.percent) {
                         topicWithMinPercent = {
                             sectionId: row.sectionId,
                             topicId: row.topicId,
@@ -141,7 +175,7 @@ export class SectionService {
                         name: row.topicName,
                         partId: row.topicPartId,
                         percent: row.topicPercent,
-                        status: this.getStatus(row.topicPercent, threshold),
+                        status: topicStatus,
                         repeat: false,
                         daysSinceLastTask: 0,
                         frequency: row.topicFrequency || 0,
@@ -153,16 +187,16 @@ export class SectionService {
 
             const enrichedSections = Array.from(sectionMap.values());
             const totalPercent = this.calculateTotalPercent(enrichedSections);
-            
+
             const prediction = await this.calculatePrediction(
-                threshold, 
-                predictionSubtopics, 
-                dailyStudyMinutes
+                threshold,
+                predictionItems,
+                dailyStudyMinutes,
+                userId,
+                subjectId
             );
 
-            let finalTopic = firstUncompletedTopic;
-            if (finalTopic === null && topicWithMinPercent !== null)
-                finalTopic = topicWithMinPercent;
+            const finalTopic = firstUncompletedTopic || topicWithMinPercent;
 
             return {
                 statusCode: 200,
@@ -177,6 +211,7 @@ export class SectionService {
                     sectionType: finalTopic.sectionType
                 } : null
             };
+
         } catch (error) {
             console.error(error);
             throw new InternalServerErrorException('Nie udało się pobrać działów');
@@ -373,8 +408,12 @@ export class SectionService {
             const chatPromptOwn = Boolean(section.chatPrompt && section.chatPrompt.trim() !== "");
             const topicExpansionPromptOwn = Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== "");
             const topicFrequencyPromptOwn = Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== "");
+            const literaturePromptOwn = Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "");
 
             const prompts = {
+                literaturePrompt: literaturePromptOwn ? section.literaturePrompt.trim() : (subject.literaturePrompt || ""),
+                literaturePromptOwn: literaturePromptOwn,
+
                 topicExpansionPrompt: topicExpansionPromptOwn ? section.topicExpansionPrompt.trim() : (subject.topicExpansionPrompt || ""),
                 topicExpansionPromptOwn: topicExpansionPromptOwn,
 

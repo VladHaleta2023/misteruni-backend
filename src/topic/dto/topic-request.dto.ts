@@ -7,6 +7,10 @@ export class TopicUpdateRequest {
 
   @IsOptional()
   @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
   literature?: string;
 
   @IsOptional()
@@ -25,6 +29,10 @@ export class TopicUpdateRequest {
 export class WordsAIGenerate {
   @IsString()
   prompt: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
 
   @IsOptional()
   @IsString()

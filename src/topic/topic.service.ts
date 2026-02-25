@@ -70,6 +70,11 @@ export class TopicService {
         throw new BadRequestException('Dział nie został znaleziony');
       }
 
+      const resolvedLiteraturePrompt =
+        section.literaturePrompt?.trim() === '' || !section.literaturePrompt
+          ? subject.literaturePrompt ?? null
+          : section.literaturePrompt;
+
       const resolvedTopicExpansionPrompt =
         section.topicExpansionPrompt?.trim() === '' || !section.topicExpansionPrompt
           ? subject.topicExpansionPrompt ?? null
@@ -123,6 +128,7 @@ export class TopicService {
       if (withSection) {
         response.section = {
           ...section,
+          literaturePrompt: resolvedLiteraturePrompt,
           topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
           topicExpansionPrompt: resolvedTopicExpansionPrompt,
           subtopicsPrompt: resolvedSubtopicsPrompt,
@@ -143,6 +149,7 @@ export class TopicService {
           wordsPromptOwn: Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== ""),
           topicExpansionPromptOwn: Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== ""),
           topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== ""),
+          literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== ""),
         };
       }
 
@@ -209,6 +216,11 @@ export class TopicService {
             section.wordsPrompt,
             subject.wordsPrompt
           ) ?? "",
+          literaturePrompt: this.getPrompt(
+            topic.literaturePrompt,
+            section.literaturePrompt,
+            subject.literaturePrompt
+          ) ?? "",
           subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
           subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
           questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
@@ -219,6 +231,7 @@ export class TopicService {
           wordsPromptOwn: Boolean(topic.wordsPrompt && topic.wordsPrompt.trim() !== ""),
           topicExpansionPromptOwn: Boolean(topic.topicExpansionPrompt && topic.topicExpansionPrompt.trim() !== ""),
           topicFrequencyPromptOwn: Boolean(topic.topicFrequencyPrompt && topic.topicFrequencyPrompt.trim() !== ""),
+          literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== "")
         };
       });
 
@@ -265,6 +278,11 @@ export class TopicService {
         if (!section) {
             throw new BadRequestException('Dział nie został znaleziony');
         }
+
+        const resolvedLiteraturePrompt =
+            section.literaturePrompt?.trim() === '' || !section.literaturePrompt
+                ? subject.literaturePrompt ?? null
+                : section.literaturePrompt;
 
         const resolvedTopicExpansionPrompt =
             section.topicExpansionPrompt?.trim() === '' || !section.topicExpansionPrompt
@@ -324,6 +342,7 @@ export class TopicService {
         if (withSection) {
             response.section = {
                 ...section,
+                literaturePrompt: resolvedLiteraturePrompt,
                 topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
                 topicExpansionPrompt: resolvedTopicExpansionPrompt,
                 subtopicsPrompt: resolvedSubtopicsPrompt,
@@ -345,7 +364,8 @@ export class TopicService {
                 wordsPromptOwn: Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== ""),
                 chatPromptOwn: Boolean(section.chatPrompt && section.chatPrompt.trim() !== ""),
                 topicExpansionPromptOwn: Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== ""),
-                topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== "")
+                topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== ""),
+                literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "")
             };
         }
 
@@ -416,6 +436,11 @@ export class TopicService {
               section.wordsPrompt,
               subject.wordsPrompt
             ) ?? "",
+            literaturePrompt: this.getPrompt(
+              topic.literaturePrompt,
+              section.literaturePrompt,
+              subject.literaturePrompt
+            ) ?? "",
             subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
             subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
             questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
@@ -427,7 +452,8 @@ export class TopicService {
             chatPromptOwn: Boolean(topic.chatPrompt && topic.chatPrompt.trim() !== ""),
             topicExpansionPromptOwn: Boolean(topic.topicExpansionPrompt && topic.topicExpansionPrompt.trim() !== ""),
             topicFrequencyPromptOwn: Boolean(topic.topicFrequencyPrompt && topic.topicFrequencyPrompt.trim() !== ""),
-        };
+            literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== "")
+          };
 
         return response;
     }
@@ -524,6 +550,7 @@ export class TopicService {
               if (data.literature !== undefined) updateData.literature = data.literature;
               if (data.frequency !== undefined) updateData.frequency = data.frequency;
               if (data.note !== undefined) updateData.note = data.note;
+              if (data.type !== undefined) updateData.type = data.type;
 
               const updatedTopic = await prisma.topic.update({
                   where: { id },
@@ -603,6 +630,7 @@ export class TopicService {
       data.subject = data.subject ?? subject.name;
       data.section = data.section ?? section.name;
       data.topic = data.topic ?? topic.name;
+      data.type = data.type ?? topic.type;
       data.difficulty = data.difficulty ?? section.difficulty;
 
       if (!Array.isArray(data.words) || !data.words.every(item =>

@@ -59,6 +59,7 @@ model Subject {
   minDetailLevel        SubjectDetailLevel @default(MANDATORY)
   chatPrompt            String             @default("")
   topicFrequencyPrompt  String             @default("")
+  literaturePrompt      String             @default("")
   sections              Section[]
   subtopics             Subtopic[]
   topics                Topic[]
@@ -67,8 +68,22 @@ model Subject {
   userSubtopics         UserSubtopic[]
   userTopics            UserTopic[]
   words                 Word[]
+  literatures            Literature[]
 
   @@index([createdAt], map: "idx_subject_createdAt")
+}
+
+model Literature {
+  id         Int      @id @default(autoincrement())
+  subjectId  Int
+  name       String
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, name])
 }
 
 model UserSubject {
@@ -168,6 +183,7 @@ model Section {
   updatedAt             DateTime       @updatedAt
   partId                Int            @default(-1)
   type                  String         @default("")
+  category              String         @default("")
   subtopicsPrompt       String         @default("")
   questionPrompt        String         @default("")
   solutionPrompt        String         @default("")
@@ -180,6 +196,7 @@ model Section {
   subtopicsStatusPrompt String         @default("")
   chatPrompt            String         @default("")
   topicFrequencyPrompt  String         @default("")
+  literaturePrompt      String         @default("")
   subject               Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subtopics             Subtopic[]
   topics                Topic[]
@@ -202,11 +219,13 @@ model Topic {
   updatedAt             DateTime       @updatedAt
   partId                Int            @default(-1)
   questionPrompt        String         @default("")
+  type                  String         @default("")
   solutionPrompt        String         @default("")
   answersPrompt         String         @default("")
   closedSubtopicsPrompt String         @default("")
   subtopicsPrompt       String         @default("")
   vocabluaryPrompt      String         @default("")
+  literaturePrompt      String         @default("")
   literature            String         @default("")
   frequency             Int            @default(0)
   topicExpansionPrompt  String         @default("")
@@ -344,7 +363,6 @@ model Word {
   finished           Boolean    @default(false)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
-  streakCorrectCount Int        @default(0)
   totalAttemptCount  Int        @default(0)
   totalCorrectCount  Int        @default(0)
   topicId            Int?

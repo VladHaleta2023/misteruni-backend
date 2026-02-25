@@ -18,12 +18,13 @@ export class WordController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Req() req: Request,
     @Body('topicId') topicId?: number | null,
-    @Body('taskId') taskId?: number | null
+    @Body('taskId') taskId?: number | null,
+    @Body('wordIds') wordIds?: number[]
   ) {
     const user: User = (req as any).user;
     const userId: number = user.id;
 
-    return this.wordService.fetchWords(userId, subjectId, topicId, taskId);
+    return this.wordService.fetchWords(userId, subjectId, topicId, taskId, wordIds);
   }
 
   @UseGuards(JwtAuthGuard)
