@@ -179,12 +179,6 @@ export class AuthService {
                 throw new BadRequestException('Brak identyfikatora użytkownika od dostawcy OAuth.');
             }
 
-            if (!email && !username) {
-                throw new BadRequestException(
-                    'Dostawca OAuth nie przekazał ani email, ani nazwy użytkownika.'
-                );
-            }
-
             // Проверяем, есть ли уже связь OAuth
             const authProvider = await this.prismaService.userAuthProvider.findUnique({
                 where: { provider_providerId: { provider, providerId } },
@@ -197,21 +191,32 @@ export class AuthService {
                 // Если email есть, ищем существующего пользователя по email
                 if (email) {
                     const existingUser = await this.prismaService.user.findUnique({ where: { email } });
-                    if (existingUser) {
-                        user = existingUser;
-                    }
+                    if (existingUser) user = existingUser;
                 }
 
                 // Если пользователя нет, создаём нового
                 if (!user) {
-                    try {
-                        // Если email не пришёл, создаём временный уникальный email
-                        const safeEmail = email ?? `${providerId}@${provider.toLowerCase()}.oauth`;
+                    // Если email не пришёл, создаём временный
+                    const safeEmail = email ?? `${providerId}@${provider.toLowerCase()}.oauth`;
 
+                    // Генерируем уникальный username
+                    let safeUsername = username ?? providerId;
+                    let isUnique = false;
+                    while (!isUnique) {
+                        const existing = await this.prismaService.user.findUnique({ where: { username: safeUsername } });
+                        if (existing) {
+                            // Добавляем случайное число, чтобы стало уникально
+                            safeUsername = `${providerId}_${Math.floor(Math.random() * 100000)}`;
+                        } else {
+                            isUnique = true;
+                        }
+                    }
+
+                    try {
                         user = await this.prismaService.user.create({
                             data: {
                                 email: safeEmail,
-                                username: username ?? `user_${providerId}`,
+                                username: safeUsername,
                                 role: UserRole.USER,
                             },
                         });
