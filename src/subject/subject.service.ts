@@ -26,7 +26,7 @@ export class SubjectService {
 
         if (node_env === 'development') {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL_LOCAL') || undefined;
-            }
+        }
         else {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
         }
@@ -190,13 +190,15 @@ export class SubjectService {
         type AvailableSubject = {
             id: number;
             name: string;
+            minDetailLevel: string;
         }
 
         try {
             const availableSubjects = await this.prismaService.$queryRaw<AvailableSubject[]>`
                 SELECT 
                     s.id,
-                    s.name
+                    s.name,
+                    s."minDetailLevel"
                 FROM "Subject" s
                 WHERE s."isVisible" = true
                 AND NOT EXISTS (

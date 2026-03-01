@@ -270,10 +270,17 @@ export class WordService {
             const subject = await this.prismaService.subject.findUnique({
                 where: { id: subjectId },
             });
-            
+
             if (!subject) {
                 throw new BadRequestException('Przedmiot nie został znaleziony');
             }
+
+            const userSubject = await this.prismaService.userSubject.findUnique({
+                where: { userId_subjectId: { userId, subjectId } },
+                select: { threshold: true }
+            });
+
+            const threshold = userSubject?.threshold ?? 50;
 
             let words: Word[] = [];
 
@@ -284,14 +291,65 @@ export class WordService {
                         subjectId,
                         id: { in: wordIds },
                     },
+                    include: {
+                        tasks: {
+                            include: {
+                                task: {
+                                    select: {
+                                        id: true,
+                                        text: true,
+                                        topic: {
+                                            select: { id: true, sectionId: true, subjectId: true }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
                 });
             }
+
+            const formattedWords = words.map(word => {
+                const percent = word.totalAttemptCount > 0
+                    ? Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100))
+                    : 0;
+
+                let status: Status;
+                if (percent === 0) status = 'started';
+                else if (percent < threshold) status = 'progress';
+                else status = 'completed';
+
+                return {
+                    ...word,
+                    percent,
+                    status
+                };
+            });
+
+            const sortedWords = formattedWords.sort((a, b) => {
+                const getPriority = (percent: number) => {
+                    if (percent === 0) return 1;
+                    if (percent < threshold) return 0;
+                    return 2;
+                };
+
+                const aPriority = getPriority(a.percent);
+                const bPriority = getPriority(b.percent);
+
+                if (aPriority !== bPriority) return aPriority - bPriority;
+                if (a.frequency !== b.frequency) return b.frequency - a.frequency;
+                if (a.totalCorrectCount !== b.totalCorrectCount)
+                    return b.totalCorrectCount - a.totalCorrectCount;
+
+                return a.text.localeCompare(b.text);
+            });
 
             return {
                 statusCode: 200,
                 message: 'Pobranie słów lub wyrazów udane',
-                words
+                words: sortedWords
             };
+
         } catch (error) {
             throw new InternalServerErrorException('Nie udało się pobrać słów lub wyrazów');
         }

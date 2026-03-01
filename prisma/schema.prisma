@@ -42,6 +42,8 @@ model Subject {
   id                    Int                @id @default(autoincrement())
   name                  String             @unique
   prompt                String             @default("")
+  accounts              String             @default("")
+  balance               String             @default("")
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   url                   String             @default("")
@@ -220,6 +222,7 @@ model Topic {
   partId                Int            @default(-1)
   questionPrompt        String         @default("")
   type                  String         @default("")
+  information           String         @default("")
   solutionPrompt        String         @default("")
   answersPrompt         String         @default("")
   closedSubtopicsPrompt String         @default("")

@@ -10,6 +10,18 @@ export class SubtopicsAIGenerate {
 
   @IsOptional()
   @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
+  @IsOptional()
+  @IsString()
   section?: string;
 
   @IsOptional()
@@ -74,6 +86,18 @@ export class TopicExpansionAIGenerate {
 
   @IsOptional()
   @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
+  @IsOptional()
+  @IsString()
   section?: string;
 
   @IsOptional()
@@ -106,6 +130,18 @@ export class TopicExpansionAIGenerate {
 export class FrequencyAIGenerate {
   @IsString()
   prompt: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
 
   @IsOptional()
   @IsString()

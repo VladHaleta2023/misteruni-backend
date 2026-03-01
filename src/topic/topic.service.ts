@@ -551,6 +551,7 @@ export class TopicService {
               if (data.frequency !== undefined) updateData.frequency = data.frequency;
               if (data.note !== undefined) updateData.note = data.note;
               if (data.type !== undefined) updateData.type = data.type;
+              if (data.information !== undefined) updateData.information = data.information;
 
               const updatedTopic = await prisma.topic.update({
                   where: { id },

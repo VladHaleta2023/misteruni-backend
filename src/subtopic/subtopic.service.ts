@@ -791,6 +791,9 @@ export class SubtopicService {
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
             data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
@@ -959,6 +962,9 @@ export class SubtopicService {
             const subtopicNames: string[] = subtopics.map(sub => sub.name);
 
             data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
@@ -1037,6 +1043,9 @@ export class SubtopicService {
             const subtopicNames: string[] = subtopics.map(sub => sub.name);
 
             data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;

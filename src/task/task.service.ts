@@ -208,7 +208,8 @@ export class TaskService {
                     SELECT
                         t.*,
                         tp.note AS "topicNote",
-                        tp.name AS "topicName"
+                        tp.name AS "topicName",
+                        tp."literature" AS "topicLiterature"
                     FROM "Task" t
                     JOIN "Topic" tp ON tp.id = t."topicId"
                     WHERE
@@ -223,7 +224,6 @@ export class TaskService {
                         w.text,
                         w."totalAttemptCount",
                         w."totalCorrectCount",
-
                         CASE
                             WHEN w."totalAttemptCount" = 0 THEN 0
                             ELSE LEAST(
@@ -231,7 +231,6 @@ export class TaskService {
                                 CEIL(w."totalCorrectCount" * 100.0 / w."totalAttemptCount")
                             )
                         END AS percent
-
                     FROM "TaskWord" tw
                     JOIN "Word" w ON w.id = tw."wordId"
                 ),
@@ -239,7 +238,6 @@ export class TaskService {
                 words_agg AS (
                     SELECT 
                         wd."taskId",
-
                         json_agg(
                             jsonb_build_object(
                                 'id', wd.id,
@@ -249,15 +247,28 @@ export class TaskService {
                                 'percent', wd.percent
                             )
                         ) AS words,
-
                         BOOL_AND(wd.percent >= ${threshold}) AS "wordsCompleted"
-
                     FROM words_detailed wd
                     GROUP BY wd."taskId"
                 ),
 
+                subtopics_agg AS (
+                    SELECT 
+                        sp."taskId",
+                        json_agg(
+                            jsonb_build_object(
+                                'name', s.name,
+                                'percent', sp.percent
+                            )
+                        ) AS subtopics
+                    FROM "SubtopicProgress" sp
+                    JOIN "Subtopic" s ON s.id = sp."subtopicId"
+                    GROUP BY sp."taskId"
+                ),
+
                 audio_agg AS (
-                    SELECT "taskId",
+                    SELECT 
+                        "taskId",
                         json_agg(url) AS "audioFiles"
                     FROM "AudioFile"
                     GROUP BY "taskId"
@@ -265,11 +276,37 @@ export class TaskService {
 
                 SELECT
                     t.*,
+                    COALESCE(
+                        (
+                            SELECT json_agg(clean_line)
+                            FROM (
+                                SELECT TRIM(line) AS clean_line
+                                FROM unnest(
+                                    string_to_array(
+                                        COALESCE(t."topicLiterature", ''),
+                                        E'\n'
+                                    )
+                                ) AS line
+                                WHERE line NOT LIKE '%[%]%'
+                                AND TRIM(line) <> ''
+                            ) filtered
+                        ),
+                        '[]'
+                    ) AS literatures,
+
                     COALESCE(wa.words, '[]') AS words,
                     COALESCE(wa."wordsCompleted", false) AS "wordsCompleted",
-                    COALESCE(aa."audioFiles", '[]') AS "audioFiles"
+                    COALESCE(sta.subtopics, '[]') AS subtopics,
+                    COALESCE(aa."audioFiles", '[]') AS "audioFiles",
+                    CASE
+                        WHEN COALESCE(t.percent, 0) = 0 THEN 'started'
+                        WHEN COALESCE(t.percent, 0) < ${threshold} THEN 'progress'
+                        ELSE 'completed'
+                    END AS "status"
+
                 FROM task_main t
                 LEFT JOIN words_agg wa ON wa."taskId" = t.id
+                LEFT JOIN subtopics_agg sta ON sta."taskId" = t.id
                 LEFT JOIN audio_agg aa ON aa."taskId" = t.id
             `;
 
@@ -350,7 +387,8 @@ export class TaskService {
                     SELECT
                         t.*,
                         tp.note AS "topicNote",
-                        tp.name AS "topicName"
+                        tp.name AS "topicName",
+                        tp."literature" AS "topicLiterature"
                     FROM "Task" t
                     JOIN "Topic" tp ON tp.id = t."topicId"
                     WHERE
@@ -368,7 +406,6 @@ export class TaskService {
                         w.text,
                         w."totalAttemptCount",
                         w."totalCorrectCount",
-
                         CASE
                             WHEN w."totalAttemptCount" = 0 THEN 0
                             ELSE LEAST(
@@ -376,7 +413,6 @@ export class TaskService {
                                 CEIL(w."totalCorrectCount" * 100.0 / w."totalAttemptCount")
                             )
                         END AS percent
-
                     FROM "TaskWord" tw
                     JOIN "Word" w ON w.id = tw."wordId"
                 ),
@@ -384,7 +420,6 @@ export class TaskService {
                 words_agg AS (
                     SELECT 
                         wd."taskId",
-
                         json_agg(
                             jsonb_build_object(
                                 'id', wd.id,
@@ -394,15 +429,28 @@ export class TaskService {
                                 'percent', wd.percent
                             )
                         ) AS words,
-
                         BOOL_AND(wd.percent >= ${threshold}) AS "wordsCompleted"
-
                     FROM words_detailed wd
                     GROUP BY wd."taskId"
                 ),
 
+                subtopics_agg AS (
+                    SELECT 
+                        sp."taskId",
+                        json_agg(
+                            jsonb_build_object(
+                                'name', s.name,
+                                'percent', sp.percent
+                            )
+                        ) AS subtopics
+                    FROM "SubtopicProgress" sp
+                    JOIN "Subtopic" s ON s.id = sp."subtopicId"
+                    GROUP BY sp."taskId"
+                ),
+
                 audio_agg AS (
-                    SELECT "taskId",
+                    SELECT 
+                        "taskId",
                         json_agg(url) AS "audioFiles"
                     FROM "AudioFile"
                     GROUP BY "taskId"
@@ -410,11 +458,37 @@ export class TaskService {
 
                 SELECT 
                     t.*,
+                    COALESCE(
+                        (
+                            SELECT json_agg(clean_line)
+                            FROM (
+                                SELECT TRIM(line) AS clean_line
+                                FROM unnest(
+                                    string_to_array(
+                                        COALESCE(t."topicLiterature", ''),
+                                        E'\n'
+                                    )
+                                ) AS line
+                                WHERE line NOT LIKE '%[%]%'
+                                AND TRIM(line) <> ''
+                            ) filtered
+                        ),
+                        '[]'
+                    ) AS literatures,
+
                     COALESCE(wa.words, '[]') AS words,
                     COALESCE(wa."wordsCompleted", false) AS "wordsCompleted",
-                    COALESCE(aa."audioFiles", '[]') AS "audioFiles"
+                    COALESCE(sta.subtopics, '[]') AS subtopics,
+                    COALESCE(aa."audioFiles", '[]') AS "audioFiles",
+                    CASE
+                        WHEN COALESCE(t.percent, 0) = 0 THEN 'started'
+                        WHEN COALESCE(t.percent, 0) < ${threshold} THEN 'progress'
+                        ELSE 'completed'
+                    END AS "status"
+
                 FROM task_main t
                 LEFT JOIN words_agg wa ON wa."taskId" = t.id
+                LEFT JOIN subtopics_agg sta ON sta."taskId" = t.id
                 LEFT JOIN audio_agg aa ON aa."taskId" = t.id
             `;
 
@@ -467,7 +541,6 @@ export class TaskService {
             const threshold = userSubject?.threshold ?? 50;
             const detailLevel = userSubject?.detailLevel ?? 'MANDATORY';
 
-            // 🔹 ИСПРАВЛЕННЫЙ SQL запрос
             const subtopics = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
                     st.name,
@@ -505,6 +578,9 @@ export class TaskService {
 
             data.subtopics = data.subtopics ?? formattedSubtopics;
             data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
@@ -777,6 +853,9 @@ export class TaskService {
             );
             
             data.prompt = resolvedSolutionPrompt ?? "";
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -857,6 +936,8 @@ export class TaskService {
             );
             
             data.prompt = resolvedAnswersPrompt ?? "";
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -957,6 +1038,9 @@ export class TaskService {
             }
 
             data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
 
@@ -1074,6 +1158,9 @@ export class TaskService {
             }
 
             data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
 

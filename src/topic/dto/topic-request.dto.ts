@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TopicUpdateRequest {
   @IsOptional()
@@ -8,6 +8,10 @@ export class TopicUpdateRequest {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
 
   @IsOptional()
   @IsString()

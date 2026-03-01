@@ -76,6 +76,14 @@ export class SubjectUpdateRequest {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
 }
 
 export class LiteratureUpdateRequest {

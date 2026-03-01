@@ -16,7 +16,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = req.cookies?.accessToken;
 
     if (!token) {
-      throw new UnauthorizedException('Nie znaleziono tokenu autoryzacyjnego.');
+      throw new UnauthorizedException('Nie jesteś zalogowany');
     }
 
     try {
@@ -40,7 +40,7 @@ export class JwtAuthGuard implements CanActivate {
         throw err;
       }
 
-      throw new UnauthorizedException('Nieprawidłowy token.');
+      throw new UnauthorizedException('Nie jesteś zalogowany');
     }
   }
 }

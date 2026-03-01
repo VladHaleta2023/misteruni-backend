@@ -17,6 +17,18 @@ export class TaskAIGenerate {
 
   @IsOptional()
   @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
+  @IsOptional()
+  @IsString()
   section?: string;
 
   @IsOptional()
@@ -109,6 +121,18 @@ export class SolutionAIGenerate {
   @IsString()
   prompt?: string;
 
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
   @IsString()
   changed: string;
 
@@ -134,6 +158,18 @@ export class OptionsAIGenerate {
   @IsOptional()
   @IsString()
   prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
 
   @IsString()
   changed: string;
@@ -180,6 +216,18 @@ export class ProblemsAIGenerate {
   @IsOptional()
   @IsString()
   prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
 
   @IsOptional()
   @IsString()
@@ -238,6 +286,18 @@ export class ChatAIGenerate {
   @IsOptional()
   @IsString()
   prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
 
   @IsOptional()
   @IsString()
