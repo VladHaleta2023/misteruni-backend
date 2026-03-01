@@ -62,25 +62,6 @@ export class AuthController {
     }
   }
 
-  @Get('facebook')
-  @UseGuards(AuthGuard('facebook'))
-  facebookAuth() {}
-
-  @Get('facebook/callback')
-  @UseGuards(AuthGuard('facebook'))
-  async facebookCallback(
-    @Req() req,
-    @Res({ passthrough: true }) res: Response
-  ) {
-    try {
-      await this.authService.oAuthLogin(req.user, res);
-      return res.redirect(`${this.clientUrl}/subjects`);
-    }
-    catch {
-      return res.redirect(`${this.clientUrl}`);
-    }
-  }
-
   @Get('google/admin')
   @UseGuards(AuthGuard('google-admin'))
   googleAdminAuth() {}
@@ -88,25 +69,6 @@ export class AuthController {
   @Get('google/admin/callback')
   @UseGuards(AuthGuard('google-admin'))
   async googleAdminCallback(
-    @Req() req,
-    @Res({ passthrough: true }) res: Response
-  ) {
-    try {
-      await this.authService.oAuthLoginAdmin(req.user, res);
-      return res.redirect(`${this.clientUrlAdmin}/dashboard`);
-    }
-    catch {
-      return res.redirect(`${this.clientUrlAdmin}`);
-    }
-  }
-
-  @Get('facebook/admin')
-  @UseGuards(AuthGuard('facebook-admin'))
-  facebookAdminAuth() {}
-
-  @Get('facebook/admin/callback')
-  @UseGuards(AuthGuard('facebook-admin'))
-  async facebookAdminCallback(
     @Req() req,
     @Res({ passthrough: true }) res: Response
   ) {
