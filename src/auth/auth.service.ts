@@ -180,9 +180,12 @@ export class AuthService {
             }
 
             if (!email && !username) {
-                throw new BadRequestException('Dostawca OAuth nie przekazał ani email, ani nazwy użytkownika.');
+                throw new BadRequestException(
+                    'Dostawca OAuth nie przekazał ani email, ani nazwy użytkownika.'
+                );
             }
 
+            // Проверяем, есть ли уже связь OAuth
             const authProvider = await this.prismaService.userAuthProvider.findUnique({
                 where: { provider_providerId: { provider, providerId } },
                 include: { user: true },
@@ -191,36 +194,50 @@ export class AuthService {
             let user: User | undefined;
 
             if (!authProvider) {
+                // Если email есть, ищем существующего пользователя по email
                 if (email) {
                     const existingUser = await this.prismaService.user.findUnique({ where: { email } });
-                    if (existingUser) user = existingUser;
+                    if (existingUser) {
+                        user = existingUser;
+                    }
                 }
 
+                // Если пользователя нет, создаём нового
                 if (!user) {
                     try {
+                        // Если email не пришёл, создаём временный уникальный email
+                        const safeEmail = email ?? `${providerId}@${provider.toLowerCase()}.oauth`;
+
                         user = await this.prismaService.user.create({
                             data: {
-                                email: email || null,
-                                username: username || null,
+                                email: safeEmail,
+                                username: username ?? `user_${providerId}`,
                                 role: UserRole.USER,
                             },
                         });
                     } catch (err) {
-                        throw new BadRequestException('Nie udało się utworzyć użytkownika OAuth. Sprawdź dane.');
+                        console.error('Prisma error creating user:', err);
+                        throw new BadRequestException(
+                            'Nie udało się utworzyć użytkownika OAuth. Sprawdź dane lub konflikt email/username.'
+                        );
                     }
                 }
 
+                // Создаём связь OAuth
                 try {
                     await this.prismaService.userAuthProvider.create({
                         data: {
                             provider,
                             providerId,
-                            email: email || null,
+                            email: email ?? null,
                             userId: user.id,
                         },
                     });
                 } catch (err) {
-                    throw new BadRequestException('Nie udało się powiązać użytkownika z dostawcą OAuth.');
+                    console.error('Prisma error linking OAuth provider:', err);
+                    throw new BadRequestException(
+                        'Nie udało się powiązać użytkownika z dostawcą OAuth.'
+                    );
                 }
             } else {
                 user = authProvider.user;
@@ -230,6 +247,7 @@ export class AuthService {
                 throw new BadRequestException('Nie udało się zidentyfikować użytkownika OAuth.');
             }
 
+            // Создаём JWT и ставим cookie
             const token = this.jwtService.sign({ userId: user.id }, { expiresIn: '1d' });
 
             res.cookie('accessToken', token, {
@@ -244,6 +262,7 @@ export class AuthService {
                 message: 'Zalogowano pomyślnie'
             };
         } catch (error) {
+            console.error('OAuth login error:', error);
             if (error instanceof BadRequestException) throw error;
             throw new InternalServerErrorException('Wystąpił błąd podczas logowania OAuth');
         }

@@ -36,7 +36,7 @@ async function bootstrap() {
       'https://misteruni-frontend-client.vercel.app',
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Set-Cookie'],
     credentials: true,
   });
 
