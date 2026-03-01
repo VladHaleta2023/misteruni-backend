@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { WordService } from './word.service';
 import { WordController } from './word.controller';
 import { HttpModule } from '@nestjs/axios';
-import { AuthModule } from 'src/auth/auth.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [

@@ -8,7 +8,7 @@ import axios from "axios";
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { File } from '../file.type';
-import { TaskService } from 'src/task/task.service';
+import { TaskService } from '../task/task.service';
 
 @Injectable()
 export class SubjectService {

@@ -1,7 +1,6 @@
 import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { UserSubjectCreateRequest, UserSubjectUpdateRequest } from './dto/user-subject-request.dto';
-import { User } from '@prisma/client';
 
 @Injectable()
 export class UserSubjectService {

@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req } from '@nestjs/common';
 import { WordService } from './word.service';
-import { VocabluaryAIGenerate } from 'src/task/dto/task-generate.dto';
+import { VocabluaryAIGenerate } from '../task/dto/task-generate.dto';
 import { Request } from 'express';
 import { UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
 
 @Controller('subjects/:subjectId/words')

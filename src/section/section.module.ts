@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { SectionService } from './section.service';
 import { SectionController } from './section.controller';
 import { TimezoneModule } from '../timezone/timezone.module';
-import { AuthModule } from 'src/auth/auth.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [

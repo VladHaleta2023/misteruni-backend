@@ -7,7 +7,7 @@ import { SubtopicService } from '../subtopic/subtopic.service';
 import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
-import { StorageService } from 'src/storage/storage.service';
+import { StorageService } from '../storage/storage.service';
 import { Prisma } from '@prisma/client';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';

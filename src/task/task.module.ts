@@ -5,9 +5,9 @@ import { HttpModule } from '@nestjs/axios';
 import { SubtopicModule } from '../subtopic/subtopic.module';
 import { OptionsModule } from '../options/options.module';
 import { TimezoneModule } from '../timezone/timezone.module';
-import { AuthModule } from 'src/auth/auth.module';
-import { StorageModule } from 'src/storage/storage.module';
-import { SubjectModule } from 'src/subject/subject.module';
+import { AuthModule } from '../auth/auth.module';
+import { StorageModule } from '../storage/storage.module';
+import { SubjectModule } from '../subject/subject.module';
 
 @Module({
   imports: [

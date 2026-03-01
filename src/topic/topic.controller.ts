@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post
 import { TopicService } from './topic.service';
 import { TopicUpdateRequest, WordsAIGenerate } from './dto/topic-request.dto';
 import { Request } from 'express';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics')

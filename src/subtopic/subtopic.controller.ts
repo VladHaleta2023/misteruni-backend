@@ -3,7 +3,7 @@ import { SubtopicService } from './subtopic.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest, UpdateSubtopicsDto } from '../subtopic/dto/subtopic-request.dto';
 import { FrequencyAIGenerate, SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { Request } from 'express';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
 
 @Controller('subjects/:subjectId/sections/:sectionId/topics/:topicId/subtopics')

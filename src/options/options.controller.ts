@@ -16,7 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { AudioTranscribeDto } from './dto/audioTranscribe.dto';
 import { SplitIntoSentencesDto } from './dto/splitIntoSentences.dto';
 import { File } from '../file.type';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
 import { Request } from 'express';
 

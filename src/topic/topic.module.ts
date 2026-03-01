@@ -3,7 +3,7 @@ import { TopicService } from './topic.service';
 import { TopicController } from './topic.controller';
 import { TimezoneModule } from '../timezone/timezone.module';
 import { HttpModule } from '@nestjs/axios';
-import { AuthModule } from 'src/auth/auth.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [

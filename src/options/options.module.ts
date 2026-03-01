@@ -2,7 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { OptionsService } from './options.service';
 import { OptionsController } from './options.controller';
 import { HttpModule } from '@nestjs/axios';
-import { AuthModule } from 'src/auth/auth.module';
+import { AuthModule } from '../auth/auth.module';
 import { SubjectModule } from '../subject/subject.module';
 import { SubtopicModule } from '../subtopic/subtopic.module';
 import { StorageModule } from '../storage/storage.module';

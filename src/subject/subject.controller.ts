@@ -7,7 +7,7 @@ import { FullPlanRequestDto } from './dto/full-plan-request.dto';
 import { Request } from 'express';
 import { File } from '../file.type';
 import { User } from '@prisma/client';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('subjects')
 export class SubjectController {
