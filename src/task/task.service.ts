@@ -938,6 +938,7 @@ export class TaskService {
             data.prompt = resolvedAnswersPrompt ?? "";
             data.accounts = data.accounts ?? subject.accounts;
             data.balance = data.balance ?? subject.balance;
+            data.information = data.information ?? topic.information;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
