@@ -6,17 +6,21 @@ import { Response } from 'express';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
+import { OAuthLoginDto } from './dto/oauth-login.dto';
+import { OAuth2Client } from 'google-auth-library';
 
 @Controller('auth')
 export class AuthController {
   private readonly clientUrl: string | undefined;
   private readonly clientUrlAdmin: string | undefined;
+  private googleClient: OAuth2Client;
 
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService
   ) {
     const node_env = this.configService.get<string>('APP_ENV') || 'development';
+    this.googleClient = new OAuth2Client();
 
     if (node_env === 'development') {
         this.clientUrl = this.configService.get<string>('CLIENT_URL_LOCAL') || undefined;
@@ -79,6 +83,38 @@ export class AuthController {
     catch {
       return res.redirect(`${this.clientUrlAdmin}`);
     }
+  }
+
+  @Post('mobile')
+  async mobileAuth(
+    @Body() dto: OAuthLoginDto & { idToken: string; platform: 'ANDROID' | 'IOS' },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!dto.idToken) throw new BadRequestException('idToken is required');
+
+    const ticket = await this.googleClient.verifyIdToken({
+      idToken: dto.idToken,
+      audience:
+        dto.platform === 'ANDROID'
+          ? this.configService.get<string>('GOOGLE_ANDROID_CLIENT_ID')
+          : this.configService.get<string>('GOOGLE_IOS_CLIENT_ID')
+    });
+
+    const payload = ticket.getPayload();
+
+    if (!payload?.sub) throw new BadRequestException('Invalid token');
+
+    await this.authService.oAuthLogin(
+      {
+        provider: 'GOOGLE',
+        providerId: payload.sub,
+        email: payload.email,
+        username: payload.name,
+      },
+      res,
+    );
+
+    return { status: 200, message: 'Zalogowano pomyślnie' };
   }
 
   @Post('logout')
