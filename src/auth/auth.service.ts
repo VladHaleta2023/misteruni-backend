@@ -58,6 +58,7 @@ export class AuthService {
             return {
                 statusCode: 201,
                 message: 'Rejestracja zakończona pomyślnie',
+                token: token
             };
         } catch (error) {
             if (error instanceof BadRequestException) throw error;
@@ -109,6 +110,7 @@ export class AuthService {
             return {
                 statusCode: 200,
                 message: 'Zalogowano pomyślnie',
+                token: token
             };
         } catch (error) {
             if (error instanceof BadRequestException) throw error;
@@ -264,7 +266,8 @@ export class AuthService {
 
             return {
                 statusCode: 200,
-                message: 'Zalogowano pomyślnie'
+                message: 'Zalogowano pomyślnie',
+                token: token
             };
         } catch (error) {
             console.error('OAuth login error:', error);
