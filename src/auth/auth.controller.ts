@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res, UseGuards, Get, Req, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Res, UseGuards, Get, Req, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -90,31 +90,42 @@ export class AuthController {
     @Body() dto: OAuthLoginDto & { idToken: string; platform: 'ANDROID' | 'IOS' },
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!dto.idToken) throw new BadRequestException('idToken is required');
+    try {
+      if (!dto.idToken) {
+        console.error('[OAuth] Brak idToken w żądaniu');
+        throw new BadRequestException('IdToken jest wymagany');
+      };
 
-    const ticket = await this.googleClient.verifyIdToken({
-      idToken: dto.idToken,
-      audience:
-        dto.platform === 'ANDROID'
-          ? this.configService.get<string>('GOOGLE_ANDROID_CLIENT_ID')
-          : this.configService.get<string>('GOOGLE_IOS_CLIENT_ID')
-    });
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: dto.idToken,
+        audience:
+          dto.platform === 'ANDROID'
+            ? this.configService.get<string>('GOOGLE_CLIENT_ID')
+            : this.configService.get<string>('GOOGLE_IOS_CLIENT_ID')
+      });
 
-    const payload = ticket.getPayload();
+      const payload = ticket.getPayload();
 
-    if (!payload?.sub) throw new BadRequestException('Invalid token');
+      if (!payload?.sub) {
+        console.error('[OAuth] Nieprawidłowy token lub brak payload.sub', payload);
+        throw new BadRequestException('Nieprawidłowy token');
+      }
 
-    await this.authService.oAuthLogin(
-      {
-        provider: 'GOOGLE',
-        providerId: payload.sub,
-        email: payload.email,
-        username: payload.name,
-      },
-      res,
-    );
-
-    return { status: 200, message: 'Zalogowano pomyślnie' };
+      return await this.authService.oAuthLogin(
+        {
+          provider: 'GOOGLE',
+          providerId: payload.sub,
+          email: payload.email,
+          username: payload.name,
+        },
+        res,
+      );
+    }
+    catch (error) {
+      console.error('OAuth login error:', error);
+      if (error instanceof BadRequestException) throw error;
+      throw new InternalServerErrorException('Wystąpił błąd podczas logowania OAuth');
+    }
   }
 
   @Post('logout')

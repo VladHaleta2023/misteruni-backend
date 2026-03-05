@@ -178,6 +178,7 @@ export class AuthService {
             const { provider, providerId, email, username } = oAuthDto;
 
             if (!providerId) {
+                console.error('ProviderId error:', providerId);
                 throw new BadRequestException('Brak identyfikatora użytkownika od dostawcy OAuth.');
             }
 
@@ -190,24 +191,19 @@ export class AuthService {
             let user: User | undefined;
 
             if (!authProvider) {
-                // Если email есть, ищем существующего пользователя по email
                 if (email) {
                     const existingUser = await this.prismaService.user.findUnique({ where: { email } });
                     if (existingUser) user = existingUser;
                 }
 
-                // Если пользователя нет, создаём нового
                 if (!user) {
-                    // Если email не пришёл, создаём временный
                     const safeEmail = email ?? `${providerId}@${provider.toLowerCase()}.oauth`;
 
-                    // Генерируем уникальный username
                     let safeUsername = username ?? providerId;
                     let isUnique = false;
                     while (!isUnique) {
                         const existing = await this.prismaService.user.findUnique({ where: { username: safeUsername } });
                         if (existing) {
-                            // Добавляем случайное число, чтобы стало уникально
                             safeUsername = `${providerId}_${Math.floor(Math.random() * 100000)}`;
                         } else {
                             isUnique = true;
@@ -230,7 +226,6 @@ export class AuthService {
                     }
                 }
 
-                // Создаём связь OAuth
                 try {
                     await this.prismaService.userAuthProvider.create({
                         data: {
@@ -254,7 +249,6 @@ export class AuthService {
                 throw new BadRequestException('Nie udało się zidentyfikować użytkownika OAuth.');
             }
 
-            // Создаём JWT и ставим cookie
             const token = this.jwtService.sign({ userId: user.id }, { expiresIn: '1d' });
 
             res.cookie('accessToken', token, {
