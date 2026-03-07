@@ -1492,7 +1492,7 @@ export class TaskService {
             where: { userId_subjectId: { userId, subjectId } }
         });
 
-        const getDetailLevels = (level: string): string[] => {
+        const getDetailLevels = (level: string): SubjectDetailLevel[] => {
             switch (level) {
                 case 'MANDATORY': return ['MANDATORY'];
                 case 'DESIRABLE': return ['MANDATORY', 'DESIRABLE'];
@@ -1501,25 +1501,24 @@ export class TaskService {
             }
         };
 
-        const allowedLevels = getDetailLevels(userSubject?.detailLevel || 'MANDATORY') as SubjectDetailLevel[];
+        const allowedLevels = getDetailLevels(userSubject?.detailLevel || 'MANDATORY');
 
-        const relevantSubtopics = await tx.subtopic.findMany({
-            where: { 
-                topicId, 
+        const userSubtopicPercents = await tx.userSubtopic.findMany({
+            where: {
+                userId,
                 subjectId,
-                detailLevel: { in: allowedLevels }
+                subtopic: {
+                    topicId,
+                    detailLevel: { in: allowedLevels }
+                }
             },
-            include: { progresses: { where: { userId }, orderBy: { updatedAt: 'asc' } } }
+            select: { percent: true }
         });
 
-        const relevantPercents = relevantSubtopics.map(sub => {
-            const progresses = sub.progresses;
-            if (!progresses.length) return 0;
-            return progresses[progresses.length - 1].percent;
-        });
+        const relevantPercents = userSubtopicPercents.map(us => us.percent);
 
-        console.log(allowedLevels)
-        console.log(relevantPercents);
+        console.log('allowedLevels:', allowedLevels);
+        console.log('relevantPercents (z userSubtopic - EMA):', relevantPercents);
 
         const topicPercent = relevantPercents.length
             ? Math.min(
@@ -1528,7 +1527,7 @@ export class TaskService {
             )
             : 0;
 
-        console.log(topicPercent);
+        console.log('topicPercent:', topicPercent);
 
         await tx.userTopic.updateMany({
             where: { topicId, userId, subjectId },
