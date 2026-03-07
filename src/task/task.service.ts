@@ -8,7 +8,7 @@ import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatReques
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, SubjectDetailLevel } from '@prisma/client';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -1465,13 +1465,11 @@ export class TaskService {
     ) {
         if (!subtopicIds.length) return;
 
-        // Берём только выбранные подтемы для EMA
         const updatedSubtopics = await tx.subtopic.findMany({
             where: { id: { in: subtopicIds }, subjectId },
             include: { progresses: { where: { userId }, orderBy: { updatedAt: 'asc' } } }
         });
 
-        // Пересчёт процентов по EMA для выбранных подтем
         const subtopicPercents = updatedSubtopics.map(sub => {
             const progresses = sub.progresses;
             if (!progresses.length) return { id: sub.id, percent: 0 };
@@ -1483,7 +1481,6 @@ export class TaskService {
             return { id: sub.id, percent: Math.min(100, Math.ceil(ema)) };
         });
 
-        // Обновляем проценты только для выбранных подтем
         for (const sub of subtopicPercents) {
             await tx.userSubtopic.updateMany({
                 where: { subtopicId: sub.id, userId, subjectId },
@@ -1491,23 +1488,40 @@ export class TaskService {
             });
         }
 
-        // Для расчёта процента темы берём **все подтемы темы**
-        const allSubtopics = await tx.subtopic.findMany({
-            where: { topicId, subjectId },
+        const userSubject = await tx.userSubject.findUnique({
+            where: { userId_subjectId: { userId, subjectId } }
+        });
+
+        const getDetailLevels = (level: string): string[] => {
+            switch (level) {
+                case 'MANDATORY': return ['MANDATORY'];
+                case 'DESIRABLE': return ['MANDATORY', 'DESIRABLE'];
+                case 'OPTIONAL': return ['MANDATORY', 'DESIRABLE', 'OPTIONAL'];
+                default: return ['MANDATORY'];
+            }
+        };
+
+        const allowedLevels = getDetailLevels(userSubject?.detailLevel || 'MANDATORY') as SubjectDetailLevel[];
+
+        const relevantSubtopics = await tx.subtopic.findMany({
+            where: { 
+                topicId, 
+                subjectId,
+                detailLevel: { in: allowedLevels }
+            },
             include: { progresses: { where: { userId }, orderBy: { updatedAt: 'asc' } } }
         });
 
-        const allSubtopicPercents = allSubtopics.map(sub => {
+        const relevantPercents = relevantSubtopics.map(sub => {
             const progresses = sub.progresses;
             if (!progresses.length) return 0;
-            // Берём последний прогресс, а не EMA
             return progresses[progresses.length - 1].percent;
         });
 
-        const topicPercent = allSubtopicPercents.length
+        const topicPercent = relevantPercents.length
             ? Math.min(
                 100,
-                Math.ceil(allSubtopicPercents.reduce((a, b) => a + b, 0) / allSubtopicPercents.length)
+                Math.ceil(relevantPercents.reduce((a, b) => a + b, 0) / relevantPercents.length)
             )
             : 0;
 
@@ -1516,7 +1530,6 @@ export class TaskService {
             data: { percent: topicPercent }
         });
 
-        // Процент раздела — среднее по всем темам раздела
         const topicsInSection = await tx.userTopic.findMany({
             where: { sectionId, userId, subjectId }
         });
