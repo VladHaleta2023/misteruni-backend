@@ -1517,17 +1517,12 @@ export class TaskService {
 
         const relevantPercents = userSubtopicPercents.map(us => us.percent);
 
-        console.log('allowedLevels:', allowedLevels);
-        console.log('relevantPercents (z userSubtopic - EMA):', relevantPercents);
-
         const topicPercent = relevantPercents.length
             ? Math.min(
                 100,
                 Math.ceil(relevantPercents.reduce((a, b) => a + b, 0) / relevantPercents.length)
             )
             : 0;
-
-        console.log('topicPercent:', topicPercent);
 
         await tx.userTopic.updateMany({
             where: { topicId, userId, subjectId },
