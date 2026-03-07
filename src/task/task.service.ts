@@ -1518,12 +1518,17 @@ export class TaskService {
             return progresses[progresses.length - 1].percent;
         });
 
+        console.log(allowedLevels)
+        console.log(relevantPercents);
+
         const topicPercent = relevantPercents.length
             ? Math.min(
                 100,
                 Math.ceil(relevantPercents.reduce((a, b) => a + b, 0) / relevantPercents.length)
             )
             : 0;
+
+        console.log(topicPercent);
 
         await tx.userTopic.updateMany({
             where: { topicId, userId, subjectId },
