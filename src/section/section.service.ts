@@ -81,17 +81,15 @@ export class SectionService {
     }
 
     private getDaysDifference(dateStr1: string, dateStr2: string): number {
-        const parseDate = (dateStr: string): Date => {
+        const parseDate = (dateStr: string): number => {
             const [day, month, year] = dateStr.split('.').map(Number);
-            return new Date(year, month - 1, day);
+            return Date.UTC(year, month - 1, day);
         };
 
-        const date1 = parseDate(dateStr1);
-        const date2 = parseDate(dateStr2);
+        const utc1 = parseDate(dateStr1);
+        const utc2 = parseDate(dateStr2);
         
-        const diffTime = date1.getTime() - date2.getTime();
-        
-        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+        const diffDays = (utc1 - utc2) / (1000 * 60 * 60 * 24);
         
         return diffDays;
     }
