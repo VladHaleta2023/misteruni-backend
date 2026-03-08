@@ -80,6 +80,22 @@ export class SectionService {
         }
     }
 
+    private getDaysDifference(dateStr1: string, dateStr2: string): number {
+        const parseDate = (dateStr: string): Date => {
+            const [day, month, year] = dateStr.split('.').map(Number);
+            return new Date(year, month - 1, day);
+        };
+
+        const date1 = parseDate(dateStr1);
+        const date2 = parseDate(dateStr2);
+        
+        const diffTime = date1.getTime() - date2.getTime();
+        
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+        
+        return diffDays;
+    }
+
     async findSections(userId: number, subjectId: number) {
         try {
             const [subject, userSubject] = await Promise.all([
@@ -98,6 +114,17 @@ export class SectionService {
             const detailLevels = this.getDetailLevels(detailLevel);
 
             const result = await this.prismaService.$transaction(async (tx) => {
+                await tx.$executeRaw`
+                    INSERT INTO "UserTopic" ("userId", "subjectId", "topicId", "sectionId", "percent")
+                    SELECT ${userId}, ${subjectId}, t.id, t."sectionId", 0
+                    FROM "Topic" t
+                    LEFT JOIN "UserTopic" ut ON ut."topicId" = t.id 
+                        AND ut."userId" = ${userId}
+                        AND ut."subjectId" = ${subjectId}
+                    WHERE ut."topicId" IS NULL 
+                        AND t."subjectId" = ${subjectId};
+                `;
+
                 await tx.$executeRaw`
                     WITH 
                     subtopic_based_percents AS (
@@ -161,17 +188,18 @@ export class SectionService {
                             AND ut."subjectId" = ${subjectId}
                         RETURNING ut."topicId", ut.percent, ut."sectionId"
                     ),
+                    -- POPRAWIONE: Używamy topic_percents zamiast updated_topics
                     section_percents AS (
                         SELECT 
                             s.id as section_id,
                             COALESCE(
                                 ROUND(
-                                    SUM(ut.percent * t.frequency) / NULLIF(SUM(t.frequency), 0)
+                                    SUM(tp.topic_percent * t.frequency) / NULLIF(SUM(t.frequency), 0)
                                 ), 0
                             ) as section_percent
                         FROM "Section" s
                         LEFT JOIN "Topic" t ON t."sectionId" = s.id
-                        LEFT JOIN updated_topics ut ON ut."topicId" = t.id
+                        LEFT JOIN topic_percents tp ON tp."topicId" = t.id  -- ← ZMIANA: używamy topic_percents
                         WHERE s."subjectId" = ${subjectId}
                         GROUP BY s.id
                     )
@@ -390,7 +418,7 @@ export class SectionService {
             );
 
             const finalTopic = firstUncompletedTopic || topicWithMinPercent;
-            const deltaDays = Math.round((initialPrediction.daysNeeded - prediction.daysNeeded) * 10) / 10;
+            const deltaDays = this.getDaysDifference(initialPrediction.date, prediction.date);
 
             return {
                 statusCode: 200,
