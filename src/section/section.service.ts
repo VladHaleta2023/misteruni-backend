@@ -382,7 +382,8 @@ export class SectionService {
                     topic: {
                         subjectId
                     },
-                    userId
+                    userId,
+                    finished: true
                 },
                 orderBy: {
                     createdAt: 'asc'
@@ -417,8 +418,11 @@ export class SectionService {
                 subjectId
             );
 
+            let deltaDays: number | null = null;
+            if (firstTask)
+                deltaDays = this.getDaysDifference(initialPrediction.date, prediction.date);
+
             const finalTopic = firstUncompletedTopic || topicWithMinPercent;
-            const deltaDays = this.getDaysDifference(initialPrediction.date, prediction.date);
 
             return {
                 statusCode: 200,
