@@ -125,6 +125,7 @@ export class SectionService {
 
                 await tx.$executeRaw`
                     WITH 
+                    -- Проценты на основе подтем (для тем С подтемами)
                     subtopic_based_percents AS (
                         SELECT 
                             st."topicId",
@@ -137,46 +138,36 @@ export class SectionService {
                             AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
                         GROUP BY st."topicId"
                     ),
-                    task_based_percents AS (
-                        SELECT 
-                            t.id as "topicId",
-                            t."sectionId",
-                            ROUND(
-                                (COALESCE(AVG(tsk.percent), 0) * 
-                                (COUNT(DISTINCT w.id) FILTER (WHERE w."totalAttemptCount" > 0) * 100.0 / 
-                                NULLIF(COUNT(DISTINCT w.id), 0))
-                                ) / 100
-                            ) as task_percent
-                        FROM "Topic" t
-                        LEFT JOIN "Task" tsk ON tsk."topicId" = t.id 
-                            AND tsk."userId" = ${userId}
-                            AND tsk.finished = true
-                        LEFT JOIN "TaskWord" tw ON tw."taskId" = tsk.id
-                        LEFT JOIN "Word" w ON w.id = tw."wordId" 
-                            AND w."userId" = ${userId}
-                        WHERE t."subjectId" = ${subjectId}
-                        GROUP BY t.id, t."sectionId"
+                    
+                    -- Все темы с подтемами
+                    topics_with_subtopics AS (
+                        SELECT DISTINCT st."topicId"
+                        FROM "Subtopic" st
+                        WHERE st."subjectId" = ${subjectId}
+                            AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
                     ),
-                    all_topics AS (
+                    
+                    -- Только темы С подтемами
+                    topics_with_subtopics_list AS (
                         SELECT 
                             t.id as "topicId",
                             t."sectionId"
                         FROM "Topic" t
+                        INNER JOIN topics_with_subtopics tws ON tws."topicId" = t.id
                         WHERE t."subjectId" = ${subjectId}
                     ),
+                    
+                    -- Проценты тем (ТОЛЬКО для тем С подтемами)
                     topic_percents AS (
                         SELECT 
-                            at."topicId",
-                            COALESCE(
-                                sbp.subtopic_percent,
-                                tp.task_percent,
-                                0
-                            ) as topic_percent,
-                            COALESCE(sbp.section_id, tp."sectionId", at."sectionId") as section_id
-                        FROM all_topics at
-                        LEFT JOIN subtopic_based_percents sbp ON sbp."topicId" = at."topicId"
-                        LEFT JOIN task_based_percents tp ON tp."topicId" = at."topicId"
+                            tws."topicId",
+                            COALESCE(sbp.subtopic_percent, 0) as topic_percent,
+                            tws."sectionId"
+                        FROM topics_with_subtopics_list tws
+                        LEFT JOIN subtopic_based_percents sbp ON sbp."topicId" = tws."topicId"
                     ),
+                    
+                    -- Обновляем ТОЛЬКО темы с подтемами
                     updated_topics AS (
                         UPDATE "UserTopic" ut
                         SET percent = tp.topic_percent
@@ -186,7 +177,17 @@ export class SectionService {
                             AND ut."subjectId" = ${subjectId}
                         RETURNING ut."topicId", ut.percent, ut."sectionId"
                     ),
-                    -- POPRAWIONE: Używamy topic_percents zamiast updated_topics
+                    
+                    -- Разделы, в которых есть темы с подтемами
+                    sections_with_subtopics AS (
+                        SELECT DISTINCT s.id as section_id
+                        FROM "Section" s
+                        INNER JOIN "Topic" t ON t."sectionId" = s.id
+                        INNER JOIN topics_with_subtopics tws ON tws."topicId" = t.id
+                        WHERE s."subjectId" = ${subjectId}
+                    ),
+                    
+                    -- Проценты разделов ТОЛЬКО для разделов с подтемами
                     section_percents AS (
                         SELECT 
                             s.id as section_id,
@@ -196,11 +197,14 @@ export class SectionService {
                                 ), 0
                             ) as section_percent
                         FROM "Section" s
+                        INNER JOIN sections_with_subtopics sws ON sws.section_id = s.id
                         LEFT JOIN "Topic" t ON t."sectionId" = s.id
-                        LEFT JOIN topic_percents tp ON tp."topicId" = t.id  -- ← ZMIANA: używamy topic_percents
+                        LEFT JOIN topic_percents tp ON tp."topicId" = t.id
                         WHERE s."subjectId" = ${subjectId}
                         GROUP BY s.id
                     )
+                    
+                    -- Обновляем ТОЛЬКО разделы с подтемами
                     UPDATE "UserSection" us
                     SET percent = sp.section_percent
                     FROM section_percents sp
@@ -209,6 +213,7 @@ export class SectionService {
                         AND us."subjectId" = ${subjectId};
                 `;
 
+                // Остальная часть кода без изменений...
                 const predictionSubtopics = await tx.$queryRaw<any[]>`
                     SELECT 
                         st.id,
