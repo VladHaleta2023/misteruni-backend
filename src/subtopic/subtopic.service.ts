@@ -176,7 +176,6 @@ export class SubtopicService {
                     tasks: []
                 }));
 
-            const totalCount = subtopics.length;
             let started = 0;
             let progress = 0;
             let completed = 0;
@@ -187,20 +186,16 @@ export class SubtopicService {
                 else if (s.status === 'completed') completed++;
             }
 
-            const total = totalCount === 0
-                ? { started: 100, progress: 0, completed: 0 }
-                : {
-                    started: Math.round((started / totalCount) * 100),
-                    progress: Math.round((progress / totalCount) * 100),
-                    completed: Math.round((completed / totalCount) * 100),
-                };
-
             return {
                 statusCode: 200,
                 message: 'Pobrano listę podtematów pomyślnie',
                 topic,
                 subtopics,
-                total,
+                total: {
+                    started,
+                    progress,
+                    completed
+                },
                 prediction: null,
             };
         } catch (error) {
