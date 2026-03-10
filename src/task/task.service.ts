@@ -1,10 +1,10 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, TaskAIGenerate, VocabluaryAIGenerate } from './dto/task-generate.dto';
+import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, VocabluaryAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from '../subtopic/subtopic.service';
-import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
@@ -532,7 +532,6 @@ export class TaskService {
             if (!section) throw new BadRequestException('Dział nie został znaleziony');
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            // Берём UserSubject
             const userSubject = await this.prismaService.userSubject.findUnique({
                 where: { userId_subjectId: { userId, subjectId } },
                 select: { threshold: true, detailLevel: true }
@@ -545,8 +544,7 @@ export class TaskService {
                 SELECT 
                     st.name,
                     st."partId",
-                    COALESCE(ust.percent, 0) AS "percent",
-                    st.importance
+                    COALESCE(ust.percent, 0) AS "percent"
                 FROM "Subtopic" st
                 LEFT JOIN "UserSubtopic" ust
                     ON ust."subtopicId" = st.id 
@@ -563,18 +561,13 @@ export class TaskService {
                         END
                     )
                 ORDER BY 
-                    st."partId" ASC,
-                    st.importance ASC;
+                    st."partId" ASC
             `;
 
-            // Фильтруем по threshold
             const belowThreshold = subtopics.filter(s => s.percent < threshold);
             const finalSubtopics = belowThreshold.length > 0 ? belowThreshold : subtopics;
 
-            // Форматируем для AI
-            const formattedSubtopics = finalSubtopics.map(s => 
-                [s.name, s.percent, s.importance] as [string, number, number]
-            );
+            const formattedSubtopics = finalSubtopics.slice(0, 5).map(s => s.name);
 
             data.subtopics = data.subtopics ?? formattedSubtopics;
             data.subject = data.subject ?? subject.name;
@@ -594,26 +587,18 @@ export class TaskService {
 
             data.prompt = resolvedQuestionPrompt ?? "";
 
-            if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
-                Array.isArray(item) &&
-                item.length === 3 &&
-                typeof item[0] === 'string' &&
-                typeof item[1] === 'number' &&
-                typeof item[2] === 'number'
-            )) {
-                throw new BadRequestException('Subtopics musi być listą trójek [string, number, number]');
+            if (!Array.isArray(data.subtopics) || !data.subtopics.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Subtopics musi być listą stringów');
             }
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
             }
 
-            // Отправка на FastAPI
             const response$ = this.httpService.post(url, data, { signal });
             const response = await firstValueFrom(response$);
             const r = response.data;
 
-            // Проверка структуры ответа
             if (
                 typeof r.prompt !== 'string' ||
                 typeof r.changed !== 'string' ||
@@ -1238,6 +1223,109 @@ export class TaskService {
         }
     }
 
+    async solutionGuideAIGenerate(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        taskId: number,
+        data: SolutionGuideAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/solution-guide-generate`;
+        
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) {
+                throw new BadRequestException('Dział nie został znaleziony');
+            }
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) {
+                throw new BadRequestException('Temat nie został znaleziony');
+            }
+
+            const task = await this.prismaService.task.findUnique({
+                where: { id: taskId },
+            });
+
+            if (!task) {
+                throw new BadRequestException('Zadanie nie zostało znalezione');
+            }
+
+            if (task.solutionGuide !== null && task.solutionGuide !== "") {
+                throw new BadRequestException('Poradnik rozwiązania już istnieje');
+            }
+
+            const resolvedSolutionGuidePrompt = this.getPrompt(
+                topic.solutionGuidePrompt,
+                section.solutionGuidePrompt,
+                subject.solutionGuidePrompt
+            );
+            
+            data.prompt = resolvedSolutionGuidePrompt ?? "";
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
+            data.subject = data.subject ?? subject.name;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.text = data.text ?? task.text;
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                typeof r.prompt !== 'string' ||
+                typeof r.changed !== 'string' ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number' ||
+                typeof r.solutionGuide !== 'string' ||
+                typeof r.subject !== 'string' ||
+                typeof r.section !== 'string' ||
+                typeof r.topic !== 'string' ||
+                typeof r.text !== 'string'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja poradnika rozwiązania zadania udane",
+                ...r
+            };
+        }
+        catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
     async createTaskTransaction(
         userId: number,
         subjectId: number,
@@ -1714,6 +1802,49 @@ export class TaskService {
             }
         }
         catch (error) {
+            throw new InternalServerErrorException('Nie udało się zaktualizować zadania');
+        }
+    }
+
+    async updateSolutionGuide(
+        userId: number,
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+        data: SolutionGuideRequest
+    ) {
+        try {
+            const task = await this.prismaService.task.findUnique({
+                where: { id, userId }
+            });
+
+            if (!task) {
+                throw new BadRequestException('Zadanie nie zostało znalezione');
+            }
+
+            if (task.solutionGuide !== null && task.solutionGuide !== "") {
+                throw new BadRequestException('Poradnik rozwiązania już istnieje');
+            }
+
+            const updatedTask = await this.prismaService.task.update({
+                where: { id, userId },
+                data: {
+                    solutionGuide: data.solutionGuide
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Zadanie zostało zaktualizowane pomyślnie',
+                task: updatedTask
+            }
+        }
+        catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+
             throw new InternalServerErrorException('Nie udało się zaktualizować zadania');
         }
     }

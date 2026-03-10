@@ -1,7 +1,6 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TopicUpdateRequest, WordsAIGenerate } from './dto/topic-request.dto';
-import { TimezoneService } from '../timezone/timezone.service';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -13,7 +12,6 @@ export class TopicService {
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly timezoneService: TimezoneService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
@@ -69,6 +67,11 @@ export class TopicService {
       if (!section) {
         throw new BadRequestException('Dział nie został znaleziony');
       }
+
+      const resolvedSolutionGuidePrompt =
+        section.solutionGuidePrompt?.trim() === '' || !section.solutionGuidePrompt
+          ? subject.solutionGuidePrompt ?? null
+          : section.solutionGuidePrompt;
 
       const resolvedLiteraturePrompt =
         section.literaturePrompt?.trim() === '' || !section.literaturePrompt
@@ -128,6 +131,7 @@ export class TopicService {
       if (withSection) {
         response.section = {
           ...section,
+          solutionGuidePrompt: resolvedSolutionGuidePrompt,
           literaturePrompt: resolvedLiteraturePrompt,
           topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
           topicExpansionPrompt: resolvedTopicExpansionPrompt,
@@ -139,6 +143,7 @@ export class TopicService {
           closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
           vocabluaryPrompt: resolvedStoriesPrompt,
           wordsPrompt: resolvedWordsPrompt,
+          solutionGuidePromptOwn: Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== ""),
           subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
           subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
           questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
@@ -166,6 +171,11 @@ export class TopicService {
       const resolvedTopics = topics.map((topic) => {
         return {
           ...topic,
+          solutionGuidePrompt: this.getPrompt(
+            topic.solutionGuidePrompt,
+            section.solutionGuidePrompt,
+            subject.solutionGuidePrompt
+          ) ?? "",
           topicFrequencyPrompt: this.getPrompt(
             topic.topicFrequencyPrompt,
             section.topicFrequencyPrompt,
@@ -221,6 +231,7 @@ export class TopicService {
             section.literaturePrompt,
             subject.literaturePrompt
           ) ?? "",
+          solutionGuidePromptOwn: Boolean(topic.solutionGuidePrompt && topic.solutionGuidePrompt.trim() !== ""),
           subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
           subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
           questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
@@ -278,6 +289,11 @@ export class TopicService {
         if (!section) {
             throw new BadRequestException('Dział nie został znaleziony');
         }
+
+        const resolvedSolutionGuidePrompt =
+            section.solutionGuidePrompt?.trim() === '' || !section.solutionGuidePrompt
+                ? subject.solutionGuidePrompt ?? null
+                : section.solutionGuidePrompt;
 
         const resolvedLiteraturePrompt =
             section.literaturePrompt?.trim() === '' || !section.literaturePrompt
@@ -342,6 +358,7 @@ export class TopicService {
         if (withSection) {
             response.section = {
                 ...section,
+                solutionGuidePrompt: resolvedSolutionGuidePrompt,
                 literaturePrompt: resolvedLiteraturePrompt,
                 topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
                 topicExpansionPrompt: resolvedTopicExpansionPrompt,
@@ -354,6 +371,7 @@ export class TopicService {
                 vocabluaryPrompt: resolvedStoriesPrompt,
                 wordsPrompt: resolvedWordsPrompt,
                 chatPrompt: resolvedChatPrompt,
+                solutionGuidePromptOwn: Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== ""),
                 subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
                 subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
                 questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
@@ -386,6 +404,11 @@ export class TopicService {
 
         response.topic = {
             ...topic,
+            solutionGuidePrompt: this.getPrompt(
+              topic.solutionGuidePrompt,
+              section.solutionGuidePrompt,
+              subject.solutionGuidePrompt
+            ) ?? "",
             topicFrequencyPrompt: this.getPrompt(
               topic.topicFrequencyPrompt,
               section.topicFrequencyPrompt,
@@ -441,6 +464,7 @@ export class TopicService {
               section.literaturePrompt,
               subject.literaturePrompt
             ) ?? "",
+            solutionGuidePromptOwn: Boolean(topic.solutionGuidePrompt && topic.solutionGuidePrompt.trim() !== ""),
             subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
             subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
             questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),

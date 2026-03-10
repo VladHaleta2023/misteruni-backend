@@ -7,6 +7,10 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  solutionGuidePrompt?: string;
+
+  @IsOptional()
+  @IsString()
   subtopicsPrompt?: string;
 
   @IsOptional()

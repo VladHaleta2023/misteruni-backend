@@ -1,4 +1,4 @@
-import { BadRequestException, Catch, forwardRef, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, forwardRef, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LiteratureAIGenerate, LiteratureUpdateRequest, SubjectCreateRequest, SubjectUpdateRequest } from './dto/subject-request.dto';
 import { HttpService } from '@nestjs/axios';
@@ -239,6 +239,7 @@ export class SubjectService {
                 message: "Przedmiot został pomyślnie pobrany",
                 subject: {
                     ...subject,
+                    solutionGuidePromptOwn: true,
                     literaturePromptOwn: true,
                     subtopicsPromptOwn: true,
                     subtopicsStatusPromptOwn: true,

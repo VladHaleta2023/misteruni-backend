@@ -70,6 +70,11 @@ export class TaskUserSolutionRequest {
   userOptionIndex: number;
 }
 
+export class SolutionGuideRequest {
+  @IsString()
+  solutionGuide: string;
+}
+
 export class Subtopic {
   @IsString()
   name: string;

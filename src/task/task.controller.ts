@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { TaskService } from './task.service';
-import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
-import { SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate } from './dto/task-generate.dto';
+import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
@@ -161,6 +161,37 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Put(':id/solution-guide')
+  async updateSolutionGuide(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: SolutionGuideRequest,
+    @Req() req: Request
+  ) {
+    let aborted = false;
+
+    req.on('close', () => {
+      aborted = true;
+    });
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+    const result = await this.taskService.updateSolutionGuide(userId, subjectId, sectionId, topicId, id, data);
+
+    if (aborted) {
+      throw new HttpException('Client aborted', 499);
+    }
+
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('task-generate')
   async taskAIGenerate(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -177,6 +208,31 @@ export class TaskController {
       const user: User = (req as any).user;
       const userId: number = user.id;
       const result = await this.taskService.taskAIGenerate(userId, subjectId, sectionId, topicId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/solution-guide-generate')
+  async solutionGuideAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) taskId: number,
+    @Body() data: SolutionGuideAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.taskService.solutionGuideAIGenerate(subjectId, sectionId, topicId, taskId, data, controller.signal);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {

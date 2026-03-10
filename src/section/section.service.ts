@@ -602,6 +602,7 @@ export class SectionService {
                 throw new BadRequestException('Dział nie został znaleziony');
             }
 
+            const solutionGuidePromptOwn = Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== "");
             const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
             const subtopicsStatusPromptOwn = Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== "");
             const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
@@ -616,6 +617,9 @@ export class SectionService {
             const literaturePromptOwn = Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "");
 
             const prompts = {
+                solutionGuidePrompt: solutionGuidePromptOwn ? section.solutionGuidePrompt.trim() : (subject.solutionGuidePrompt || ""),
+                solutionGuidePromptOwn: solutionGuidePromptOwn,
+
                 literaturePrompt: literaturePromptOwn ? section.literaturePrompt.trim() : (subject.literaturePrompt || ""),
                 literaturePromptOwn: literaturePromptOwn,
 

@@ -57,8 +57,9 @@ export class TaskAIGenerate {
   errors: string[];
 
   @IsArray()
+  @IsString({ each: true })
   @IsOptional()
-  subtopics?: [string, number, number][];
+  subtopics?: [string][];
 
   @IsArray()
   @IsString({ each: true })
@@ -152,6 +153,53 @@ export class SolutionAIGenerate {
   @IsArray()
   @IsString({ each: true })
   subtopics: string[];
+}
+
+export class SolutionGuideAIGenerate {
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsOptional()
+  @IsString()
+  text?: string;
+
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsString()
+  solutionGuide: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
 }
 
 export class OptionsAIGenerate {

@@ -75,6 +75,10 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  solutionGuidePrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 
   @IsOptional()
