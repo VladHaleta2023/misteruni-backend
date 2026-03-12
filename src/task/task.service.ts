@@ -1029,6 +1029,7 @@ export class TaskService {
             data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
+            data.type = data.type ?? section.type;
 
             const resolvedClosedSubtopicsPrompt = this.getPrompt(
                 topic.closedSubtopicsPrompt,
@@ -1073,6 +1074,7 @@ export class TaskService {
                 typeof r.correctOption !== 'string' ||
                 typeof r.userOption !== 'string' ||
                 typeof r.text !== 'string' ||
+                typeof r.type !== 'string' ||
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||

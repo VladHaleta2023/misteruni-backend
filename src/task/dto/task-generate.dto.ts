@@ -267,6 +267,10 @@ export class ProblemsAIGenerate {
 
   @IsOptional()
   @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
   information?: string;
 
   @IsOptional()
