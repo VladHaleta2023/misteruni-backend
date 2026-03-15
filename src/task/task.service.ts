@@ -649,7 +649,7 @@ export class TaskService {
             if (!section) throw new BadRequestException('Dział nie został znaleziony');
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            // UserSubject для фильтрации
+            // UserSubject dla filtrowania
             const userSubject = await this.prismaService.userSubject.findUnique({
                 where: { userId_subjectId: { userId, subjectId } },
                 select: { threshold: true, detailLevel: true }
@@ -657,7 +657,7 @@ export class TaskService {
             const threshold = userSubject?.threshold ?? 50;
             const detailLevel = userSubject?.detailLevel ?? 'MANDATORY';
 
-            // 🔹 ИСПРАВЛЕННЫЙ SQL запрос для подтем
+            // Zapytanie dla podtem
             const subtopics = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
                     st.name,
@@ -686,7 +686,7 @@ export class TaskService {
 
             const formattedSubtopics: [string, number][] = finalSubtopics.map(s => [s.name, s.percent]);
 
-            // 🔹 ИСПРАВЛЕННЫЙ SQL запрос для слов
+            // 🔹 POPRAWIONE: Pobierz wszystkie słowa dla użytkownika i tematu
             const words = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
                     w.id,
@@ -700,10 +700,11 @@ export class TaskService {
                     AND w."subjectId" = ${subjectId};
             `;
 
-            const wordTasks = await this.prismaService.$queryRaw<any[]>`
+            // 🔹 POPRAWIONE: Pobierz liczbę wystąpień każdego słowa w zakończonych zadaniach
+            const wordTaskCounts = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
                     wt."wordId", 
-                    COUNT(*) AS cnt
+                    COUNT(*) AS count
                 FROM "TaskWord" wt
                 INNER JOIN "Task" t ON t.id = wt."taskId" 
                     AND t."userId" = ${userId} 
@@ -712,25 +713,28 @@ export class TaskService {
                 GROUP BY wt."wordId";
             `;
 
-            const minTasks = wordTasks.length > 0 
-                ? Math.min(...wordTasks.map(wt => Number(wt.cnt))) 
-                : 0;
-                
-            const wordIdsWithMinTasks = wordTasks
-                .filter(wt => Number(wt.cnt) === minTasks)
-                .map(wt => wt.wordId);
-                
-            const filteredWords = words.filter(w => 
-                wordIdsWithMinTasks.includes(w.id) || minTasks === 0
+            // Mapuj wordId na liczbę wystąpień
+            const wordCountMap = new Map(
+                wordTaskCounts.map(item => [item.wordId, Number(item.count)])
             );
 
-            const sortedWords = filteredWords.sort((a, b) => {
+            // Znajdź minimalną liczbę wystąpień
+            const minCount = wordTaskCounts.length > 0 
+                ? Math.min(...wordTaskCounts.map(item => Number(item.count)))
+                : 0;
+
+            // 🔹 POPRAWIONE: Filtruj słowa - wybierz te z minimalną liczbą wystąpień
+            // Jeśli nie ma żadnych słów w TaskWord (minCount === 0), weź wszystkie słowa
+            const wordsWithMinCount = words.filter(word => {
+                const count = wordCountMap.get(word.id) || 0;
+                return count === minCount;
+            });
+
+            // Sortuj słowa
+            const sortedWords = wordsWithMinCount.sort((a, b) => {
                 if (a.frequency !== b.frequency) return b.frequency - a.frequency;
-
                 if (a.totalCorrectCount !== b.totalCorrectCount) return a.totalCorrectCount - b.totalCorrectCount;
-
                 if (a.totalAttemptCount !== b.totalAttemptCount) return a.totalAttemptCount - b.totalAttemptCount;
-
                 return a.text.localeCompare(b.text);
             });
 
