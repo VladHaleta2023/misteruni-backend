@@ -406,14 +406,16 @@ export class SectionService {
                     finished: true
                 },
                 orderBy: {
-                    createdAt: 'asc'
+                    updatedAt: 'asc'
                 },
                 select: {
-                    createdAt: true
+                    updatedAt: true
                 }
             });
 
-            const initialNow = firstTask?.createdAt ?? new Date();
+            console.log(firstTask?.updatedAt);
+
+            const initialNow = firstTask?.updatedAt ?? new Date();
 
             const initialTopicItems = Array.from(topicImportanceMap.keys()).map(topicId => {
                 const totalImportance = topicImportanceMap.get(topicId) || 0;
