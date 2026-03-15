@@ -142,15 +142,14 @@ export class TaskService {
                 frequency: row.topicFrequency,
                 percent: row.topicPercent,
                 status: row.topicStatus as Status,
-                literatures: row.topicLiteratures || [] // Переименовано с literature на literatures
+                literatures: row.topicLiteratures || []
             };
 
-            // 🔹 Формируем elements из JSON
             const elements: any[] = [];
             const tasksByDate = row.tasks_by_date || {};
             
             Object.entries(tasksByDate)
-                .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)) // Сортировка по дате DESC
+                .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
                 .forEach(([dateStr, tasks]: [string, any]) => {
                     const date = new Date(dateStr);
                     const day = String(date.getDate()).padStart(2, '0');
@@ -649,96 +648,70 @@ export class TaskService {
             if (!section) throw new BadRequestException('Dział nie został znaleziony');
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            // UserSubject dla filtrowania
             const userSubject = await this.prismaService.userSubject.findUnique({
                 where: { userId_subjectId: { userId, subjectId } },
-                select: { threshold: true, detailLevel: true }
+                select: { threshold: true }
             });
             const threshold = userSubject?.threshold ?? 50;
-            const detailLevel = userSubject?.detailLevel ?? 'MANDATORY';
 
-            // Zapytanie dla podtem
-            const subtopics = await this.prismaService.$queryRaw<any[]>`
+            const topics = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
-                    st.name,
-                    COALESCE(ust.percent, 0) AS "percent",
-                    st.importance
-                FROM "Subtopic" st
-                LEFT JOIN "UserSubtopic" ust
-                    ON ust."subtopicId" = st.id 
-                    AND ust."userId" = ${userId}
-                    AND ust."subjectId" = ${subjectId}
-                WHERE st."topicId" = ${topicId}
-                    AND st."sectionId" = ${sectionId}
-                    AND st."subjectId" = ${subjectId}
-                    AND st."detailLevel"::text = ANY(
-                        CASE ${detailLevel}::text
-                            WHEN 'OPTIONAL' THEN ARRAY['MANDATORY', 'DESIRABLE', 'OPTIONAL']::text[]
-                            WHEN 'DESIRABLE' THEN ARRAY['MANDATORY', 'DESIRABLE']::text[]
-                            ELSE ARRAY['MANDATORY']::text[]
-                        END
-                    )
-                ORDER BY st.importance ASC;
+                    t.name,
+                    COALESCE(ut.percent, 0) AS "percent",
+                    t."partId" AS "topicPartId",
+                    s."partId" AS "sectionPartId"
+                FROM "Topic" t
+                INNER JOIN "Section" s ON s.id = t."sectionId" AND s."subjectId" = ${subjectId}
+                LEFT JOIN "UserTopic" ut
+                    ON ut."topicId" = t.id 
+                    AND ut."userId" = ${userId}
+                    AND ut."subjectId" = ${subjectId}
+                WHERE t."subjectId" = ${subjectId}
+                ORDER BY s."partId" ASC, t."partId" ASC;
             `;
 
-            const belowThreshold = subtopics.filter(s => s.percent < threshold);
-            const finalSubtopics = belowThreshold.length > 0 ? belowThreshold : subtopics;
-
+            const finalSubtopics = topics.filter(s => s.percent >= threshold);
             const formattedSubtopics: [string, number][] = finalSubtopics.map(s => [s.name, s.percent]);
 
-            // 🔹 POPRAWIONE: Pobierz wszystkie słowa dla użytkownika i tematu
-            const words = await this.prismaService.$queryRaw<any[]>`
+            const wordsWithMinCount = await this.prismaService.$queryRaw<any[]>`
+                WITH word_usage AS (
+                    SELECT 
+                        w.id,
+                        w.text,
+                        w.frequency,
+                        w."totalCorrectCount",
+                        w."totalAttemptCount",
+                        COALESCE(COUNT(tw."taskId"), 0)::integer AS usage_count
+                    FROM "Word" w
+                    LEFT JOIN "TaskWord" tw ON tw."wordId" = w.id
+                    LEFT JOIN "Task" t ON t.id = tw."taskId" 
+                        AND t."userId" = ${userId}
+                        AND t."topicId" = ${topicId}
+                    WHERE w."userId" = ${userId}
+                        AND w."topicId" = ${topicId}
+                        AND w."subjectId" = ${subjectId}
+                    GROUP BY w.id, w.text, w.frequency, w."totalCorrectCount", w."totalAttemptCount"
+                ),
+                min_usage AS (
+                    SELECT MIN(usage_count) as min_count FROM word_usage
+                )
                 SELECT 
-                    w.id,
-                    w.text, 
-                    w.frequency,
-                    w."totalCorrectCount", 
-                    w."totalAttemptCount"
-                FROM "Word" w
-                WHERE w."userId" = ${userId} 
-                    AND w."topicId" = ${topicId}
-                    AND w."subjectId" = ${subjectId};
+                    wu.id,
+                    wu.text,
+                    wu.frequency,
+                    wu."totalCorrectCount",
+                    wu."totalAttemptCount",
+                    wu.usage_count
+                FROM word_usage wu, min_usage mu
+                WHERE wu.usage_count = mu.min_count
+                ORDER BY 
+                    wu.frequency DESC,
+                    wu."totalCorrectCount" ASC,
+                    wu."totalAttemptCount" ASC,
+                    wu.text ASC;
             `;
 
-            // 🔹 POPRAWIONE: Pobierz liczbę wystąpień każdego słowa w zakończonych zadaniach
-            const wordTaskCounts = await this.prismaService.$queryRaw<any[]>`
-                SELECT 
-                    wt."wordId", 
-                    COUNT(*) AS count
-                FROM "TaskWord" wt
-                INNER JOIN "Task" t ON t.id = wt."taskId" 
-                    AND t."userId" = ${userId} 
-                    AND t."topicId" = ${topicId} 
-                    AND t.finished = true
-                GROUP BY wt."wordId";
-            `;
-
-            // Mapuj wordId na liczbę wystąpień
-            const wordCountMap = new Map(
-                wordTaskCounts.map(item => [item.wordId, Number(item.count)])
-            );
-
-            // Znajdź minimalną liczbę wystąpień
-            const minCount = wordTaskCounts.length > 0 
-                ? Math.min(...wordTaskCounts.map(item => Number(item.count)))
-                : 0;
-
-            // 🔹 POPRAWIONE: Filtruj słowa - wybierz te z minimalną liczbą wystąpień
-            // Jeśli nie ma żadnych słów w TaskWord (minCount === 0), weź wszystkie słowa
-            const wordsWithMinCount = words.filter(word => {
-                const count = wordCountMap.get(word.id) || 0;
-                return count === minCount;
-            });
-
-            // Sortuj słowa
-            const sortedWords = wordsWithMinCount.sort((a, b) => {
-                if (a.frequency !== b.frequency) return b.frequency - a.frequency;
-                if (a.totalCorrectCount !== b.totalCorrectCount) return a.totalCorrectCount - b.totalCorrectCount;
-                if (a.totalAttemptCount !== b.totalAttemptCount) return a.totalAttemptCount - b.totalAttemptCount;
-                return a.text.localeCompare(b.text);
-            });
-
-            const wordsForData: string[] = sortedWords.map(w => w.text);
+            const wordsForData: string[] = wordsWithMinCount.map(w => w.text);
 
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
@@ -1427,7 +1400,6 @@ export class TaskService {
                             }
                         });
 
-                        // Связываем слова с задачей
                         for (const w of taskWords) {
                             await tx.taskWord.upsert({
                                 where: { taskId_wordId: { taskId, wordId: w.id } },
@@ -1442,14 +1414,11 @@ export class TaskService {
                             for (const w of taskWords) {
                                 let wordPercent = 0;
                                 if (w.totalAttemptCount > 0) {
-                                    // ТОЧНО ТАК ЖЕ КАК В fetchWords (без лишних скобок):
                                     wordPercent = Math.min(100, Math.ceil(w.totalCorrectCount / w.totalAttemptCount * 100));
                                 }
-                                // ВСЕ слова участвуют в подсчете (даже с 0 попытками дают 0%)
                                 total += wordPercent;
                             }
                             
-                            // Делим на общее количество слов задачи (логика как в fetchWords)
                             percentWords = Math.ceil(total / taskWords.length);
                         }
                     }
@@ -1883,7 +1852,6 @@ export class TaskService {
 
             if (!task) throw new BadRequestException('Zadanie nie zostało znalezione');
 
-            // Удаляем аудиофайлы
             for (const audioFile of task.audioFiles) {
                 if (!audioFile.url) continue;
                 try {
@@ -1895,17 +1863,13 @@ export class TaskService {
             }
 
             return await this.prismaService.$transaction(async (tx) => {
-                // Удаляем задачу
                 await tx.task.delete({ where: { userId, id } });
 
-                // Получаем уникальные подтемы задачи
                 const subtopicIds = Array.from(new Set(task.progresses.map(p => p.subtopicId)));
 
                 if (subtopicIds.length > 0) {
-                    // ✅ есть подтемы → пересчёт по всем подтемам темы
                     await this.updateSubtopicsProgress(userId, subjectId, sectionId, topicId, subtopicIds, tx);
                 } else {
-                    // ⚠️ нет подтем → пересчёт по задачам (старый fallback)
                     await this.updateTopicAndSectionPercentsByTasks(userId, subjectId, sectionId, topicId, tx);
                 }
 

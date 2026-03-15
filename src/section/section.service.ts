@@ -297,11 +297,32 @@ export class SectionService {
 
             const topicPercentMap = new Map<number, number>();
             const sectionPercentMap = new Map<number, number>();
+            const topicImportanceMap = new Map<number, number>();
+            const topicCurrentPercentMap = new Map<number, number>();
+
+            predictionSubtopics.forEach(subtopic => {
+                const currentSum = topicImportanceMap.get(subtopic.topicId) || 0;
+                topicImportanceMap.set(subtopic.topicId, currentSum + (subtopic.importance || 0));
+            });
             
             for (const row of currentPercents) {
                 topicPercentMap.set(row.topicId, row.topicPercent);
                 sectionPercentMap.set(row.sectionId, row.sectionPercent);
+                topicCurrentPercentMap.set(row.topicId, row.topicPercent);
             }
+
+            const topicItems = Array.from(topicImportanceMap.keys()).map(topicId => {
+                const totalImportance = topicImportanceMap.get(topicId) || 0;
+                const currentPercent = topicCurrentPercentMap.get(topicId) || 0;
+                
+                return {
+                    percent: currentPercent,
+                    importance: totalImportance,
+                    isSubtopic: true
+                };
+            });
+
+            const pendingTopics = topicItems.filter(topic => topic.percent < threshold);
 
             const pendingWords = words
                 .map(w => {
@@ -311,11 +332,7 @@ export class SectionService {
                 .filter(w => w.percent < threshold);
 
             const predictionItems = [
-                ...predictionSubtopics.map(st => ({
-                    percent: st.percent,
-                    importance: st.importance ?? 0,
-                    isSubtopic: true
-                })),
+                ...pendingTopics,
                 ...pendingWords.map(w => ({
                     percent: w.percent,
                     importance: w.importance ?? 0,
@@ -398,10 +415,24 @@ export class SectionService {
 
             const initialNow = firstTask?.createdAt ?? new Date();
 
-            const initialItems = predictionItems.map(item => ({
-                ...item,
-                percent: 0
-            }));
+            const initialTopicItems = Array.from(topicImportanceMap.keys()).map(topicId => {
+                const totalImportance = topicImportanceMap.get(topicId) || 0;
+                
+                return {
+                    percent: 0,
+                    importance: totalImportance,
+                    isSubtopic: true
+                };
+            });
+
+            const initialItems = [
+                ...initialTopicItems,
+                ...pendingWords.map(w => ({
+                    percent: 0,
+                    importance: w.importance ?? 0,
+                    isSubtopic: false
+                }))
+            ];
 
             const initialPrediction = await this.calculatePrediction(
                 initialNow,
@@ -412,6 +443,8 @@ export class SectionService {
                 subjectId
             );
 
+            console.log(initialPrediction);
+
             const prediction = await this.calculatePrediction(
                 new Date(),
                 threshold,
@@ -420,6 +453,8 @@ export class SectionService {
                 userId,
                 subjectId
             );
+
+            console.log(prediction);
 
             let deltaDays: number | null = null;
             if (firstTask)
