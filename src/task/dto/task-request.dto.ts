@@ -19,10 +19,6 @@ export class TaskCreateRequest {
   @IsInt()
   correctOptionIndex: number;
 
-  @IsArray()
-  @IsString({ each: true })
-  explanations: string[]
-
   @IsOptional()
   @IsString()
   explanation?: string;

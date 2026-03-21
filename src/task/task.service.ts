@@ -910,10 +910,6 @@ export class TaskService {
                 throw new BadRequestException('Options musi być listą stringów');
             }
 
-            if (!Array.isArray(data.explanations) || !data.explanations.every(item => typeof item === 'string')) {
-                throw new BadRequestException('Explanations musi być listą stringów');
-            }
-
             const response$ = this.httpService.post(url, data, { signal });
             const response = await firstValueFrom(response$);
             const r = response.data;
@@ -923,13 +919,10 @@ export class TaskService {
                 typeof r.changed !== 'string' ||
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.options) ||
-                !Array.isArray(r.explanations) ||
                 typeof r.attempt !== 'number' ||
                 typeof r.text !== 'string' ||
                 typeof r.correctOptionIndex !== 'number' ||
                 typeof r.solution !== 'string' ||
-                typeof r.random1 !== 'number' ||
-                typeof r.random2 !== 'number' ||
                 typeof r.randomOption !== 'number'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
@@ -941,10 +934,6 @@ export class TaskService {
 
             if (!r.options.every((item: any) => typeof item === 'string')) {
                 throw new BadRequestException('Options w odpowiedzi musi być listą stringów');
-            }
-
-            if (!r.explanations.every((item: any) => typeof item === 'string')) {
-                throw new BadRequestException('Explanations w odpowiedzi musi być listą stringów');
             }
 
             if (r.subtopics && (!Array.isArray(r.subtopics) || !r.subtopics.every((item: any) => typeof item === 'string'))) {
@@ -1330,7 +1319,6 @@ export class TaskService {
                     if (taskData.solution !== undefined) updateData.solution = taskData.solution;
                     if (taskData.options !== undefined) updateData.options = taskData.options;
                     if (taskData.correctOptionIndex !== undefined) updateData.correctOptionIndex = taskData.correctOptionIndex;
-                    if (taskData.explanations !== undefined) updateData.explanations = taskData.explanations;
                     if (taskData.stage !== undefined) updateData.stage = taskData.stage;
 
                     await tx.task.update({
@@ -1353,7 +1341,6 @@ export class TaskService {
                             text: taskData.text,
                             solution: taskData.solution,
                             options: taskData.options,
-                            explanations: taskData.explanations,
                             correctOptionIndex: taskData.correctOptionIndex,
                             stage: taskData.stage ?? 0,
                             topicId,

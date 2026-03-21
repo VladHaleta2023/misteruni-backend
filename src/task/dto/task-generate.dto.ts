@@ -240,21 +240,11 @@ export class OptionsAIGenerate {
 
   @IsArray()
   @IsString({ each: true })
-  explanations: string[];
-
-  @IsArray()
-  @IsString({ each: true })
   errors: string[];
 
   @IsArray()
   @IsString({ each: true })
   subtopics: string[];
-
-  @IsInt()
-  random1: number;
-
-  @IsInt()
-  random2: number;
 
   @IsInt()
   randomOption: number;
