@@ -34,6 +34,8 @@ async function bootstrap() {
       'http://localhost:3001',
       'https://misteruni-frontend-admin.vercel.app',
       'https://misteruni-frontend-client.vercel.app',
+      'https://maturago.pl',
+      'https://www.maturago.pl'
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Set-Cookie'],
