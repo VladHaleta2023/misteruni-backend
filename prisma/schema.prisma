@@ -98,6 +98,7 @@ model UserSubject {
   threshold         Int                @default(50)
   updatedAt         DateTime           @updatedAt
   dailyStudyMinutes Int                @default(60)
+  style             Boolean            @default(false)
   subject           Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -330,6 +330,10 @@ export class ChatAIGenerate {
   prompt?: string;
 
   @IsOptional()
+  @IsBoolean()
+  style?: boolean;
+
+  @IsOptional()
   @IsString()
   information?: string;
 

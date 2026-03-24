@@ -1111,6 +1111,7 @@ export class TaskService {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
 
+            data.style = data.style ?? false;
             data.subject = data.subject ?? subject.name;
             data.information = data.information ?? topic.information;
             data.accounts = data.accounts ?? subject.accounts;
@@ -1159,6 +1160,7 @@ export class TaskService {
                 typeof r.correctOption !== 'string' ||
                 typeof r.chat !== 'string' ||
                 typeof r.mode !== 'string' ||
+                typeof r.style !== 'boolean' ||
                 typeof r.chatFinished !== 'boolean'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
