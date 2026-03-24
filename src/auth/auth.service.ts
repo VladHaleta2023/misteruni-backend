@@ -52,6 +52,7 @@ export class AuthService {
                 httpOnly: true,
                 secure: this.configService.get<string>("APP_ENV") === 'production',
                 sameSite: this.configService.get<string>("APP_ENV") === 'production' ? 'none' : 'lax',
+                domain: this.configService.get<string>("APP_ENV") === 'production' ? '.maturago.pl' : undefined,
                 maxAge: 24 * 60 * 60 * 1000,
             });
 
@@ -104,6 +105,7 @@ export class AuthService {
                 httpOnly: true,
                 secure: this.configService.get<string>("APP_ENV") === 'production',
                 sameSite: this.configService.get<string>("APP_ENV") === 'production' ? 'none' : 'lax',
+                domain: this.configService.get<string>("APP_ENV") === 'production' ? '.maturago.pl' : undefined,
                 maxAge: 24 * 60 * 60 * 1000,
             });
 
@@ -160,6 +162,7 @@ export class AuthService {
                 httpOnly: true,
                 secure: this.configService.get<string>("APP_ENV") === 'production',
                 sameSite: this.configService.get<string>("APP_ENV") === 'production' ? 'none' : 'lax',
+                domain: this.configService.get<string>("APP_ENV") === 'production' ? '.maturago.pl' : undefined,
                 maxAge: 24 * 60 * 60 * 1000,
             });
 
@@ -255,6 +258,7 @@ export class AuthService {
                 httpOnly: true,
                 secure: this.configService.get<string>('APP_ENV') === 'production',
                 sameSite: this.configService.get<string>('APP_ENV') === 'production' ? 'none' : 'lax',
+                domain: this.configService.get<string>("APP_ENV") === 'production' ? '.maturago.pl' : undefined,
                 maxAge: 24 * 60 * 60 * 1000,
             });
 
@@ -324,6 +328,7 @@ export class AuthService {
                 httpOnly: true,
                 secure: this.configService.get<string>('APP_ENV') === 'production',
                 sameSite: this.configService.get<string>('APP_ENV') === 'production' ? 'none' : 'lax',
+                domain: this.configService.get<string>("APP_ENV") === 'production' ? '.maturago.pl' : undefined,
                 maxAge: 24 * 60 * 60 * 1000,
             });
 
@@ -343,6 +348,7 @@ export class AuthService {
                 httpOnly: true,
                 secure: this.configService.get<string>('APP_ENV') === 'production',
                 sameSite: this.configService.get<string>('APP_ENV') === 'production' ? 'none' : 'lax',
+                domain: this.configService.get<string>("APP_ENV") === 'production' ? '.maturago.pl' : undefined,
             });
 
             return {
