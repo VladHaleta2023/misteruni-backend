@@ -9,6 +9,8 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.setGlobalPrefix('api');
+
   const server = app.getHttpServer();
   const httpServer: http.Server = server;
   httpServer.setTimeout(900000);
