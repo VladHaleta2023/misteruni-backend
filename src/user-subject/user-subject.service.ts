@@ -17,10 +17,12 @@ export class UserSubjectService {
                     userId
                 },
                 include: {
-                    subject: true
+                    subject: true,
                 },
                 orderBy: {
-                    createdAt: "asc"
+                    subject: {
+                        name: "asc"
+                    }
                 }
             })
             
