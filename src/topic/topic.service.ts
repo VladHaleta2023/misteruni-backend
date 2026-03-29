@@ -657,6 +657,7 @@ export class TopicService {
       data.topic = data.topic ?? topic.name;
       data.type = data.type ?? topic.type;
       data.difficulty = data.difficulty ?? section.difficulty;
+      data.information = data.information ?? topic.information;
 
       if (!Array.isArray(data.words) || !data.words.every(item =>
           Array.isArray(item) &&
@@ -756,7 +757,6 @@ export class TopicService {
         frequency: word[1],
         topicId: topicId,
         finished: false,
-        streakCorrectCount: 0,
         totalAttemptCount: 0,
         totalCorrectCount: 0,
       }));

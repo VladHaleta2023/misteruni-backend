@@ -54,6 +54,10 @@ export class WordsAIGenerate {
   @IsString()
   difficulty?: string;
 
+  @IsOptional()
+  @IsString()
+  information?: string;
+
   @IsString()
   changed: string;
 
