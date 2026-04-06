@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, VocabluaryAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from '../subtopic/subtopic.service';
-import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
@@ -1081,6 +1081,7 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
+        taskId: number,
         data: ChatAIGenerate,
         signal?: AbortSignal
     ) {
@@ -1111,6 +1112,15 @@ export class TaskService {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
 
+            const task = await this.prismaService.task.findUnique({
+                where: { id: taskId },
+            });
+
+            if (!task) {
+                throw new BadRequestException('Zadanie nie zostało znalezione');
+            }
+
+            data.explanation = data.explanation ?? task.explanation;
             data.style = data.style ?? false;
             data.subject = data.subject ?? subject.name;
             data.information = data.information ?? topic.information;
@@ -1423,7 +1433,6 @@ export class TaskService {
                                 percent: finalPercent,
                                 percentAudio,
                                 percentWords,
-                                finished: true
                             }
                         });
 
@@ -1722,7 +1731,7 @@ export class TaskService {
 
                 await tx.task.update({
                     where: { id: taskId },
-                    data: { explanation: data.explanation, finished: true, percent: averagePercent._avg.percent || 0 }
+                    data: { explanation: data.explanation, percent: averagePercent._avg.percent || 0 }
                 });
 
                 await this.updateSubtopicsProgress(userId, subjectId, sectionId, topicId, subtopicIds, tx);
@@ -1767,6 +1776,41 @@ export class TaskService {
         }
         catch (error) {
             throw new InternalServerErrorException('Nie udało się zaktualizować zadania');
+        }
+    }
+
+    async updateFinished(
+        userId: number,
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+    ) {
+        try {
+            const existing = await this.prismaService.task.findUnique({ where: { id } });
+            if (!existing) {
+                return {
+                    statusCode: 404,
+                    message: `Zadanie nie zostało znalezione`,
+                };
+            }
+
+            const updatedTask = await this.prismaService.task.update({
+                where: { id },
+                data: {
+                    finished: true
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Zadanie zostało pomyślnie zakończone',
+                task: updatedTask,
+            };
+        }
+        catch (error) {
+            console.error(`Nie udało się zaktualizować zakończenie zadania:`, error);
+            throw new InternalServerErrorException('Błąd podczas aktualizacji zakończenie zadania');
         }
     }
 

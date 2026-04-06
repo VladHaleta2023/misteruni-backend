@@ -40,6 +40,12 @@ export class TaskCreateRequest {
   solution: string
 }
 
+export class TaskUpdateRequest {
+  @IsOptional()
+  @IsBoolean()
+  finished: boolean;
+}
+
 export class TaskUpdateChatRequest {
   @IsOptional()
   @IsString()
