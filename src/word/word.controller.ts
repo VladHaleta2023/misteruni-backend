@@ -68,6 +68,19 @@ export class WordController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('create')
+  async createWord(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Body('text') text: string, 
+    @Req() req: Request,
+  ) {
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+
+    return await this.wordService.createWord(userId, subjectId, text);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Put('update')
   async updateWords(
     @Param('subjectId', ParseIntPipe) subjectId: number,

@@ -394,6 +394,51 @@ export class WordService {
         }
     }
 
+    async createWord(
+        userId: number,
+        subjectId: number,
+        text: string,
+    ) {
+        try {
+            text = text.toLowerCase();
+
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+            
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            const existingWord = await this.prismaService.word.findFirst({
+                where: {
+                    userId,
+                    subjectId,
+                    text,
+                },
+            });
+
+            if (existingWord) {
+                throw new BadRequestException('Słowo już istnieje w słowniku');
+            }
+
+            await this.prismaService.word.create({
+                data: {
+                    text,
+                    subjectId,
+                    userId
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Dodawanie słowa lub wyrazu udane'
+            };
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się dodać słowa lub wyrazu');
+        }
+    }
+
     async updateWords(
         userId: number,
         subjectId: number,
