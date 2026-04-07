@@ -1120,6 +1120,7 @@ export class TaskService {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
             }
 
+            data.originalSolution = data.originalSolution ?? task.originalSolution;
             data.explanation = data.explanation ?? task.explanation;
             data.style = data.style ?? false;
             data.subject = data.subject ?? subject.name;
@@ -1764,6 +1765,7 @@ export class TaskService {
                 where: { id, userId },
                 data: {
                     ...userData,
+                    originalSolution: userData.userSolution,
                     answered: true,
                 }
             });

@@ -318,6 +318,7 @@ model Task {
   options            String[]           @default([])
   correctOptionIndex Int                @default(0)
   solution           String             @default("")
+  originalSolution   String             @default("")
   userSolution       String             @default("")
   userOptionIndex    Int                @default(0)
   order              Int                @default(0)

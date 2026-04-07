@@ -334,6 +334,10 @@ export class ChatAIGenerate {
   explanation?: string;
 
   @IsOptional()
+  @IsString()
+  originalSolution?: string;
+
+  @IsOptional()
   @IsBoolean()
   style?: boolean;
 
