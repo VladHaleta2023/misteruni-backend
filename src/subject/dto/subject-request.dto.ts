@@ -79,6 +79,10 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  vocabularyGuidePrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 
   @IsOptional()

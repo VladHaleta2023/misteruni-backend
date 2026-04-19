@@ -272,15 +272,28 @@ export class SectionService {
                     }
                 });
 
+                const literatures = await tx.literature.findMany({
+                    where: {
+                        subjectId: subjectId
+                    },
+                    select: {
+                        name: true
+                    },
+                    orderBy: {
+                        name: 'asc'
+                    }
+                });
+
                 return {
                     predictionSubtopics,
                     sectionsWithTopics,
                     currentPercents,
-                    words
+                    words,
+                    literatures
                 };
             }, { timeout: 900000 });
             
-            const { predictionSubtopics, sectionsWithTopics, currentPercents, words } = result;
+            const { predictionSubtopics, sectionsWithTopics, currentPercents, words, literatures } = result;
 
             const subtopicsByTopic = new Map<number, any[]>();
             predictionSubtopics.forEach(subtopic => {
@@ -413,8 +426,6 @@ export class SectionService {
                 }
             });
 
-            console.log(firstTask?.updatedAt);
-
             const initialNow = firstTask?.updatedAt ?? new Date();
 
             const initialTopicItems = Array.from(topicImportanceMap.keys()).map(topicId => {
@@ -445,8 +456,6 @@ export class SectionService {
                 subjectId
             );
 
-            console.log(initialPrediction);
-
             const prediction = await this.calculatePrediction(
                 new Date(),
                 threshold,
@@ -455,8 +464,6 @@ export class SectionService {
                 userId,
                 subjectId
             );
-
-            console.log(prediction);
 
             let deltaDays: number | null = null;
             if (firstTask)
@@ -476,7 +483,8 @@ export class SectionService {
                     sectionId: finalTopic.sectionId,
                     topicId: finalTopic.topicId,
                     sectionType: finalTopic.sectionType
-                } : null
+                } : null,
+                literatures: literatures.map(lit => lit.name)
             };
         } catch (error) {
             console.error(error);
@@ -640,10 +648,10 @@ export class SectionService {
             }
 
             const solutionGuidePromptOwn = Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== "");
+            const vocabularyGuidePromptOwn = Boolean(section.vocabularyGuidePrompt && section.vocabularyGuidePrompt.trim() !== "");
             const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
             const subtopicsStatusPromptOwn = Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== "");
             const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
-            const solutionPromptOwn = Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== "");
             const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
             const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
             const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
@@ -654,6 +662,9 @@ export class SectionService {
             const literaturePromptOwn = Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "");
 
             const prompts = {
+                vocabularyGuidePrompt: vocabularyGuidePromptOwn ? section.vocabularyGuidePrompt.trim() : (subject.vocabularyGuidePrompt || ""),
+                vocabularyGuidePromptOwn: vocabularyGuidePromptOwn,
+
                 solutionGuidePrompt: solutionGuidePromptOwn ? section.solutionGuidePrompt.trim() : (subject.solutionGuidePrompt || ""),
                 solutionGuidePromptOwn: solutionGuidePromptOwn,
 
@@ -674,9 +685,6 @@ export class SectionService {
 
                 questionPrompt: questionPromptOwn ? section.questionPrompt.trim() : (subject.questionPrompt || ""),
                 questionPromptOwn: questionPromptOwn,
-
-                solutionPrompt: solutionPromptOwn ? section.solutionPrompt.trim() : (subject.solutionPrompt || ""),
-                solutionPromptOwn: solutionPromptOwn,
 
                 answersPrompt: answersPromptOwn ? section.answersPrompt.trim() : (subject.answersPrompt || ""),
                 answersPromptOwn: answersPromptOwn,

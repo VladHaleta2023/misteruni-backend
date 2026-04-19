@@ -269,30 +269,6 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('solution-generate')
-  async solutionAIGenerate(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('topicId', ParseIntPipe) topicId: number,
-    @Body() data: SolutionAIGenerate,
-    @Req() req: Request
-  ) {
-    const controller = new AbortController();
-
-    req.on('close', () => controller.abort());
-
-    try {
-      const result = await this.taskService.solutionAIGenerate(subjectId, sectionId, topicId, data, controller.signal);
-      return result;
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new HttpException('Client aborted', 499);
-      }
-      throw error;
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post('options-generate')
   async optionsAIGenerate(
     @Param('subjectId', ParseIntPipe) subjectId: number,

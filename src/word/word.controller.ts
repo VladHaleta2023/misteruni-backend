@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req } from '@nestjs/common';
 import { WordService } from './word.service';
-import { VocabluaryAIGenerate } from '../task/dto/task-generate.dto';
+import { VocabluaryAIGenerate, VocabluaryGuideAIGenerate } from '../task/dto/task-generate.dto';
 import { Request } from 'express';
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -97,6 +97,50 @@ export class WordController {
       outputWords,
       wordIds
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':id/translate')
+  async updateWordTranslate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('id', ParseIntPipe) wordId: number,
+    @Body('translate') translate: string,
+    @Req() req: Request,
+  ) {
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+
+    return await this.wordService.updateWordTranslate(userId, subjectId, wordId, translate);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('vocabluary-guide-generate')
+  async vocabluaryGuideAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Body() body: {
+      sectionId?: number | null;
+      topicId?: number | null;
+      data: VocabluaryGuideAIGenerate;
+    },
+    @Req() req: Request,
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    const sectionId: number | null = body.sectionId ?? null;
+    const topicId: number | null = body.topicId ?? null;
+    const data = body.data;
+
+    try {
+      const result = await this.wordService.vocabluaryGuideAIGenerate(subjectId, data, sectionId, topicId, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
   }
 
   @UseGuards(JwtAuthGuard)

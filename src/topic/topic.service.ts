@@ -103,11 +103,6 @@ export class TopicService {
           ? subject.questionPrompt ?? null
           : section.questionPrompt;
 
-      const resolvedSolutionPrompt =
-        section.solutionPrompt?.trim() === '' || !section.solutionPrompt
-          ? subject.solutionPrompt ?? null
-          : section.solutionPrompt;
-
       const resolvedAnswersPrompt =
         section.answersPrompt?.trim() === '' || !section.answersPrompt
           ? subject.answersPrompt ?? null
@@ -138,7 +133,6 @@ export class TopicService {
           subtopicsPrompt: resolvedSubtopicsPrompt,
           subtopicsStatusPrompt: resolvedSubtopicsStatusPrompt,
           questionPrompt: resolvedQuestionPrompt,
-          solutionPrompt: resolvedSolutionPrompt,
           answersPrompt: resolvedAnswersPrompt,
           closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
           vocabluaryPrompt: resolvedStoriesPrompt,
@@ -147,7 +141,6 @@ export class TopicService {
           subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
           subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
           questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
-          solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
           answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
           closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
           vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== ""),
@@ -191,11 +184,6 @@ export class TopicService {
             section.questionPrompt,
             subject.questionPrompt
           ) ?? "",
-          solutionPrompt: this.getPrompt(
-            topic.solutionPrompt,
-            section.solutionPrompt,
-            subject.solutionPrompt
-          ) ?? "",
           answersPrompt: this.getPrompt(
             topic.answersPrompt,
             section.answersPrompt,
@@ -235,7 +223,6 @@ export class TopicService {
           subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
           subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
           questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
-          solutionPromptOwn: Boolean(topic.solutionPrompt && topic.solutionPrompt.trim() !== ""),
           answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
           closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
           vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== ""),
@@ -325,11 +312,6 @@ export class TopicService {
                 ? subject.questionPrompt ?? null
                 : section.questionPrompt;
 
-        const resolvedSolutionPrompt =
-            section.solutionPrompt?.trim() === '' || !section.solutionPrompt
-                ? subject.solutionPrompt ?? null
-                : section.solutionPrompt;
-
         const resolvedAnswersPrompt =
             section.answersPrompt?.trim() === '' || !section.answersPrompt
                 ? subject.answersPrompt ?? null
@@ -365,7 +347,6 @@ export class TopicService {
                 subtopicsPrompt: resolvedSubtopicsPrompt,
                 subtopicsStatusPrompt: resolvedSubtopicsStatusPrompt,
                 questionPrompt: resolvedQuestionPrompt,
-                solutionPrompt: resolvedSolutionPrompt,
                 answersPrompt: resolvedAnswersPrompt,
                 closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
                 vocabluaryPrompt: resolvedStoriesPrompt,
@@ -375,7 +356,6 @@ export class TopicService {
                 subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
                 subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
                 questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
-                solutionPromptOwn: Boolean(section.solutionPrompt && section.solutionPrompt.trim() !== ""),
                 answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
                 closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
                 vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== ""),
@@ -424,11 +404,6 @@ export class TopicService {
               section.questionPrompt,
               subject.questionPrompt
             ) ?? "",
-            solutionPrompt: this.getPrompt(
-              topic.solutionPrompt,
-              section.solutionPrompt,
-              subject.solutionPrompt
-            ) ?? "",
             answersPrompt: this.getPrompt(
               topic.answersPrompt,
               section.answersPrompt,
@@ -468,7 +443,6 @@ export class TopicService {
             subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
             subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
             questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
-            solutionPromptOwn: Boolean(topic.solutionPrompt && topic.solutionPrompt.trim() !== ""),
             answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
             closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
             vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== ""),
@@ -825,18 +799,57 @@ export class TopicService {
         };
       }
 
-      const deleted = await this.prismaService.word.deleteMany({
-        where: { 
-          userId,
+      const taskWords = await this.prismaService.taskWord.findMany({
+        where: {
+          word: {
+            topicId,
+            subjectId,
+          },
+        },
+        select: {
+          taskId: true,
+        },
+      });
+
+      const taskIds = [...new Set(taskWords.map((tw) => tw.taskId))];
+
+      const deletedWords = await this.prismaService.word.deleteMany({
+        where: {
           topicId,
           subjectId,
-        }
+        },
       });
+
+      let deletedTasksCount = 0;
+
+      if (taskIds.length > 0) {
+        const tasksWithoutWords = await this.prismaService.task.findMany({
+          where: {
+            id: { in: taskIds },
+            words: {
+              none: {},
+            },
+          },
+          select: { id: true },
+        });
+
+        const idsToDelete = tasksWithoutWords.map((t) => t.id);
+
+        if (idsToDelete.length > 0) {
+          const deletedTasks = await this.prismaService.task.deleteMany({
+            where: {
+              id: { in: idsToDelete },
+            },
+          });
+
+          deletedTasksCount = deletedTasks.count;
+        }
+      }
 
       return {
         statusCode: 200,
-        message: `Słowy tematyczne zostały pomyślnie usunięte. Usunięto: ${deleted.count} słów`,
-        deletedCount: deleted.count
+        message: `Słowy tematyczne zostały pomyślnie usunięte. Usunięto: ${deletedWords.count} słów`,
+        deletedCount: deletedWords.count
       };
     } catch (error) {
       console.error('Błąd podczas usuwania słów tematycznych:', error);

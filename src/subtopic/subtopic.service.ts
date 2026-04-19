@@ -701,8 +701,45 @@ export class SubtopicService {
                 throw new BadRequestException('Podtemat nie został znaleziony');
             }
 
+            const progress = await this.prismaService.subtopicProgress.findMany({
+            where: { subtopicId: id },
+            select: { taskId: true },
+            });
+
+            const taskIds = [...new Set(progress.map(p => p.taskId))];
+
+            await this.prismaService.subtopicProgress.deleteMany({
+                where: { subtopicId: id },
+            });
+
+            let deletedTasksCount = 0;
+
+            if (taskIds.length > 0) {
+                const stillUsed = await this.prismaService.subtopicProgress.findMany({
+                    where: {
+                    taskId: { in: taskIds },
+                    subtopicId: { not: id },
+                    },
+                    select: { taskId: true },
+                });
+
+                const stillUsedSet = new Set(stillUsed.map(t => t.taskId));
+
+                const toDelete = taskIds.filter(taskId => !stillUsedSet.has(taskId));
+
+                if (toDelete.length > 0) {
+                    const deleted = await this.prismaService.task.deleteMany({
+                    where: {
+                        id: { in: toDelete },
+                    },
+                    });
+
+                    deletedTasksCount = deleted.count;
+                }
+            }
+
             await this.prismaService.subtopic.delete({
-                where: { id }
+                where: { id },
             });
 
             return {
@@ -752,6 +789,12 @@ export class SubtopicService {
                 where: {
                     subjectId,
                     sectionId,
+                    topicId
+                }
+            });
+
+            await prismaClient.task.deleteMany({
+                where: {
                     topicId
                 }
             });

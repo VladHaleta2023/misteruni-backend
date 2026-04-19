@@ -2,7 +2,7 @@ import { BadRequestException, HttpException, HttpStatus, Injectable, InternalSer
 import { PrismaService } from '../prisma/prisma.service';
 import { Section, Topic, Word } from '@prisma/client';
 import { firstValueFrom } from 'rxjs';
-import { VocabluaryAIGenerate } from '../task/dto/task-generate.dto';
+import { VocabluaryAIGenerate, VocabluaryGuideAIGenerate } from '../task/dto/task-generate.dto';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 
@@ -496,6 +496,38 @@ export class WordService {
         }
     }
 
+    async updateWordTranslate(
+        userId: number,
+        subjectId: number,
+        wordId: number,
+        translate: string
+    ) {
+        try {
+            const word = await this.prismaService.word.findUnique({
+                where: { userId, subjectId, id: wordId },
+            });
+
+            if (!word)
+                throw new BadRequestException('Nie znaleziono słowa lub wyrazu');
+
+            const updatedWord = await this.prismaService.word.update({
+                where: { userId, subjectId, id: wordId },
+                data: {
+                    translate: translate
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Aktualizacja tłumaczenia pomyślnie',
+                word: updatedWord
+            };
+
+        } catch (error) {
+            throw new InternalServerErrorException('Nie udało się zaktualizować tłumaczenia');
+        }
+    }
+
     async vocabluaryAIGenerate(
         subjectId: number,
         data: VocabluaryAIGenerate,
@@ -587,6 +619,86 @@ export class WordService {
             return {
                 statusCode: 201,
                 message: "Weryfikacja słów lub wyrazów zadania udane",
+                ...r
+            };
+        }
+        catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    async vocabluaryGuideAIGenerate(
+        subjectId: number,
+        data: VocabluaryGuideAIGenerate,
+        sectionId?: number | null,
+        topicId?: number | null,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/vocabluary-guide-generate`;
+        
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            let section: Section | null = null;
+            let topic: Topic | null = null;
+
+            if (sectionId) {
+                section = await this.prismaService.section.findUnique({
+                    where: { id: sectionId },
+                });
+            }
+
+            if (topicId) {
+                topic = await this.prismaService.topic.findUnique({
+                    where: { id: topicId },
+                });
+            }
+
+            const resolvedVocabliaryGuidePrompt =
+                topic?.vocabularyGuidePrompt?.trim()
+                    ? topic.vocabularyGuidePrompt
+                    : section?.vocabularyGuidePrompt?.trim()
+                    ? section.vocabularyGuidePrompt
+                    : subject.vocabularyGuidePrompt ?? null;
+
+            data.prompt = resolvedVocabliaryGuidePrompt;
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                typeof r.prompt !== 'string' ||
+                typeof r.changed !== 'string' ||
+                typeof r.text !== 'string' ||
+                typeof r.translate !== 'string' ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            return {
+                statusCode: 200,
+                message: "Generacja tłumaczenia udana",
                 ...r
             };
         }

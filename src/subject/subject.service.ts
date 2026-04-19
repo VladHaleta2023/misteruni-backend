@@ -240,6 +240,7 @@ export class SubjectService {
                 subject: {
                     ...subject,
                     solutionGuidePromptOwn: true,
+                    vocabularyGuidePromptOwn: true,
                     literaturePromptOwn: true,
                     subtopicsPromptOwn: true,
                     subtopicsStatusPromptOwn: true,

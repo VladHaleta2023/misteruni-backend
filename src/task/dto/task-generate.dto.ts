@@ -434,3 +434,25 @@ export class VocabluaryAIGenerate {
   @IsString()
   outputText: string;
 }
+
+export class VocabluaryGuideAIGenerate {
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsArray()
+  text: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+
+  @IsString()
+  translate: string;
+}

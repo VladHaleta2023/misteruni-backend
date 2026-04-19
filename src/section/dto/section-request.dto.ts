@@ -59,6 +59,10 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
+  vocabularyGuidePrompt?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 
   @IsOptional()
