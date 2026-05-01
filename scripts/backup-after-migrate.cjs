@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const BACKUP_DIR = path.join(process.cwd(), 'backups');
+const BACKUP_DIR = path.join(__dirname, '..', 'backups');
 const DIRECT_URL = process.env.DIRECT_URL || 'postgresql://postgres.vedyjucfxikmlnljzbjg:123MisterUni123%40@aws-1-eu-central-1.pooler.supabase.com:5432/postgres';
 
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -12,10 +12,16 @@ if (!fs.existsSync(BACKUP_DIR)) {
 }
 
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-
-console.log(`📦 Создание бэкапа...`);
+const skipMigrate = process.argv.includes('--no-migrate');
 
 try {
+    if (!skipMigrate) {
+        console.log(`🔄 Выполнение миграции...`);
+        execSync(`npx prisma migrate dev`, { stdio: 'inherit' });
+    }
+
+    console.log(`📦 Создание бэкапа...`);
+
     execSync(
         `pg_dump "${DIRECT_URL}" --format=custom --no-owner -f "${BACKUP_DIR}/backup_${timestamp}.dump"`,
         { stdio: 'inherit' }
