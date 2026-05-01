@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpException, Param, ParseArrayPipe, ParseIntPipe, Post, Put, Query, Req, UseGuards, ValidationPipe } from '@nestjs/common';
 import { SubtopicService } from './subtopic.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest, UpdateSubtopicsDto } from '../subtopic/dto/subtopic-request.dto';
-import { FrequencyAIGenerate, SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
+import { ChronologyAIGenerate, FrequencyAIGenerate, SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
@@ -132,6 +132,30 @@ export class SubtopicController {
 
     try {
       const result = await this.subtopicService.frequencyAIGenerate(subjectId, sectionId, topicId, data);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('chronology-generate')
+  async chronologyAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Body() data: ChronologyAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+    
+    req.on('close', () => controller.abort());
+
+    try {
+      const result = await this.subtopicService.chronologyAIGenerate(subjectId, sectionId, topicId, data);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {

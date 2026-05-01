@@ -11,5 +11,12 @@
     "target": "ES2021"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "scripts/**/*",
+    "**/*.js",
+    "backups/**/*"
+  ]
 }

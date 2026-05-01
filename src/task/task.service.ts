@@ -1,7 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, VocabluaryAIGenerate } from './dto/task-generate.dto';
+import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, VocabluaryAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from '../subtopic/subtopic.service';
 import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
@@ -42,6 +42,41 @@ export class TaskService {
         }
         return null;
     };
+
+    private async syncUserProgressTables(userId: number, subjectId: number, tx: Prisma.TransactionClient) {
+        await tx.$executeRaw`
+            INSERT INTO "UserSection" ("userId", "subjectId", "sectionId", "percent", "createdAt", "updatedAt")
+            SELECT ${userId}, ${subjectId}, s.id, 0, NOW(), NOW()
+            FROM "Section" s
+            LEFT JOIN "UserSection" us ON us."sectionId" = s.id 
+                AND us."userId" = ${userId}
+                AND us."subjectId" = ${subjectId}
+            WHERE us."sectionId" IS NULL 
+                AND s."subjectId" = ${subjectId};
+        `;
+
+        await tx.$executeRaw`
+            INSERT INTO "UserTopic" ("userId", "subjectId", "topicId", "sectionId", "percent", "createdAt", "updatedAt")
+            SELECT ${userId}, ${subjectId}, t.id, t."sectionId", 0, NOW(), NOW()
+            FROM "Topic" t
+            LEFT JOIN "UserTopic" ut ON ut."topicId" = t.id 
+                AND ut."userId" = ${userId}
+                AND ut."subjectId" = ${subjectId}
+            WHERE ut."topicId" IS NULL 
+                AND t."subjectId" = ${subjectId};
+        `;
+
+        await tx.$executeRaw`
+            INSERT INTO "UserSubtopic" ("userId", "subjectId", "sectionId", "topicId", "subtopicId", "percent", "createdAt", "updatedAt")
+            SELECT ${userId}, ${subjectId}, st."sectionId", st."topicId", st.id, 0, NOW(), NOW()
+            FROM "Subtopic" st
+            LEFT JOIN "UserSubtopic" ust ON ust."subtopicId" = st.id 
+                AND ust."userId" = ${userId}
+                AND ust."subjectId" = ${subjectId}
+            WHERE ust."subtopicId" IS NULL 
+                AND st."subjectId" = ${subjectId};
+        `;
+    }
 
     async findTasks(userId: number, subjectId: number, sectionId: number, topicId: number) {
         try {
@@ -537,7 +572,7 @@ export class TaskService {
             });
 
             const threshold = userSubject?.threshold ?? 50;
-            const detailLevel = userSubject?.detailLevel ?? 'MANDATORY';
+            const detailLevel = userSubject?.detailLevel ?? 'BASIC';
 
             const subtopics = await this.prismaService.$queryRaw<any[]>`
                 SELECT 
@@ -554,9 +589,9 @@ export class TaskService {
                     AND st."subjectId" = ${subjectId}
                     AND st."detailLevel"::text = ANY(
                         CASE ${detailLevel}::text
-                            WHEN 'OPTIONAL' THEN ARRAY['MANDATORY', 'DESIRABLE', 'OPTIONAL']::text[]
-                            WHEN 'DESIRABLE' THEN ARRAY['MANDATORY', 'DESIRABLE']::text[]
-                            ELSE ARRAY['MANDATORY']::text[]
+                            WHEN 'ACADEMIC' THEN ARRAY['BASIC', 'EXPANDED', 'ACADEMIC']::text[]
+                            WHEN 'EXPANDED' THEN ARRAY['BASIC', 'EXPANDED']::text[]
+                            ELSE ARRAY['BASIC']::text[]
                         END
                     )
                 ORDER BY 
@@ -608,6 +643,78 @@ export class TaskService {
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
                 !Array.isArray(r.outputSubtopics) ||
+                typeof r.attempt !== 'number' ||
+                typeof r.text !== 'string'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja tekstu zadania udane",
+                ...r,
+            };
+        } catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    async writingAIGenerate(
+        userId: number,
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        data: WritingAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/writing-generate`;
+
+        try {
+            const [subject, section, topic] = await Promise.all([
+                this.prismaService.subject.findUnique({ where: { id: subjectId } }),
+                this.prismaService.section.findUnique({ where: { id: sectionId } }),
+                this.prismaService.topic.findUnique({ where: { id: topicId } }),
+            ]);
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
+
+            const resolvedQuestionPrompt = this.getPrompt(
+                topic.questionPrompt,
+                section.questionPrompt,
+                subject.questionPrompt
+            );
+
+            data.prompt = resolvedQuestionPrompt ?? "";
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                typeof r.prompt !== 'string' ||
+                typeof r.changed !== 'string' ||
+                typeof r.subject !== 'string' ||
+                typeof r.section !== 'string' ||
+                typeof r.topic !== 'string' ||
+                typeof r.literature !== 'string' ||
+                !Array.isArray(r.errors) ||
                 typeof r.attempt !== 'number' ||
                 typeof r.text !== 'string'
             ) {
@@ -1037,7 +1144,6 @@ export class TaskService {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
             }
 
-            data.originalSolution = data.originalSolution ?? task.originalSolution;
             data.explanation = data.explanation ?? task.explanation;
             data.style = data.style ?? false;
             data.subject = data.subject ?? subject.name;
@@ -1047,13 +1153,24 @@ export class TaskService {
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
 
-            const resolvedChatPrompt = this.getPrompt(
-                topic.chatPrompt,
-                section.chatPrompt,
-                subject.chatPrompt
-            );
-            
-            data.prompt = resolvedChatPrompt ?? "";
+            if (data.mode === "STUDENT_ANSWER") {
+                const resolvedChatPrompt = this.getPrompt(
+                    topic.chatAnswerPrompt,
+                    section.chatAnswerPrompt,
+                    subject.chatAnswerPrompt
+                );
+
+                data.prompt = resolvedChatPrompt ?? "";
+            }
+            else {
+                const resolvedChatPrompt = this.getPrompt(
+                    topic.chatQuestionPrompt,
+                    section.chatQuestionPrompt,
+                    subject.chatQuestionPrompt
+                );
+
+                data.prompt = resolvedChatPrompt ?? "";
+            }
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -1233,6 +1350,8 @@ export class TaskService {
     ) {
         try {
             return await this.prismaService.$transaction(async (tx) => {
+                await this.syncUserProgressTables(userId, subjectId, tx);
+
                 let taskId: number;
 
                 if (taskData.id) {
@@ -1461,8 +1580,14 @@ export class TaskService {
         });
 
         for (const sub of subtopicPercents) {
-            await tx.userSubtopic.updateMany({
-                where: { subtopicId: sub.id, userId, subjectId },
+            await tx.userSubtopic.update({
+                where: {
+                    userId_subjectId_subtopicId: {
+                        userId,
+                        subjectId,
+                        subtopicId: sub.id
+                    }
+                },
                 data: { percent: sub.percent }
             });
         }
@@ -1473,14 +1598,14 @@ export class TaskService {
 
         const getDetailLevels = (level: string): SubjectDetailLevel[] => {
             switch (level) {
-                case 'MANDATORY': return ['MANDATORY'];
-                case 'DESIRABLE': return ['MANDATORY', 'DESIRABLE'];
-                case 'OPTIONAL': return ['MANDATORY', 'DESIRABLE', 'OPTIONAL'];
-                default: return ['MANDATORY'];
+                case 'BASIC': return ['BASIC'];
+                case 'EXPANDED': return ['BASIC', 'EXPANDED'];
+                case 'ACADEMIC': return ['BASIC', 'EXPANDED', 'ACADEMIC'];
+                default: return ['BASIC'];
             }
         };
 
-        const allowedLevels = getDetailLevels(userSubject?.detailLevel || 'MANDATORY');
+        const allowedLevels = getDetailLevels(userSubject?.detailLevel || 'BASIC');
 
         const userSubtopicPercents = await tx.userSubtopic.findMany({
             where: {
@@ -1617,6 +1742,8 @@ export class TaskService {
     ) {
         try {
             return await this.prismaService.$transaction(async (tx) => {
+                await this.syncUserProgressTables(userId, subjectId, tx);
+                
                 const subtopicIds: number[] = [];
 
                 for (const sub of data.subtopics) {
@@ -1682,7 +1809,6 @@ export class TaskService {
                 where: { id, userId },
                 data: {
                     ...userData,
-                    originalSolution: userData.userSolution,
                     answered: true,
                 }
             });

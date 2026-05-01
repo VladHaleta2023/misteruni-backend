@@ -55,12 +55,14 @@ model Subject {
   closedSubtopicsPrompt String             @default("")
   vocabluaryPrompt      String             @default("")
   topicExpansionPrompt  String             @default("")
+  chronologyPrompt      String             @default("")
   wordsPrompt           String             @default("")
   isVisible             Boolean            @default(false)
   subtopicsStatusPrompt String             @default("")
-  vocabularyGuidePrompt String         @default("")
-  minDetailLevel        SubjectDetailLevel @default(MANDATORY)
-  chatPrompt            String             @default("")
+  vocabularyGuidePrompt String             @default("")
+  minDetailLevel        SubjectDetailLevel @default(BASIC)
+  chatAnswerPrompt      String             @default("")
+  chatQuestionPrompt    String             @default("")
   topicFrequencyPrompt  String             @default("")
   literaturePrompt      String             @default("")
   sections              Section[]
@@ -94,7 +96,7 @@ model UserSubject {
   userId            Int
   subjectId         Int
   createdAt         DateTime           @default(now())
-  detailLevel       SubjectDetailLevel @default(MANDATORY)
+  detailLevel       SubjectDetailLevel @default(BASIC)
   threshold         Int                @default(50)
   updatedAt         DateTime           @updatedAt
   dailyStudyMinutes Int                @default(60)
@@ -194,11 +196,13 @@ model Section {
   answersPrompt         String         @default("")
   closedSubtopicsPrompt String         @default("")
   vocabluaryPrompt      String         @default("")
+  chronologyPrompt      String         @default("")
   topicExpansionPrompt  String         @default("")
   difficulty            String         @default("")
   wordsPrompt           String         @default("")
   subtopicsStatusPrompt String         @default("")
-  chatPrompt            String         @default("")
+  chatAnswerPrompt      String         @default("")
+  chatQuestionPrompt    String         @default("")
   topicFrequencyPrompt  String         @default("")
   vocabularyGuidePrompt String         @default("")
   literaturePrompt      String         @default("")
@@ -229,6 +233,7 @@ model Topic {
   answersPrompt         String         @default("")
   closedSubtopicsPrompt String         @default("")
   subtopicsPrompt       String         @default("")
+  chronologyPrompt      String         @default("")
   solutionGuidePrompt   String         @default("")
   vocabluaryPrompt      String         @default("")
   literaturePrompt      String         @default("")
@@ -239,7 +244,8 @@ model Topic {
   note                  String         @default("")
   wordsPrompt           String         @default("")
   subtopicsStatusPrompt String         @default("")
-  chatPrompt            String         @default("")
+  chatAnswerPrompt      String         @default("")
+  chatQuestionPrompt    String         @default("")
   topicFrequencyPrompt  String         @default("")
   subtopics             Subtopic[]
   tasks                 Task[]
@@ -267,7 +273,7 @@ model Subtopic {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   importance    Int                @default(0)
-  detailLevel   SubjectDetailLevel @default(MANDATORY)
+  detailLevel   SubjectDetailLevel @default(BASIC)
   partId        Int                @default(-1)
   section       Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   subject       Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -318,7 +324,6 @@ model Task {
   options            String[]           @default([])
   correctOptionIndex Int                @default(0)
   solution           String             @default("")
-  originalSolution   String             @default("")
   userSolution       String             @default("")
   userOptionIndex    Int                @default(0)
   order              Int                @default(0)
@@ -415,9 +420,9 @@ enum UserRole {
 }
 
 enum SubjectDetailLevel {
-  MANDATORY
-  DESIRABLE
-  OPTIONAL
+  BASIC
+  EXPANDED
+  ACADEMIC
 }
 
 enum ChatMode {

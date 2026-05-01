@@ -38,18 +38,6 @@ export class SectionController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('topics/first-uncompleted')
-  async findFirstUncompletedTopic(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Req() req: Request
-  ) {
-    const user: User = (req as any).user;
-    const userId: number = user.id;
-
-    return await this.sectionService.findFirstUncompletedTopic(userId, subjectId);
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Put(':id')
   async updateSection(
     @Param('subjectId', ParseIntPipe) subjectId: number,

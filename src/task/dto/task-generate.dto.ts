@@ -66,6 +66,53 @@ export class TaskAIGenerate {
   outputSubtopics: string[];
 }
 
+export class WritingAIGenerate {
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
+  literature?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsString()
+  text: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+}
+
 export class InteractiveTaskAIGenerate {
   @IsOptional()
   @IsString()
@@ -115,44 +162,6 @@ export class InteractiveTaskAIGenerate {
   @IsArray()
   @IsString({ each: true })
   outputWords: string[];
-}
-
-export class SolutionAIGenerate {
-  @IsOptional()
-  @IsString()
-  prompt?: string;
-
-  @IsOptional()
-  @IsString()
-  information?: string;
-
-  @IsOptional()
-  @IsString()
-  accounts?: string;
-
-  @IsOptional()
-  @IsString()
-  balance?: string;
-
-  @IsString()
-  changed: string;
-
-  @IsInt()
-  attempt: number;
-
-  @IsString()
-  text: string;
-
-  @IsString()
-  solution: string;
-
-  @IsArray()
-  @IsString({ each: true })
-  errors: string[];
-
-  @IsArray()
-  @IsString({ each: true })
-  subtopics: string[];
 }
 
 export class SolutionGuideAIGenerate {
@@ -321,7 +330,10 @@ export class ProblemsAIGenerate {
   outputSubtopics: [string, number][]
 
   @IsString()
-  explanation: string
+  explanation: string;
+
+  @IsString()
+  chat: string;
 }
 
 export class ChatAIGenerate {
@@ -332,10 +344,6 @@ export class ChatAIGenerate {
   @IsOptional()
   @IsString()
   explanation?: string;
-
-  @IsOptional()
-  @IsString()
-  originalSolution?: string;
 
   @IsOptional()
   @IsBoolean()

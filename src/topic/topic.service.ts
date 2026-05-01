@@ -73,6 +73,11 @@ export class TopicService {
           ? subject.solutionGuidePrompt ?? null
           : section.solutionGuidePrompt;
 
+      const resolvedChronologyPrompt =
+        section.chronologyPrompt?.trim() === '' || !section.chronologyPrompt
+          ? subject.chronologyPrompt ?? null
+          : section.chronologyPrompt;
+
       const resolvedLiteraturePrompt =
         section.literaturePrompt?.trim() === '' || !section.literaturePrompt
           ? subject.literaturePrompt ?? null
@@ -126,6 +131,7 @@ export class TopicService {
       if (withSection) {
         response.section = {
           ...section,
+          chronologyPrompt: resolvedChronologyPrompt,
           solutionGuidePrompt: resolvedSolutionGuidePrompt,
           literaturePrompt: resolvedLiteraturePrompt,
           topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
@@ -148,6 +154,7 @@ export class TopicService {
           topicExpansionPromptOwn: Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== ""),
           topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== ""),
           literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== ""),
+          chronologyPromptOwn: Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== ""),
         };
       }
 
@@ -164,6 +171,11 @@ export class TopicService {
       const resolvedTopics = topics.map((topic) => {
         return {
           ...topic,
+          chronologyPrompt: this.getPrompt(
+            topic.chronologyPrompt,
+            section.chronologyPrompt,
+            subject.chronologyPrompt
+          ) ?? "",
           solutionGuidePrompt: this.getPrompt(
             topic.solutionGuidePrompt,
             section.solutionGuidePrompt,
@@ -229,7 +241,8 @@ export class TopicService {
           wordsPromptOwn: Boolean(topic.wordsPrompt && topic.wordsPrompt.trim() !== ""),
           topicExpansionPromptOwn: Boolean(topic.topicExpansionPrompt && topic.topicExpansionPrompt.trim() !== ""),
           topicFrequencyPromptOwn: Boolean(topic.topicFrequencyPrompt && topic.topicFrequencyPrompt.trim() !== ""),
-          literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== "")
+          literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== ""),
+          chronologyPromptOwn: Boolean(topic.chronologyPrompt && topic.chronologyPrompt.trim() !== "")
         };
       });
 
@@ -276,6 +289,11 @@ export class TopicService {
         if (!section) {
             throw new BadRequestException('Dział nie został znaleziony');
         }
+
+        const resolvedChronologyPrompt =
+            section.chronologyPrompt?.trim() === '' || !section.chronologyPrompt
+                ? subject.chronologyPrompt ?? null
+                : section.chronologyPrompt;
 
         const resolvedSolutionGuidePrompt =
             section.solutionGuidePrompt?.trim() === '' || !section.solutionGuidePrompt
@@ -332,14 +350,20 @@ export class TopicService {
                 ? subject.wordsPrompt ?? null
                 : section.wordsPrompt;
 
-        const resolvedChatPrompt =
-            section.chatPrompt?.trim() === '' || !section.chatPrompt
-                ? subject.chatPrompt ?? null
-                : section.chatPrompt;
+        const resolvedChatAnswerPrompt =
+            section.chatAnswerPrompt?.trim() === '' || !section.chatAnswerPrompt
+                ? subject.chatAnswerPrompt ?? null
+                : section.chatAnswerPrompt;
+
+        const resolvedChatQuestionPrompt =
+            section.chatQuestionPrompt?.trim() === '' || !section.chatQuestionPrompt
+                ? subject.chatQuestionPrompt ?? null
+                : section.chatQuestionPrompt;
 
         if (withSection) {
             response.section = {
                 ...section,
+                chronologyPrompt: resolvedChronologyPrompt,
                 solutionGuidePrompt: resolvedSolutionGuidePrompt,
                 literaturePrompt: resolvedLiteraturePrompt,
                 topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
@@ -351,7 +375,8 @@ export class TopicService {
                 closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
                 vocabluaryPrompt: resolvedStoriesPrompt,
                 wordsPrompt: resolvedWordsPrompt,
-                chatPrompt: resolvedChatPrompt,
+                chatAnswerPrompt: resolvedChatAnswerPrompt,
+                chatQuestionPrompt: resolvedChatQuestionPrompt,
                 solutionGuidePromptOwn: Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== ""),
                 subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
                 subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
@@ -360,10 +385,12 @@ export class TopicService {
                 closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
                 vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== ""),
                 wordsPromptOwn: Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== ""),
-                chatPromptOwn: Boolean(section.chatPrompt && section.chatPrompt.trim() !== ""),
+                chatAnswerPromptOwn: Boolean(section.chatAnswerPrompt && section.chatAnswerPrompt.trim() !== ""),
+                chatQuestionPromptOwn: Boolean(section.chatQuestionPrompt && section.chatQuestionPrompt.trim() !== ""),
                 topicExpansionPromptOwn: Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== ""),
                 topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== ""),
-                literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "")
+                literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== ""),
+                chronologyPromptOwn: Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== "")
             };
         }
 
@@ -384,6 +411,11 @@ export class TopicService {
 
         response.topic = {
             ...topic,
+            chronologyPrompt: this.getPrompt(
+              topic.chronologyPrompt,
+              section.chronologyPrompt,
+              subject.chronologyPrompt
+            ) ?? "",
             solutionGuidePrompt: this.getPrompt(
               topic.solutionGuidePrompt,
               section.solutionGuidePrompt,
@@ -447,10 +479,12 @@ export class TopicService {
             closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
             vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== ""),
             wordsPromptOwn: Boolean(topic.wordsPrompt && topic.wordsPrompt.trim() !== ""),
-            chatPromptOwn: Boolean(topic.chatPrompt && topic.chatPrompt.trim() !== ""),
+            chatAnswerPromptOwn: Boolean(topic.chatAnswerPrompt && topic.chatAnswerPrompt.trim() !== ""),
+            chatQuestionPromptOwn: Boolean(topic.chatQuestionPrompt && topic.chatQuestionPrompt.trim() !== ""),
             topicExpansionPromptOwn: Boolean(topic.topicExpansionPrompt && topic.topicExpansionPrompt.trim() !== ""),
             topicFrequencyPromptOwn: Boolean(topic.topicFrequencyPrompt && topic.topicFrequencyPrompt.trim() !== ""),
-            literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== "")
+            literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== ""),
+            chronologyPromptOwn: Boolean(topic.chronologyPrompt && topic.chronologyPrompt.trim() !== "")
           };
 
         return response;

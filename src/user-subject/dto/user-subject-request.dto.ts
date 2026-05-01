@@ -1,9 +1,9 @@
 import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export enum SubjectDetailLevel {
-  MANDATORY = "MANDATORY",
-  DESIRABLE = "DESIRABLE",
-  OPTIONAL = "OPTIONAL"
+  BASIC = "BASIC",
+  EXPANDED = "EXPANDED",
+  ACADEMIC = "ACADEMIC"
 }
 
 export class UserSubjectUpdateRequest {

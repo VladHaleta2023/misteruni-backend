@@ -1,20 +1,19 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubtopicCreateRequest, SubtopicUpdateRequest } from '../subtopic/dto/subtopic-request.dto';
-import { FrequencyAIGenerate, SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
+import { ChronologyAIGenerate, FrequencyAIGenerate, SubtopicsAIGenerate, SubtopicsStatusAIGenerate, TopicExpansionAIGenerate } from './dto/subtopics-generate.dto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
-import { DateUtils } from '../scripts/dateUtils';
 import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'started' | 'progress' | 'completed';
 
 export enum SubjectDetailLevel {
-  MANDATORY = "MANDATORY",
-  DESIRABLE = "DESIRABLE",
-  OPTIONAL = "OPTIONAL"
+  BASIC = "BASIC",
+  EXPANDED = "EXPANDED",
+  ACADEMIC = "ACADEMIC"
 }
 
 export interface SubtopicTask {
@@ -63,7 +62,7 @@ export class SubtopicService {
                 WITH 
                 user_settings AS (
                     SELECT COALESCE(threshold, 50) as threshold,
-                        COALESCE("detailLevel", 'MANDATORY') as detail_level
+                        COALESCE("detailLevel", 'BASIC') as detail_level
                     FROM "UserSubject"
                     WHERE "userId" = ${userId} AND "subjectId" = ${subjectId}
                     LIMIT 1
@@ -135,9 +134,9 @@ export class SubtopicService {
                     AND s."subjectId" = ${subjectId}
                     AND s."detailLevel"::text = ANY(
                         CASE (SELECT detail_level FROM user_settings)
-                            WHEN 'OPTIONAL' THEN ARRAY['MANDATORY', 'DESIRABLE', 'OPTIONAL']::text[]
-                            WHEN 'DESIRABLE' THEN ARRAY['MANDATORY', 'DESIRABLE']::text[]
-                            ELSE ARRAY['MANDATORY']::text[]
+                            WHEN 'ACADEMIC' THEN ARRAY['BASIC', 'EXPANDED', 'ACADEMIC']::text[]
+                            WHEN 'EXPANDED' THEN ARRAY['BASIC', 'EXPANDED']::text[]
+                            ELSE ARRAY['BASIC']::text[]
                         END
                     )
                 LEFT JOIN "UserSubtopic" us ON us."subtopicId" = s.id
@@ -1073,13 +1072,7 @@ export class SubtopicService {
             const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
-            const subtopics = await this.prismaService.subtopic.findMany({
-                where: { topicId: topicId },
-                select: { name: true },
-            });
-
-            const subtopicNames: string[] = subtopics.map(sub => sub.name);
-
+            data.content = data.content ?? subject.prompt;
             data.subject = data.subject ?? subject.name;
             data.information = data.information ?? topic.information;
             data.accounts = data.accounts ?? subject.accounts;
@@ -1088,7 +1081,90 @@ export class SubtopicService {
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
             data.frequency = data.frequency ?? topic.frequency;
-            data.subtopics = data.subtopics ?? subtopicNames;
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                !r?.prompt ||
+                !r?.changed ||
+                !r?.subject ||
+                !r?.section ||
+                !r?.topic ||
+                !Array.isArray(r.errors) ||
+                typeof r.attempt !== 'number' ||
+                typeof r.literature !== 'string' ||
+                typeof r.frequency !== 'number'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja częstotliwości tematu udana",
+                ...r
+            };
+        } catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    async chronologyAIGenerate(
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        data: ChronologyAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/chronology-generate`;
+
+        try {
+            const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+
+            const section = await this.prismaService.section.findUnique({ where: { id: sectionId } });
+            if (!section) throw new BadRequestException('Dział nie został znaleziony');
+
+            const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
+            if (!topic) throw new BadRequestException('Temat nie został znaleziony');
+
+            const subtopics = await this.prismaService.subtopic.findMany({
+                where: { topicId: topicId },
+                select: { name: true, detailLevel: true },
+            });
+
+            const subtopicList: [string, string][] = subtopics.map((sub) => {
+                const levelMap = {
+                    BASIC: 'P',
+                    EXPANDED: 'R',
+                    ACADEMIC: 'A',
+                };
+
+                return [sub.name, levelMap[sub.detailLevel]];
+            });
+
+            data.content = data.content ?? subject.prompt;
+            data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.literature = data.literature ?? topic.literature;
+            data.subtopics = data.subtopics ?? subtopicList;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -1108,14 +1184,9 @@ export class SubtopicService {
                 !Array.isArray(r.outputSubtopics) ||
                 !Array.isArray(r.errors) ||
                 typeof r.attempt !== 'number' ||
-                typeof r.literature !== 'string' ||
-                typeof r.frequency !== 'number'
+                typeof r.literature !== 'string'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
-            }
-
-            if (!r.subtopics.every((item: any) => typeof item === 'string')) {
-                throw new BadRequestException('Subtopics musi być listą stringów');
             }
 
             if (!r.errors.every((item: any) => typeof item === 'string')) {

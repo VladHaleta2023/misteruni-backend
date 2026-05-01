@@ -55,7 +55,11 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
-  chatPrompt?: string;
+  chatAnswerPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  chatQuestionPrompt?: string;
 
   @IsOptional()
   @IsString()
@@ -68,6 +72,10 @@ export class SubjectUpdateRequest {
   @IsOptional()
   @IsString()
   topicFrequencyPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  chronologyPrompt?: string;
 
   @IsOptional()
   @IsString()

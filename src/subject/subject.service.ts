@@ -250,9 +250,11 @@ export class SubjectService {
                     closedSubtopicsPromptOwn: true,
                     vocabluaryPromptOwn: true,
                     wordsPromptOwn: true,
-                    chatPromptOwn: true,
+                    chatAnswerPromptOwn: true,
+                    chatQuestionPromptOwn: true,
                     topicExpansionPromptOwn: true,
-                    topicFrequencyPromptOwn: true
+                    topicFrequencyPromptOwn: true,
+                    chronologyPromptOwn: true
                 }
             };
         } catch (error) {
@@ -433,6 +435,7 @@ export class SubjectService {
         withSections = true,
         withSubtopics = true,
         notStories = true,
+        allSections = false,
         minSectionPart = 1
     ) {
         try {
@@ -458,10 +461,16 @@ export class SubjectService {
                 partId: { gte: minSectionPart },
             };
 
-            if (notStories === true) {
-                sectionWhere.type = { not: 'Stories' };
-            } else if (notStories === false) {
-                sectionWhere.type = 'Stories';
+            if (!allSections) {
+                if (notStories) {
+                    sectionWhere.type = {
+                        not: {
+                            in: ['Stories', 'Writing']
+                        }
+                    };
+                } else if (!notStories) {
+                    sectionWhere.type = 'Stories';
+                }
             }
 
             const sections = await this.prismaService.section.findMany({
@@ -484,6 +493,7 @@ export class SubjectService {
             const sectionSubtopicsStatusPromptMap = new Map<number, string>();
             const sectionTopicExpansionPromptMap = new Map<number, string>();
             const sectionTopicFrequencyPromptMap = new Map<number, string>();
+            const sectionChronologyPromptMap = new Map<number, string>();
             const sectionWordsPromptMap = new Map<number, string>();
 
             for (const section of sections) {
@@ -512,6 +522,11 @@ export class SubjectService {
                         ? subject.topicFrequencyPrompt ?? null
                         : section.topicFrequencyPrompt;
 
+                const resolvedChronologyPrompt =
+                    !section.chronologyPrompt || section.chronologyPrompt.trim() === ''
+                        ? subject.chronologyPrompt ?? null
+                        : section.chronologyPrompt;
+
                 const resolvedWordsPrompt =
                     !section.wordsPrompt || section.wordsPrompt.trim() === ''
                         ? subject.wordsPrompt ?? null
@@ -522,6 +537,7 @@ export class SubjectService {
                 sectionSubtopicsStatusPromptMap.set(section.id, resolvedSubtopicsStatusPrompt);
                 sectionTopicExpansionPromptMap.set(section.id, resolvedTopicExpansionPrompt);
                 sectionTopicFrequencyPromptMap.set(section.id, resolvedTopicFrequencyPrompt);
+                sectionChronologyPromptMap.set(section.id, resolvedChronologyPrompt);
                 sectionWordsPromptMap.set(section.id, resolvedWordsPrompt);
             }
 
@@ -531,6 +547,7 @@ export class SubjectService {
                 const resolvedSubtopicsStatusPrompt = sectionSubtopicsStatusPromptMap.get(section.id) ?? null;
                 const resolvedTopicExpansionPrompt = sectionTopicExpansionPromptMap.get(section.id) ?? null;
                 const resolvedTopicFrequencyPrompt = sectionTopicFrequencyPromptMap.get(section.id) ?? null;
+                const resolvedChronologyPrompt = sectionChronologyPromptMap.get(section.id) ?? null;
                 const resolvedWordsPrompt = sectionWordsPromptMap.get(section.id) ?? null;
 
                 const topicsWithPrompts = section.topics.map(topic => {
@@ -546,7 +563,8 @@ export class SubjectService {
                         topicExpansionPrompt: resolvedTopicExpansionPrompt,
                         topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
                         wordsPrompt: resolvedWordsPrompt,
-                        literaturePrompt: resolvedLiteraturePrompt
+                        literaturePrompt: resolvedLiteraturePrompt,
+                        chronologyPrompt: resolvedChronologyPrompt
                     };
 
                     if (withSections) {
@@ -591,6 +609,7 @@ export class SubjectService {
                     resolvedTopicFrequencyPrompt,
                     resolvedWordsPrompt,
                     resolvedLiteraturePrompt,
+                    resolvedChronologyPrompt,
                     topics: topicsWithPrompts
                 };
             });

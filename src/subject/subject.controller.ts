@@ -52,10 +52,12 @@ export class SubjectController {
     @Query('withSubtopics') withSubtopics?: string,
     @Query('notStories') notStories?: string,
     @Query('minSectionPart') minSectionPart?: string,
+    @Query('allSections') allSections?: string,
   ) {
     const withSectionsBool = !(withSections?.toLowerCase() === 'false');
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
+    const allSectionsBool = allSections === 'true';
     const notStoriesBool =
       notStories === undefined
         ? true
@@ -65,7 +67,7 @@ export class SubjectController {
         ? Number(minSectionPart)
         : 1;
 
-    return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, notStoriesBool, minSectionPartNumber);
+    return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, notStoriesBool, allSectionsBool, minSectionPartNumber);
   }
 
   @UseGuards(JwtAuthGuard)

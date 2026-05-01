@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { PrismaService } from '../prisma/prisma.service';
 import { SectionUpdateRequest } from '../section/dto/section-request.dto';
 import { TimezoneService } from '../timezone/timezone.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class SectionService {
@@ -94,6 +95,41 @@ export class SectionService {
         return diffDays;
     }
 
+    private async syncUserProgressTables(userId: number, subjectId: number, tx: Prisma.TransactionClient) {
+        await tx.$executeRaw`
+            INSERT INTO "UserSection" ("userId", "subjectId", "sectionId", "percent", "createdAt", "updatedAt")
+            SELECT ${userId}, ${subjectId}, s.id, 0, NOW(), NOW()
+            FROM "Section" s
+            LEFT JOIN "UserSection" us ON us."sectionId" = s.id 
+                AND us."userId" = ${userId}
+                AND us."subjectId" = ${subjectId}
+            WHERE us."sectionId" IS NULL 
+                AND s."subjectId" = ${subjectId};
+        `;
+
+        await tx.$executeRaw`
+            INSERT INTO "UserTopic" ("userId", "subjectId", "topicId", "sectionId", "percent", "createdAt", "updatedAt")
+            SELECT ${userId}, ${subjectId}, t.id, t."sectionId", 0, NOW(), NOW()
+            FROM "Topic" t
+            LEFT JOIN "UserTopic" ut ON ut."topicId" = t.id 
+                AND ut."userId" = ${userId}
+                AND ut."subjectId" = ${subjectId}
+            WHERE ut."topicId" IS NULL 
+                AND t."subjectId" = ${subjectId};
+        `;
+
+        await tx.$executeRaw`
+            INSERT INTO "UserSubtopic" ("userId", "subjectId", "sectionId", "topicId", "subtopicId", "percent", "createdAt", "updatedAt")
+            SELECT ${userId}, ${subjectId}, st."sectionId", st."topicId", st.id, 0, NOW(), NOW()
+            FROM "Subtopic" st
+            LEFT JOIN "UserSubtopic" ust ON ust."subtopicId" = st.id 
+                AND ust."userId" = ${userId}
+                AND ust."subjectId" = ${subjectId}
+            WHERE ust."subtopicId" IS NULL 
+                AND st."subjectId" = ${subjectId};
+        `;
+    }
+
     async findSections(userId: number, subjectId: number) {
         try {
             const [subject, userSubject] = await Promise.all([
@@ -107,21 +143,12 @@ export class SectionService {
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
 
             const threshold = userSubject?.threshold ?? 50;
-            const detailLevel = userSubject?.detailLevel ?? 'MANDATORY';
+            const detailLevel = userSubject?.detailLevel ?? 'BASIC';
             const dailyStudyMinutes = userSubject?.dailyStudyMinutes ?? 120;
             const detailLevels = this.getDetailLevels(detailLevel);
 
             const result = await this.prismaService.$transaction(async (tx) => {
-                await tx.$executeRaw`
-                    INSERT INTO "UserTopic" ("userId", "subjectId", "topicId", "sectionId", "percent")
-                    SELECT ${userId}, ${subjectId}, t.id, t."sectionId", 0
-                    FROM "Topic" t
-                    LEFT JOIN "UserTopic" ut ON ut."topicId" = t.id 
-                        AND ut."userId" = ${userId}
-                        AND ut."subjectId" = ${subjectId}
-                    WHERE ut."topicId" IS NULL 
-                        AND t."subjectId" = ${subjectId};
-                `;
+                await this.syncUserProgressTables(userId, subjectId, tx);
 
                 await tx.$executeRaw`
                     WITH 
@@ -492,108 +519,12 @@ export class SectionService {
         }
     }
 
-    async findFirstUncompletedTopic(
-        userId: number,
-        subjectId: number
-    ): Promise<{
-        statusCode: number;
-        message: string;
-        topic: {
-            sectionId: number;
-            topicId: number;
-            sectionType: string;
-        } | null;
-    }> {
-        try {
-            const firstResult = await this.prismaService.$queryRaw<Array<{
-                sectionId: number;
-                topicId: number;
-                sectionType: string;
-            }>>`
-                WITH user_threshold AS (
-                    SELECT COALESCE(us.threshold, 50) AS threshold_value
-                    FROM "UserSubject" us
-                    WHERE us."userId" = ${userId}
-                    AND us."subjectId" = ${subjectId}
-                    LIMIT 1
-                )
-                SELECT 
-                    t."sectionId",
-                    t.id AS "topicId",
-                    s.type AS "sectionType"
-                FROM "Topic" t
-                INNER JOIN "Section" s ON s.id = t."sectionId"
-                LEFT JOIN "UserTopic" ut 
-                    ON ut."topicId" = t.id
-                AND ut."userId" = ${userId}
-                CROSS JOIN user_threshold uts
-                WHERE s."subjectId" = ${subjectId}
-                AND t."subjectId" = ${subjectId}
-                AND COALESCE(ut.percent, 0) < uts.threshold_value
-                ORDER BY
-                    s."partId" ASC,
-                    t."partId" ASC
-                LIMIT 1;
-            `;
-
-            if (firstResult.length > 0) {
-                return {
-                    statusCode: 200,
-                    message: 'Ostatni niezakończony temat pobrany',
-                    topic: firstResult[0],
-                };
-            }
-
-            const fallbackResult = await this.prismaService.$queryRaw<Array<{
-                sectionId: number;
-                topicId: number;
-                sectionType: string;
-            }>>`
-                SELECT 
-                    t."sectionId",
-                    t.id AS "topicId",
-                    s.type AS "sectionType"
-                FROM "Topic" t
-                INNER JOIN "Section" s ON s.id = t."sectionId"
-                LEFT JOIN "UserTopic" ut 
-                    ON ut."topicId" = t.id
-                AND ut."userId" = ${userId}
-                WHERE s."subjectId" = ${subjectId}
-                AND t."subjectId" = ${subjectId}
-                ORDER BY
-                    COALESCE(ut.percent, 0) ASC,
-                    s."partId" ASC,
-                    t."partId" ASC
-                LIMIT 1;
-            `;
-
-            if (fallbackResult.length > 0) {
-                return {
-                    statusCode: 200,
-                    message:
-                        'Wszystkie tematy ukończone — wybrano temat z najmniejszym postępem',
-                    topic: fallbackResult[0],
-                };
-            }
-            
-            return {
-                statusCode: 200,
-                message: 'Brak tematów w przedmiocie',
-                topic: null,
-            };
-        } catch (error) {
-            throw new InternalServerErrorException(
-                'Nie udało się znaleźć następnego tematu'
-            );
-        }
-    }
-
     private getDetailLevels(userDetailLevel: string): string[] {
         switch (userDetailLevel) {
-            case 'MANDATORY': return ['MANDATORY'];
-            case 'DESIRABLE': return ['MANDATORY', 'DESIRABLE'];
-            case 'OPTIONAL': return ['MANDATORY', 'DESIRABLE', 'OPTIONAL'];
-            default: return ['MANDATORY'];
+            case 'BASIC': return ['BASIC'];
+            case 'EXPANDED': return ['BASIC', 'EXPANDED'];
+            case 'ACADEMIC': return ['BASIC', 'EXPANDED', 'ACADEMIC'];
+            default: return ['BASIC'];
         }
     }
 
@@ -656,9 +587,11 @@ export class SectionService {
             const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
             const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
             const wordsPromptOwn = Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== "");
-            const chatPromptOwn = Boolean(section.chatPrompt && section.chatPrompt.trim() !== "");
+            const chatAnswerPromptOwn = Boolean(section.chatAnswerPrompt && section.chatAnswerPrompt.trim() !== "");
+            const chatQuestionPromptOwn = Boolean(section.chatQuestionPrompt && section.chatQuestionPrompt.trim() !== "");
             const topicExpansionPromptOwn = Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== "");
             const topicFrequencyPromptOwn = Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== "");
+            const chronologyPromptOwn = Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== "");
             const literaturePromptOwn = Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "");
 
             const prompts = {
@@ -676,6 +609,9 @@ export class SectionService {
 
                 topicFrequencyPrompt: topicFrequencyPromptOwn ? section.topicFrequencyPrompt.trim() : (subject.topicFrequencyPrompt || ""),
                 topicFrequencyPromptOwn: topicFrequencyPromptOwn,
+
+                chronologyPrompt: chronologyPromptOwn ? section.chronologyPrompt.trim() : (subject.chronologyPrompt || ""),
+                chronologyPromptOwn: chronologyPromptOwn,
 
                 subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
                 subtopicsPromptOwn: subtopicsPromptOwn,
@@ -698,8 +634,11 @@ export class SectionService {
                 wordsPrompt: wordsPromptOwn ? section.wordsPrompt.trim() : (subject.wordsPrompt || ""),
                 wordsPromptOwn: wordsPromptOwn,
 
-                chatPrompt: chatPromptOwn ? section.chatPrompt.trim() : (subject.chatPrompt || ""),
-                chatPromptOwn: chatPromptOwn,
+                chatAnswerPrompt: chatAnswerPromptOwn ? section.chatAnswerPrompt.trim() : (subject.chatAnswerPrompt || ""),
+                chatAnswerPromptOwn: chatAnswerPromptOwn,
+
+                chatQuestionPrompt: chatQuestionPromptOwn ? section.chatQuestionPrompt.trim() : (subject.chatQuestionPrompt || ""),
+                chatQuestionPromptOwn: chatQuestionPromptOwn,
             };
 
             const enrichedSection: any = {
