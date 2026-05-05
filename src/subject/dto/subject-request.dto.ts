@@ -55,11 +55,7 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
-  chatAnswerPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  chatQuestionPrompt?: string;
+  chatPrompt?: string;
 
   @IsOptional()
   @IsString()

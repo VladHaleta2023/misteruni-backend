@@ -21,10 +21,6 @@ export class UserSubjectUpdateRequest {
   @IsInt()
   @IsIn([30, 60, 90, 120, 150, 180])
   dailyStudyMinutes?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  style?: boolean;
 }
 
 export class UserSubjectCreateRequest {
@@ -42,8 +38,4 @@ export class UserSubjectCreateRequest {
   @IsInt()
   @IsIn([30, 60, 90, 120, 150, 180])
   dailyStudyMinutes?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  style?: boolean;
 }

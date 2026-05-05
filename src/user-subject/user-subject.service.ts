@@ -99,17 +99,17 @@ export class UserSubjectService {
             const result = await this.prismaService.$transaction(async (tx) => {
                 const userSubject = await tx.userSubject.create({
                     data: {
-                    userId,
-                    subjectId,
-                    ...data
+                        userId,
+                        subjectId,
+                        ...data
                     }
                 });
 
                 const userWordsCount = await tx.word.count({
                     where: {
-                    userId,
-                    subjectId,
-                    topicId: { not: null }
+                        userId,
+                        subjectId,
+                        topicId: { not: null }
                     }
                 });
 
@@ -195,6 +195,7 @@ export class UserSubjectService {
                 subject: result
             };
         } catch (error) {
+            console.log(error);
             throw new InternalServerErrorException(`Błąd podczas dodawania przedmiotu: ${error.message}`);
         }
     }

@@ -43,11 +43,7 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
-  chatAnswerPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  chatQuestionPrompt?: string;
+  chatPrompt?: string;
 
   @IsOptional()
   @IsString()

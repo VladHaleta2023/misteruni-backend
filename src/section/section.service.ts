@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { PrismaService } from '../prisma/prisma.service';
 import { SectionUpdateRequest } from '../section/dto/section-request.dto';
 import { TimezoneService } from '../timezone/timezone.service';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class SectionService {
@@ -95,39 +94,89 @@ export class SectionService {
         return diffDays;
     }
 
-    private async syncUserProgressTables(userId: number, subjectId: number, tx: Prisma.TransactionClient) {
-        await tx.$executeRaw`
-            INSERT INTO "UserSection" ("userId", "subjectId", "sectionId", "percent", "createdAt", "updatedAt")
-            SELECT ${userId}, ${subjectId}, s.id, 0, NOW(), NOW()
-            FROM "Section" s
-            LEFT JOIN "UserSection" us ON us."sectionId" = s.id 
-                AND us."userId" = ${userId}
-                AND us."subjectId" = ${subjectId}
-            WHERE us."sectionId" IS NULL 
-                AND s."subjectId" = ${subjectId};
-        `;
-
-        await tx.$executeRaw`
-            INSERT INTO "UserTopic" ("userId", "subjectId", "topicId", "sectionId", "percent", "createdAt", "updatedAt")
-            SELECT ${userId}, ${subjectId}, t.id, t."sectionId", 0, NOW(), NOW()
-            FROM "Topic" t
-            LEFT JOIN "UserTopic" ut ON ut."topicId" = t.id 
-                AND ut."userId" = ${userId}
-                AND ut."subjectId" = ${subjectId}
-            WHERE ut."topicId" IS NULL 
-                AND t."subjectId" = ${subjectId};
-        `;
-
-        await tx.$executeRaw`
-            INSERT INTO "UserSubtopic" ("userId", "subjectId", "sectionId", "topicId", "subtopicId", "percent", "createdAt", "updatedAt")
-            SELECT ${userId}, ${subjectId}, st."sectionId", st."topicId", st.id, 0, NOW(), NOW()
+    private async getPredictionSubtopics(userId: number, subjectId: number, detailLevels: string[]) {
+        return this.prismaService.$queryRaw<any[]>`
+            SELECT 
+                st.id,
+                st.name,
+                st.importance,
+                st."topicId",
+                st."sectionId",
+                COALESCE(ust.percent, 0) as percent
             FROM "Subtopic" st
             LEFT JOIN "UserSubtopic" ust ON ust."subtopicId" = st.id 
                 AND ust."userId" = ${userId}
-                AND ust."subjectId" = ${subjectId}
-            WHERE ust."subtopicId" IS NULL 
-                AND st."subjectId" = ${subjectId};
+            WHERE st."subjectId" = ${subjectId}
+                AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
+            ORDER BY st.importance DESC;
         `;
+    }
+
+    private async getSectionsWithTopics(subjectId: number) {
+        return this.prismaService.$queryRaw<any[]>`
+            SELECT 
+                s.id AS "sectionId",
+                s.name AS "sectionName",
+                s.type AS "sectionType",
+                s."partId" AS "sectionPartId",
+                t.id AS "topicId",
+                t.name AS "topicName",
+                t.type AS "topicType",
+                t."partId" AS "topicPartId",
+                t."frequency" AS "topicFrequency"
+            FROM "Section" s
+            LEFT JOIN "Topic" t ON t."sectionId" = s.id
+            WHERE s."subjectId" = ${subjectId}
+            ORDER BY s."partId" ASC, t."partId" ASC;
+        `;
+    }
+
+    private async getCurrentPercents(userId: number, subjectId: number) {
+        return this.prismaService.$queryRaw<any[]>`
+            SELECT 
+                ut."topicId",
+                ut.percent as "topicPercent",
+                ut."sectionId",
+                us.percent as "sectionPercent"
+            FROM "UserTopic" ut
+            INNER JOIN "UserSection" us ON us."sectionId" = ut."sectionId" 
+                AND us."userId" = ut."userId" 
+                AND us."subjectId" = ut."subjectId"
+            WHERE ut."userId" = ${userId}
+                AND ut."subjectId" = ${subjectId};
+        `;
+    }
+
+    private async getWordsWithProgress(userId: number, subjectId: number) {
+        return this.prismaService.$queryRaw<any[]>`
+            SELECT frequency, "totalAttemptCount", "totalCorrectCount"
+            FROM "Word"
+            WHERE "userId" = ${userId} AND "subjectId" = ${subjectId}
+        `;
+    }
+
+    private async getLiteratureNames(subjectId: number) {
+        return this.prismaService.literature.findMany({
+            where: { subjectId },
+            select: { name: true },
+            orderBy: { name: 'asc' }
+        });
+    }
+
+    private async getFirstFinishedTask(userId: number, subjectId: number) {
+        return this.prismaService.task.findFirst({
+            where: {
+                userId,
+                subjectId,
+                finished: true
+            },
+            orderBy: {
+                updatedAt: 'asc'
+            },
+            select: {
+                updatedAt: true
+            }
+        });
     }
 
     async findSections(userId: number, subjectId: number) {
@@ -147,180 +196,14 @@ export class SectionService {
             const dailyStudyMinutes = userSubject?.dailyStudyMinutes ?? 120;
             const detailLevels = this.getDetailLevels(detailLevel);
 
-            const result = await this.prismaService.$transaction(async (tx) => {
-                await this.syncUserProgressTables(userId, subjectId, tx);
-
-                await tx.$executeRaw`
-                    WITH 
-                    -- Проценты на основе подтем (для тем С подтемами)
-                    subtopic_based_percents AS (
-                        SELECT 
-                            st."topicId",
-                            ROUND(AVG(COALESCE(ust.percent, 0))) as subtopic_percent,
-                            MAX(st."sectionId") as section_id
-                        FROM "Subtopic" st
-                        LEFT JOIN "UserSubtopic" ust ON ust."subtopicId" = st.id 
-                            AND ust."userId" = ${userId}
-                        WHERE st."subjectId" = ${subjectId}
-                            AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
-                        GROUP BY st."topicId"
-                    ),
-                    
-                    -- Все темы с подтемами
-                    topics_with_subtopics AS (
-                        SELECT DISTINCT st."topicId"
-                        FROM "Subtopic" st
-                        WHERE st."subjectId" = ${subjectId}
-                            AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
-                    ),
-                    
-                    -- Только темы С подтемами
-                    topics_with_subtopics_list AS (
-                        SELECT 
-                            t.id as "topicId",
-                            t."sectionId"
-                        FROM "Topic" t
-                        INNER JOIN topics_with_subtopics tws ON tws."topicId" = t.id
-                        WHERE t."subjectId" = ${subjectId}
-                    ),
-                    
-                    -- Проценты тем (ТОЛЬКО для тем С подтемами)
-                    topic_percents AS (
-                        SELECT 
-                            tws."topicId",
-                            COALESCE(sbp.subtopic_percent, 0) as topic_percent,
-                            tws."sectionId"
-                        FROM topics_with_subtopics_list tws
-                        LEFT JOIN subtopic_based_percents sbp ON sbp."topicId" = tws."topicId"
-                    ),
-                    
-                    -- Обновляем ТОЛЬКО темы с подтемами
-                    updated_topics AS (
-                        UPDATE "UserTopic" ut
-                        SET percent = tp.topic_percent
-                        FROM topic_percents tp
-                        WHERE ut."topicId" = tp."topicId"
-                            AND ut."userId" = ${userId}
-                            AND ut."subjectId" = ${subjectId}
-                        RETURNING ut."topicId", ut.percent, ut."sectionId"
-                    ),
-                    
-                    -- Разделы, в которых есть темы с подтемами
-                    sections_with_subtopics AS (
-                        SELECT DISTINCT s.id as section_id
-                        FROM "Section" s
-                        INNER JOIN "Topic" t ON t."sectionId" = s.id
-                        INNER JOIN topics_with_subtopics tws ON tws."topicId" = t.id
-                        WHERE s."subjectId" = ${subjectId}
-                    ),
-                    
-                    -- Проценты разделов ТОЛЬКО для разделов с подтемами
-                    section_percents AS (
-                        SELECT 
-                            s.id as section_id,
-                            COALESCE(
-                                ROUND(
-                                    SUM(tp.topic_percent * t.frequency) / NULLIF(SUM(t.frequency), 0)
-                                ), 0
-                            ) as section_percent
-                        FROM "Section" s
-                        INNER JOIN sections_with_subtopics sws ON sws.section_id = s.id
-                        LEFT JOIN "Topic" t ON t."sectionId" = s.id
-                        LEFT JOIN topic_percents tp ON tp."topicId" = t.id
-                        WHERE s."subjectId" = ${subjectId}
-                        GROUP BY s.id
-                    )
-                    
-                    -- Обновляем ТОЛЬКО разделы с подтемами
-                    UPDATE "UserSection" us
-                    SET percent = sp.section_percent
-                    FROM section_percents sp
-                    WHERE us."sectionId" = sp.section_id
-                        AND us."userId" = ${userId}
-                        AND us."subjectId" = ${subjectId};
-                `;
-
-                // Остальная часть кода без изменений...
-                const predictionSubtopics = await tx.$queryRaw<any[]>`
-                    SELECT 
-                        st.id,
-                        st.name,
-                        st.importance,
-                        st."topicId",
-                        st."sectionId",
-                        COALESCE(ust.percent, 0) as percent
-                    FROM "Subtopic" st
-                    LEFT JOIN "UserSubtopic" ust ON ust."subtopicId" = st.id 
-                        AND ust."userId" = ${userId}
-                    WHERE st."subjectId" = ${subjectId}
-                        AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
-                    ORDER BY st.importance DESC;
-                `;
-
-                const sectionsWithTopics = await tx.$queryRaw<any[]>`
-                    SELECT 
-                        s.id AS "sectionId",
-                        s.name AS "sectionName",
-                        s.type AS "sectionType",
-                        s."partId" AS "sectionPartId",
-                        t.id AS "topicId",
-                        t.name AS "topicName",
-                        t."partId" AS "topicPartId",
-                        t."frequency" AS "topicFrequency"
-                    FROM "Section" s
-                    LEFT JOIN "Topic" t ON t."sectionId" = s.id
-                    WHERE s."subjectId" = ${subjectId}
-                    ORDER BY s."partId" ASC, t."partId" ASC;
-                `;
-
-                const currentPercents = await tx.$queryRaw<any[]>`
-                    SELECT 
-                        ut."topicId",
-                        ut.percent as "topicPercent",
-                        ut."sectionId",
-                        us.percent as "sectionPercent"
-                    FROM "UserTopic" ut
-                    INNER JOIN "UserSection" us ON us."sectionId" = ut."sectionId" 
-                        AND us."userId" = ut."userId" 
-                        AND us."subjectId" = ut."subjectId"
-                    WHERE ut."userId" = ${userId}
-                        AND ut."subjectId" = ${subjectId};
-                `;
-
-                const words = await tx.word.findMany({
-                    where: {
-                        subjectId,
-                        userId
-                    },
-                    select: {
-                        frequency: true,
-                        totalAttemptCount: true,
-                        totalCorrectCount: true
-                    }
-                });
-
-                const literatures = await tx.literature.findMany({
-                    where: {
-                        subjectId: subjectId
-                    },
-                    select: {
-                        name: true
-                    },
-                    orderBy: {
-                        name: 'asc'
-                    }
-                });
-
-                return {
-                    predictionSubtopics,
-                    sectionsWithTopics,
-                    currentPercents,
-                    words,
-                    literatures
-                };
-            }, { timeout: 900000 });
-            
-            const { predictionSubtopics, sectionsWithTopics, currentPercents, words, literatures } = result;
+            const [predictionSubtopics, sectionsWithTopics, currentPercents, words, literatures, firstTask] = await Promise.all([
+                this.getPredictionSubtopics(userId, subjectId, detailLevels),
+                this.getSectionsWithTopics(subjectId),
+                this.getCurrentPercents(userId, subjectId),
+                this.getWordsWithProgress(userId, subjectId),
+                this.getLiteratureNames(subjectId),
+                this.getFirstFinishedTask(userId, subjectId)
+            ]);
 
             const subtopicsByTopic = new Map<number, any[]>();
             predictionSubtopics.forEach(subtopic => {
@@ -381,9 +264,7 @@ export class SectionService {
             ];
 
             const sectionMap = new Map<number, any>();
-            let firstUncompletedTopic: { sectionId: number, topicId: number, sectionType: string } | null = null;
-            let topicWithMinPercent: { sectionId: number, topicId: number, percent: number, sectionType: string } | null = null;
-
+            
             for (const row of sectionsWithTopics) {
                 let section = sectionMap.get(row.sectionId);
                 if (!section) {
@@ -403,28 +284,12 @@ export class SectionService {
                     const topicStatus = this.getStatus(topicPercent, threshold);
                     const isUncompleted = topicStatus !== 'completed';
 
-                    if (!firstUncompletedTopic && isUncompleted) {
-                        firstUncompletedTopic = {
-                            sectionId: row.sectionId,
-                            topicId: row.topicId,
-                            sectionType: row.sectionType
-                        };
-                    }
-
-                    if (!topicWithMinPercent || topicPercent < topicWithMinPercent.percent) {
-                        topicWithMinPercent = {
-                            sectionId: row.sectionId,
-                            topicId: row.topicId,
-                            percent: topicPercent,
-                            sectionType: row.sectionType
-                        };
-                    }
-
                     const topicSubtopics = subtopicsByTopic.get(row.topicId) || [];
 
                     const topic = {
                         id: row.topicId,
                         name: row.topicName,
+                        type: row.topicType,
                         percent: topicPercent,
                         frequency: row.topicFrequency || 0,
                         status: topicStatus,
@@ -436,22 +301,6 @@ export class SectionService {
 
             const enrichedSections = Array.from(sectionMap.values());
             const totalPercent = this.calculateTotalPercent(enrichedSections);
-
-            const firstTask = await this.prismaService.task.findFirst({
-                where: {
-                    topic: {
-                        subjectId
-                    },
-                    userId,
-                    finished: true
-                },
-                orderBy: {
-                    updatedAt: 'asc'
-                },
-                select: {
-                    updatedAt: true
-                }
-            });
 
             const initialNow = firstTask?.updatedAt ?? new Date();
 
@@ -474,29 +323,14 @@ export class SectionService {
                 }))
             ];
 
-            const initialPrediction = await this.calculatePrediction(
-                initialNow,
-                threshold,
-                initialItems,
-                dailyStudyMinutes,
-                userId,
-                subjectId
-            );
-
-            const prediction = await this.calculatePrediction(
-                new Date(),
-                threshold,
-                predictionItems,
-                dailyStudyMinutes,
-                userId,
-                subjectId
-            );
+            const [initialPrediction, prediction] = await Promise.all([
+                this.calculatePrediction(initialNow, threshold, initialItems, dailyStudyMinutes, userId, subjectId),
+                this.calculatePrediction(new Date(), threshold, predictionItems, dailyStudyMinutes, userId, subjectId)
+            ]);
 
             let deltaDays: number | null = null;
             if (firstTask)
                 deltaDays = this.getDaysDifference(initialPrediction.date, prediction.date);
-
-            const finalTopic = firstUncompletedTopic || topicWithMinPercent;
 
             return {
                 statusCode: 200,
@@ -506,11 +340,6 @@ export class SectionService {
                 prediction: prediction.date,
                 deltaDays,
                 subjectId,
-                firstUncompletedTopic: finalTopic ? {
-                    sectionId: finalTopic.sectionId,
-                    topicId: finalTopic.topicId,
-                    sectionType: finalTopic.sectionType
-                } : null,
                 literatures: literatures.map(lit => lit.name)
             };
         } catch (error) {
@@ -587,8 +416,7 @@ export class SectionService {
             const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
             const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
             const wordsPromptOwn = Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== "");
-            const chatAnswerPromptOwn = Boolean(section.chatAnswerPrompt && section.chatAnswerPrompt.trim() !== "");
-            const chatQuestionPromptOwn = Boolean(section.chatQuestionPrompt && section.chatQuestionPrompt.trim() !== "");
+            const chatPromptOwn = Boolean(section.chatPrompt && section.chatPrompt.trim() !== "");
             const topicExpansionPromptOwn = Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== "");
             const topicFrequencyPromptOwn = Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== "");
             const chronologyPromptOwn = Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== "");
@@ -634,11 +462,8 @@ export class SectionService {
                 wordsPrompt: wordsPromptOwn ? section.wordsPrompt.trim() : (subject.wordsPrompt || ""),
                 wordsPromptOwn: wordsPromptOwn,
 
-                chatAnswerPrompt: chatAnswerPromptOwn ? section.chatAnswerPrompt.trim() : (subject.chatAnswerPrompt || ""),
-                chatAnswerPromptOwn: chatAnswerPromptOwn,
-
-                chatQuestionPrompt: chatQuestionPromptOwn ? section.chatQuestionPrompt.trim() : (subject.chatQuestionPrompt || ""),
-                chatQuestionPromptOwn: chatQuestionPromptOwn,
+                chatAnswerPrompt: chatPromptOwn ? section.chatPrompt.trim() : (subject.chatPrompt || ""),
+                chatPromptOwn: chatPromptOwn,
             };
 
             const enrichedSection: any = {

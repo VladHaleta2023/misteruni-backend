@@ -250,8 +250,7 @@ export class SubjectService {
                     closedSubtopicsPromptOwn: true,
                     vocabluaryPromptOwn: true,
                     wordsPromptOwn: true,
-                    chatAnswerPromptOwn: true,
-                    chatQuestionPromptOwn: true,
+                    chatPromptOwn: true,
                     topicExpansionPromptOwn: true,
                     topicFrequencyPromptOwn: true,
                     chronologyPromptOwn: true
@@ -699,6 +698,7 @@ export class SubjectService {
                     AND TRIM(lit) <> ''
                     AND NOT (TRIM(lit) LIKE '\[%' AND TRIM(lit) LIKE '%\]%')
                 ) t
+                WHERE literature = 'Biblia: Księga Rodzaju'
                 ORDER BY literature ASC;
             `;
 

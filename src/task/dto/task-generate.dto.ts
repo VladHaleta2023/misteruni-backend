@@ -204,7 +204,7 @@ export class SolutionGuideAIGenerate {
   attempt: number;
 
   @IsString()
-  solutionGuide: string;
+  solution: string;
 
   @IsArray()
   @IsString({ each: true })
@@ -346,10 +346,6 @@ export class ChatAIGenerate {
   explanation?: string;
 
   @IsOptional()
-  @IsBoolean()
-  style?: boolean;
-
-  @IsOptional()
   @IsString()
   information?: string;
 
@@ -411,9 +407,6 @@ export class ChatAIGenerate {
 
   @IsBoolean()
   chatFinished: boolean;
-
-  @IsString()
-  mode: string;
 }
 
 export class VocabluaryAIGenerate {

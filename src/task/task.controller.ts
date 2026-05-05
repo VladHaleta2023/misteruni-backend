@@ -161,7 +161,7 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Put(':id/solution-guide')
+  @Put(':id/solution')
   async updateSolutionGuide(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -244,7 +244,7 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post(':id/solution-guide-generate')
+  @Post(':id/solution-generate')
   async solutionGuideAIGenerate(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,

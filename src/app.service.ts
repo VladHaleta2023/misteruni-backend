@@ -2,6 +2,11 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 import { StorageService } from './storage/storage.service';
 
+export interface Topic {
+  name: string;
+  literature: string;
+}
+
 @Injectable()
 export class AppService {
     constructor(

@@ -56,10 +56,6 @@ export class TaskUpdateChatRequest {
   chatFinished: boolean;
 
   @IsOptional()
-  @IsEnum(ChatMode)
-  mode: ChatMode;
-
-  @IsOptional()
   @IsString()
   userSolution: string;
 }
@@ -74,7 +70,7 @@ export class TaskUserSolutionRequest {
 
 export class SolutionGuideRequest {
   @IsString()
-  solutionGuide: string;
+  solution: string;
 }
 
 export class Subtopic {

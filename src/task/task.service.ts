@@ -1145,7 +1145,6 @@ export class TaskService {
             }
 
             data.explanation = data.explanation ?? task.explanation;
-            data.style = data.style ?? false;
             data.subject = data.subject ?? subject.name;
             data.information = data.information ?? topic.information;
             data.accounts = data.accounts ?? subject.accounts;
@@ -1153,24 +1152,13 @@ export class TaskService {
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
 
-            if (data.mode === "STUDENT_ANSWER") {
-                const resolvedChatPrompt = this.getPrompt(
-                    topic.chatAnswerPrompt,
-                    section.chatAnswerPrompt,
-                    subject.chatAnswerPrompt
-                );
+            const resolvedChatPrompt = this.getPrompt(
+                topic.chatPrompt,
+                section.chatPrompt,
+                subject.chatPrompt
+            );
 
-                data.prompt = resolvedChatPrompt ?? "";
-            }
-            else {
-                const resolvedChatPrompt = this.getPrompt(
-                    topic.chatQuestionPrompt,
-                    section.chatQuestionPrompt,
-                    subject.chatQuestionPrompt
-                );
-
-                data.prompt = resolvedChatPrompt ?? "";
-            }
+            data.prompt = resolvedChatPrompt ?? "";
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -1204,8 +1192,6 @@ export class TaskService {
                 typeof r.userOption !== 'string' ||
                 typeof r.correctOption !== 'string' ||
                 typeof r.chat !== 'string' ||
-                typeof r.mode !== 'string' ||
-                typeof r.style !== 'boolean' ||
                 typeof r.chatFinished !== 'boolean'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
@@ -1246,7 +1232,7 @@ export class TaskService {
         data: SolutionGuideAIGenerate,
         signal?: AbortSignal
     ) {
-        const url = `${this.fastapiUrl}/admin/solution-guide-generate`;
+        const url = `${this.fastapiUrl}/admin/solution-generate`;
         
         try {
             const subject = await this.prismaService.subject.findUnique({
@@ -1281,7 +1267,7 @@ export class TaskService {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
             }
 
-            if (task.solutionGuide !== null && task.solutionGuide !== "") {
+            if (task.solution !== null && task.solution !== "") {
                 throw new BadRequestException('Poradnik rozwiązania już istnieje');
             }
 
@@ -1313,7 +1299,7 @@ export class TaskService {
                 typeof r.changed !== 'string' ||
                 !Array.isArray(r.errors) ||
                 typeof r.attempt !== 'number' ||
-                typeof r.solutionGuide !== 'string' ||
+                typeof r.solution !== 'string' ||
                 typeof r.subject !== 'string' ||
                 typeof r.section !== 'string' ||
                 typeof r.topic !== 'string' ||
@@ -1394,6 +1380,7 @@ export class TaskService {
                             stage: taskData.stage ?? 0,
                             topicId,
                             userId,
+                            subjectId,
                             order
                         }
                     });
@@ -1876,14 +1863,14 @@ export class TaskService {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
             }
 
-            if (task.solutionGuide !== null && task.solutionGuide !== "") {
+            if (task.solution !== null && task.solution !== "") {
                 throw new BadRequestException('Poradnik rozwiązania już istnieje');
             }
 
             const updatedTask = await this.prismaService.task.update({
                 where: { id, userId },
                 data: {
-                    solutionGuide: data.solutionGuide
+                    solution: data.solution
                 }
             });
 

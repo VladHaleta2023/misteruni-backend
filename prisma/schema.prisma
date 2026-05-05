@@ -61,8 +61,7 @@ model Subject {
   subtopicsStatusPrompt String             @default("")
   vocabularyGuidePrompt String             @default("")
   minDetailLevel        SubjectDetailLevel @default(BASIC)
-  chatAnswerPrompt      String             @default("")
-  chatQuestionPrompt    String             @default("")
+  chatPrompt            String             @default("")
   topicFrequencyPrompt  String             @default("")
   literaturePrompt      String             @default("")
   sections              Section[]
@@ -73,7 +72,8 @@ model Subject {
   userSubtopics         UserSubtopic[]
   userTopics            UserTopic[]
   words                 Word[]
-  literatures            Literature[]
+  tasks                 Task[]
+  literatures           Literature[]
 
   @@index([createdAt], map: "idx_subject_createdAt")
 }
@@ -89,6 +89,7 @@ model Literature {
   subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@unique([subjectId, name])
+  @@index([subjectId, name], map: "idx_literature_subject_name")
 }
 
 model UserSubject {
@@ -100,7 +101,6 @@ model UserSubject {
   threshold         Int                @default(50)
   updatedAt         DateTime           @updatedAt
   dailyStudyMinutes Int                @default(60)
-  style             Boolean            @default(false)
   subject           Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -126,8 +126,8 @@ model UserSection {
   @@index([userId, subjectId], map: "idx_usersection_user_subject")
   @@index([userId, sectionId], map: "idx_usersection_user_section")
   @@index([subjectId, sectionId], map: "idx_usersection_subject_section")
-  @@index([userId, subjectId, percent], map: "idx_usersection_user_subject_percent")
-  @@index([userId, subjectId, sectionId, percent], map: "idx_usersection_user_subject_section_percent")
+  @@index([sectionId, userId, subjectId], map: "idx_usersection_update_target")
+  @@index([userId, subjectId, sectionId], map: "idx_usersection_user_subject_section_full")
 }
 
 model UserTopic {
@@ -152,6 +152,10 @@ model UserTopic {
   @@index([userId, subjectId, percent], map: "idx_usertopic_user_subject_percent")
   @@index([userId, subjectId, topicId, percent], map: "idx_usertopic_user_subject_topic_percent")
   @@index([userId, subjectId, topicId], map: "idx_usertopic_user_subject_topic_fast")
+  @@index([topicId, userId, subjectId], map: "idx_usertopic_update_target")
+  @@index([userId, subjectId, sectionId], map: "idx_usertopic_user_subject_section_full")
+  @@index([topicId, userId, subjectId], map: "idx_usertopic_topic_user_subject")
+  @@index([userId, subjectId, percent], map: "idx_usertopic_percent_covering")
 }
 
 model UserSubtopic {
@@ -179,6 +183,9 @@ model UserSubtopic {
   @@index([userId, subjectId, percent], map: "idx_usersubtopic_user_subject_percent")
   @@index([userId, subjectId, subtopicId, percent], map: "idx_usersubtopic_user_subject_subtopic_percent")
   @@index([userId, subjectId, subtopicId], map: "idx_usersubtopic_user_subject_subtopic_fast")
+  @@index([subtopicId, userId], map: "idx_usersubtopic_join_percent")
+  @@index([userId, subjectId, subtopicId], map: "idx_usersubtopic_user_subject_subtopic_full")
+  @@index([subtopicId, userId], map: "idx_usersubtopic_subtopic_user")
 }
 
 model Section {
@@ -191,7 +198,7 @@ model Section {
   type                  String         @default("")
   category              String         @default("")
   subtopicsPrompt       String         @default("")
-  solutionGuidePrompt   String             @default("")
+  solutionGuidePrompt   String         @default("")
   questionPrompt        String         @default("")
   answersPrompt         String         @default("")
   closedSubtopicsPrompt String         @default("")
@@ -201,8 +208,7 @@ model Section {
   difficulty            String         @default("")
   wordsPrompt           String         @default("")
   subtopicsStatusPrompt String         @default("")
-  chatAnswerPrompt      String         @default("")
-  chatQuestionPrompt    String         @default("")
+  chatPrompt            String         @default("")
   topicFrequencyPrompt  String         @default("")
   vocabularyGuidePrompt String         @default("")
   literaturePrompt      String         @default("")
@@ -217,6 +223,8 @@ model Section {
   @@index([subjectId, type], map: "idx_section_subject_type")
   @@index([subjectId, partId, id], map: "idx_section_subject_part_id")
   @@index([subjectId], map: "idx_section_subject_base")
+  @@index([subjectId, partId], map: "idx_section_subject_part_full")
+  @@index([id, subjectId, partId, type], map: "idx_section_covering")
 }
 
 model Topic {
@@ -229,6 +237,7 @@ model Topic {
   partId                Int            @default(-1)
   questionPrompt        String         @default("")
   type                  String         @default("")
+  difficulty            String         @default("")
   information           String         @default("")
   answersPrompt         String         @default("")
   closedSubtopicsPrompt String         @default("")
@@ -244,8 +253,7 @@ model Topic {
   note                  String         @default("")
   wordsPrompt           String         @default("")
   subtopicsStatusPrompt String         @default("")
-  chatAnswerPrompt      String         @default("")
-  chatQuestionPrompt    String         @default("")
+  chatPrompt            String         @default("")
   topicFrequencyPrompt  String         @default("")
   subtopics             Subtopic[]
   tasks                 Task[]
@@ -262,6 +270,11 @@ model Topic {
   @@index([subjectId, sectionId, partId, id], map: "idx_topic_subject_section_part_id")
   @@index([subjectId], map: "idx_topic_subject_base")
   @@index([id, sectionId], map: "idx_topic_id_section_covering")
+  @@index([subjectId, type], map: "idx_topic_subject_type")
+  @@index([sectionId, partId], map: "idx_topic_section_part_full")
+  @@index([sectionId, id, type, name, frequency], map: "idx_topic_covering")
+  @@index([subjectId, type], map: "idx_topic_subject_type_opt")
+  @@index([sectionId, partId, id, name, type, frequency], map: "idx_topic_lateral_covering")
 }
 
 model Subtopic {
@@ -281,6 +294,7 @@ model Subtopic {
   progresses    SubtopicProgress[]
   userSubtopics UserSubtopic[]
 
+  @@index([subjectId, detailLevel, importance], map: "idx_subtopic_subject_detail_importance_full")
   @@index([topicId, sectionId, subjectId], map: "idx_subtopic_topic_section_subject")
   @@index([topicId, detailLevel], map: "idx_subtopic_topic_detail")
   @@index([subjectId, sectionId, topicId, detailLevel], map: "idx_subtopic_subject_section_topic_detail")
@@ -293,6 +307,8 @@ model Subtopic {
   @@index([subjectId, sectionId, topicId, detailLevel, id], map: "idx_subtopic_performance_main")
   @@index([topicId, sectionId, subjectId, detailLevel, id, name, importance], map: "idx_subtopic_covering_all")
   @@index([subjectId, sectionId, topicId, detailLevel, id, name, importance], map: "idx_subtopic_covering_filter")
+  @@index([subjectId, detailLevel, topicId, sectionId], map: "idx_subtopic_cte_covering")
+  @@index([topicId, sectionId, subjectId, detailLevel], map: "idx_subtopic_topic_section_detail")
 }
 
 model SubtopicProgress {
@@ -331,11 +347,11 @@ model Task {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   topicId            Int
+  subjectId          Int
   stage              Int                @default(0)
   answered           Boolean            @default(false)
   percent            Int                @default(0)
   explanation        String             @default("")
-  solutionGuide      String             @default("")
   percentAudio       Int                @default(0)
   percentWords       Int                @default(0)
   userId             Int
@@ -345,17 +361,17 @@ model Task {
   audioFiles         AudioFile[]
   progresses         SubtopicProgress[]
   topic              Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  subject            Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   words              TaskWord[]
 
-  @@index([userId, topicId, finished])
+  @@index([userId, subjectId, finished, updatedAt])
   @@index([topicId, userId])
-  @@index([userId, finished, updatedAt])
-  @@index([userId, topicId, finished, updatedAt])
   @@index([userId, finished, percent])
   @@index([id], map: "idx_task_id_fast")
   @@index([id, text, percent, updatedAt], map: "idx_task_covering_main")
   @@index([userId, topicId, finished, order], map: "idx_task_user_topic_finished_order")
+  @@index([userId, subjectId, finished, updatedAt], map: "idx_task_firsttask_optimized")
 }
 
 model AudioFile {
@@ -395,6 +411,10 @@ model Word {
   @@index([userId, subjectId, topicId])
   @@index([userId, finished])
   @@index([userId, frequency])
+  @@index([userId, subjectId], map: "idx_word_prediction_covering")
+  @@index([userId, subjectId, frequency], map: "idx_word_user_subject_frequency")
+  @@index([userId, subjectId, totalAttemptCount, totalCorrectCount], map: "idx_word_percent_calc")
+  @@index([userId, subjectId, totalAttemptCount, totalCorrectCount, frequency], map: "idx_word_covering_percent")
 }
 
 model TaskWord {
