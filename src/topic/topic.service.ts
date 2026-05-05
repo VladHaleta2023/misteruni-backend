@@ -535,36 +535,36 @@ export class TopicService {
   ) {
       try {
           const existingSubject = await this.prismaService.subject.findUnique({ 
-              where: { id: subjectId } 
+            where: { id: subjectId } 
           });
 
           if (!existingSubject) {
             return {
-                statusCode: 404,
-                message: `Przedmiot nie został znaleziony`,
+              statusCode: 404,
+              message: `Przedmiot nie został znaleziony`,
             };
           }
 
           const existingSection = await this.prismaService.section.findUnique({ 
-              where: { id: sectionId } 
+            where: { id: sectionId } 
           });
 
           if (!existingSection) {
-              return {
-                  statusCode: 404,
-                  message: `Dział nie został znaleziony`,
-              };
+            return {
+              statusCode: 404,
+              message: `Dział nie został znaleziony`,
+            };
           }
 
           const existingTopic = await this.prismaService.topic.findUnique({ 
-              where: { id } 
+            where: { id } 
           });
 
           if (!existingTopic) {
-              return {
-                  statusCode: 404,
-                  message: `Temat nie został znaleziony`,
-              };
+            return {
+              statusCode: 404,
+              message: `Temat nie został znaleziony`,
+            };
           }
 
           const result = await this.prismaService.$transaction(async (prisma) => {
@@ -586,13 +586,13 @@ export class TopicService {
                   const updatePromises = data.outputSubtopics.map(([subtopicName, partId]) => 
                       prisma.subtopic.updateMany({
                           where: {
-                              name: subtopicName,
-                              topicId: id,
-                              subjectId: subjectId,
-                              sectionId: sectionId
+                            name: subtopicName,
+                            topicId: id,
+                            subjectId: subjectId,
+                            sectionId: sectionId
                           },
                           data: {
-                              partId: partId
+                            partId: partId
                           }
                       })
                   );
@@ -613,22 +613,22 @@ export class TopicService {
       } catch (error) {
           console.error('Error updating topic:', error);
           if (error instanceof Prisma.PrismaClientKnownRequestError) {
-              switch (error.code) {
-                  case 'P2028':
-                      throw new InternalServerErrorException(
-                          'Błąd transakcji: utracono połączenie z bazą danych. Spróbuj ponownie.'
-                      );
-                  case 'P2034':
-                      throw new InternalServerErrorException(
-                          'Błąd transakcji: konflikt dostępu do danych. Spróbuj ponownie.'
-                      );
-                  case 'P2025':
-                      throw new NotFoundException('Podtemat nie został znaleziony');
-              }
+            switch (error.code) {
+              case 'P2028':
+                throw new InternalServerErrorException(
+                  'Błąd transakcji: utracono połączenie z bazą danych. Spróbuj ponownie.'
+                );
+              case 'P2034':
+                throw new InternalServerErrorException(
+                  'Błąd transakcji: konflikt dostępu do danych. Spróbuj ponownie.'
+                );
+              case 'P2025':
+                throw new NotFoundException('Podtemat nie został znaleziony');
+            }
           }
           
           throw new InternalServerErrorException(
-              `Błąd podczas aktualizacji tematu: ${error.message || 'Nieznany błąd'}`
+            `Błąd podczas aktualizacji tematu: ${error.message || 'Nieznany błąd'}`
           );
       }
   }
