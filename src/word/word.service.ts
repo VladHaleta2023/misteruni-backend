@@ -561,14 +561,7 @@ export class WordService {
                 });
             }
 
-            const resolvedVocabliaryPrompt =
-                topic?.vocabluaryPrompt?.trim()
-                    ? topic.vocabluaryPrompt
-                    : section?.vocabluaryPrompt?.trim()
-                    ? section.vocabluaryPrompt
-                    : subject.vocabluaryPrompt ?? null;
-
-            data.prompt = resolvedVocabliaryPrompt;
+            data.prompt = subject.vocabluaryPrompt;
 
             if (!Array.isArray(data.words) || !data.words.every(item =>
                 Array.isArray(item) &&
@@ -664,14 +657,7 @@ export class WordService {
                 });
             }
 
-            const resolvedVocabliaryGuidePrompt =
-                topic?.vocabularyGuidePrompt?.trim()
-                    ? topic.vocabularyGuidePrompt
-                    : section?.vocabularyGuidePrompt?.trim()
-                    ? section.vocabularyGuidePrompt
-                    : subject.vocabularyGuidePrompt ?? null;
-
-            data.prompt = resolvedVocabliaryGuidePrompt;
+            data.prompt = subject.vocabularyGuidePrompt;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');

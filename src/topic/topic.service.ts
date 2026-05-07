@@ -37,25 +37,14 @@ export class TopicService {
   async findTopics(
     subjectId: number,
     sectionId: number,
-    withSubject = true,
-    withSection = true,
   ) {
     try {
-      const response: any = {
-        statusCode: 200,
-        message: 'Pobrano listę tematów pomyślnie',
-      };
-
       const subject = await this.prismaService.subject.findUnique({
         where: { id: subjectId },
       });
 
       if (!subject) {
         throw new BadRequestException('Przedmiot nie został znaleziony');
-      }
-
-      if (withSubject) {
-        response.subject = subject;
       }
 
       const section = await this.prismaService.section.findUnique({
@@ -68,96 +57,6 @@ export class TopicService {
         throw new BadRequestException('Dział nie został znaleziony');
       }
 
-      const resolvedSolutionGuidePrompt =
-        section.solutionGuidePrompt?.trim() === '' || !section.solutionGuidePrompt
-          ? subject.solutionGuidePrompt ?? null
-          : section.solutionGuidePrompt;
-
-      const resolvedChronologyPrompt =
-        section.chronologyPrompt?.trim() === '' || !section.chronologyPrompt
-          ? subject.chronologyPrompt ?? null
-          : section.chronologyPrompt;
-
-      const resolvedLiteraturePrompt =
-        section.literaturePrompt?.trim() === '' || !section.literaturePrompt
-          ? subject.literaturePrompt ?? null
-          : section.literaturePrompt;
-
-      const resolvedTopicExpansionPrompt =
-        section.topicExpansionPrompt?.trim() === '' || !section.topicExpansionPrompt
-          ? subject.topicExpansionPrompt ?? null
-          : section.topicExpansionPrompt;
-
-      const resolvedTopicFrequencyPrompt =
-        section.topicFrequencyPrompt?.trim() === '' || !section.topicFrequencyPrompt
-          ? subject.topicFrequencyPrompt ?? null
-          : section.topicFrequencyPrompt;
-
-      const resolvedSubtopicsPrompt =
-        section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
-          ? subject.subtopicsPrompt ?? null
-          : section.subtopicsPrompt;
-
-      const resolvedSubtopicsStatusPrompt =
-        section.subtopicsStatusPrompt?.trim() === '' || !section.subtopicsStatusPrompt
-          ? subject.subtopicsStatusPrompt ?? null
-          : section.subtopicsStatusPrompt;
-
-      const resolvedQuestionPrompt =
-        section.questionPrompt?.trim() === '' || !section.questionPrompt
-          ? subject.questionPrompt ?? null
-          : section.questionPrompt;
-
-      const resolvedAnswersPrompt =
-        section.answersPrompt?.trim() === '' || !section.answersPrompt
-          ? subject.answersPrompt ?? null
-          : section.answersPrompt;
-
-      const resolvedClosedSubtopicsPrompt =
-        section.closedSubtopicsPrompt?.trim() === '' || !section.closedSubtopicsPrompt
-          ? subject.closedSubtopicsPrompt ?? null
-          : section.closedSubtopicsPrompt;
-
-      const resolvedStoriesPrompt =
-        section.vocabluaryPrompt?.trim() === '' || !section.vocabluaryPrompt
-          ? subject.vocabluaryPrompt ?? null
-          : section.vocabluaryPrompt;
-
-      const resolvedWordsPrompt =
-        section.wordsPrompt?.trim() === '' || !section.wordsPrompt
-          ? subject.wordsPrompt ?? null
-          : section.wordsPrompt;
-
-      if (withSection) {
-        response.section = {
-          ...section,
-          chronologyPrompt: resolvedChronologyPrompt,
-          solutionGuidePrompt: resolvedSolutionGuidePrompt,
-          literaturePrompt: resolvedLiteraturePrompt,
-          topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
-          topicExpansionPrompt: resolvedTopicExpansionPrompt,
-          subtopicsPrompt: resolvedSubtopicsPrompt,
-          subtopicsStatusPrompt: resolvedSubtopicsStatusPrompt,
-          questionPrompt: resolvedQuestionPrompt,
-          answersPrompt: resolvedAnswersPrompt,
-          closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
-          vocabluaryPrompt: resolvedStoriesPrompt,
-          wordsPrompt: resolvedWordsPrompt,
-          solutionGuidePromptOwn: Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== ""),
-          subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
-          subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
-          questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
-          answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
-          closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
-          vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== ""),
-          wordsPromptOwn: Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== ""),
-          topicExpansionPromptOwn: Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== ""),
-          topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== ""),
-          literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== ""),
-          chronologyPromptOwn: Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== ""),
-        };
-      }
-
       const topics = await this.prismaService.topic.findMany({
         where: { sectionId: sectionId },
         orderBy: { partId: 'asc' },
@@ -168,87 +67,21 @@ export class TopicService {
         }
       });
 
-      const resolvedTopics = topics.map((topic) => {
-        return {
-          ...topic,
-          chronologyPrompt: this.getPrompt(
-            topic.chronologyPrompt,
-            section.chronologyPrompt,
-            subject.chronologyPrompt
-          ) ?? "",
-          solutionGuidePrompt: this.getPrompt(
-            topic.solutionGuidePrompt,
-            section.solutionGuidePrompt,
-            subject.solutionGuidePrompt
-          ) ?? "",
-          topicFrequencyPrompt: this.getPrompt(
-            topic.topicFrequencyPrompt,
-            section.topicFrequencyPrompt,
-            subject.topicFrequencyPrompt
-          ) ?? "",
-          topicExpansionPrompt: this.getPrompt(
-            topic.topicExpansionPrompt,
-            section.topicExpansionPrompt,
-            subject.topicExpansionPrompt
-          ) ?? "",
-          questionPrompt: this.getPrompt(
-            topic.questionPrompt,
-            section.questionPrompt,
-            subject.questionPrompt
-          ) ?? "",
-          answersPrompt: this.getPrompt(
-            topic.answersPrompt,
-            section.answersPrompt,
-            subject.answersPrompt
-          ) ?? "",
-          closedSubtopicsPrompt: this.getPrompt(
-            topic.closedSubtopicsPrompt,
-            section.closedSubtopicsPrompt,
-            subject.closedSubtopicsPrompt
-          ) ?? "",
-          subtopicsPrompt: this.getPrompt(
-            topic.subtopicsPrompt,
-            section.subtopicsPrompt,
-            subject.subtopicsPrompt
-          ) ?? "",
-          subtopicsStatusPrompt: this.getPrompt(
-            topic.subtopicsStatusPrompt,
-            section.subtopicsStatusPrompt,
-            subject.subtopicsStatusPrompt
-          ) ?? "",
-          vocabluaryPrompt: this.getPrompt(
-            topic.vocabluaryPrompt,
-            section.vocabluaryPrompt,
-            subject.vocabluaryPrompt
-          ) ?? "",
-          wordsPrompt: this.getPrompt(
-            topic.wordsPrompt,
-            section.wordsPrompt,
-            subject.wordsPrompt
-          ) ?? "",
-          literaturePrompt: this.getPrompt(
-            topic.literaturePrompt,
-            section.literaturePrompt,
-            subject.literaturePrompt
-          ) ?? "",
-          solutionGuidePromptOwn: Boolean(topic.solutionGuidePrompt && topic.solutionGuidePrompt.trim() !== ""),
-          subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
-          subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
-          questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
-          answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
-          closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
-          vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== ""),
-          wordsPromptOwn: Boolean(topic.wordsPrompt && topic.wordsPrompt.trim() !== ""),
-          topicExpansionPromptOwn: Boolean(topic.topicExpansionPrompt && topic.topicExpansionPrompt.trim() !== ""),
-          topicFrequencyPromptOwn: Boolean(topic.topicFrequencyPrompt && topic.topicFrequencyPrompt.trim() !== ""),
-          literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== ""),
-          chronologyPromptOwn: Boolean(topic.chronologyPrompt && topic.chronologyPrompt.trim() !== "")
-        };
-      });
+      const updatedTopics = topics.map((topic) => ({
+        ...topic,
+        type:
+          topic.type && topic.type.trim() !== ''
+            ? topic.type
+            : section.type,
+      }));
 
-      response.topics = resolvedTopics;
-
-      return response;
+      return {
+        subject,
+        section,
+        topics: updatedTopics,
+        statusCode: 200,
+        message: 'Pobrano listę tematów pomyślnie',
+      };
     }
     catch (error) {
       throw new InternalServerErrorException('Nie udało się pobrać tematów');
@@ -259,132 +92,24 @@ export class TopicService {
     subjectId: number,
     sectionId: number,
     id: number,
-    withSubject = true,
-    withSection = true,
   ) {
     try {
-        const response: any = {
-            statusCode: 200,
-            message: 'Pobrano temat pomyślnie',
-        };
-
         const subject = await this.prismaService.subject.findUnique({
-            where: { id: subjectId },
+          where: { id: subjectId },
         });
 
         if (!subject) {
             throw new BadRequestException('Przedmiot nie został znaleziony');
         }
 
-        if (withSubject) {
-            response.subject = subject;
-        }
-
         const section = await this.prismaService.section.findUnique({
-            where: {
-                id: sectionId,
-            },
+          where: {
+            id: sectionId,
+          },
         });
 
         if (!section) {
             throw new BadRequestException('Dział nie został znaleziony');
-        }
-
-        const resolvedChronologyPrompt =
-            section.chronologyPrompt?.trim() === '' || !section.chronologyPrompt
-                ? subject.chronologyPrompt ?? null
-                : section.chronologyPrompt;
-
-        const resolvedSolutionGuidePrompt =
-            section.solutionGuidePrompt?.trim() === '' || !section.solutionGuidePrompt
-                ? subject.solutionGuidePrompt ?? null
-                : section.solutionGuidePrompt;
-
-        const resolvedLiteraturePrompt =
-            section.literaturePrompt?.trim() === '' || !section.literaturePrompt
-                ? subject.literaturePrompt ?? null
-                : section.literaturePrompt;
-
-        const resolvedTopicExpansionPrompt =
-            section.topicExpansionPrompt?.trim() === '' || !section.topicExpansionPrompt
-                ? subject.topicExpansionPrompt ?? null
-                : section.topicExpansionPrompt;
-
-        const resolvedTopicFrequencyPrompt =
-            section.topicFrequencyPrompt?.trim() === '' || !section.topicFrequencyPrompt
-                ? subject.topicFrequencyPrompt ?? null
-                : section.topicFrequencyPrompt;
-
-        const resolvedSubtopicsPrompt =
-            section.subtopicsPrompt?.trim() === '' || !section.subtopicsPrompt
-                ? subject.subtopicsPrompt ?? null
-                : section.subtopicsPrompt;
-
-        const resolvedSubtopicsStatusPrompt =
-            section.subtopicsStatusPrompt?.trim() === '' || !section.subtopicsStatusPrompt
-                ? subject.subtopicsStatusPrompt ?? null
-                : section.subtopicsStatusPrompt;
-
-        const resolvedQuestionPrompt =
-            section.questionPrompt?.trim() === '' || !section.questionPrompt
-                ? subject.questionPrompt ?? null
-                : section.questionPrompt;
-
-        const resolvedAnswersPrompt =
-            section.answersPrompt?.trim() === '' || !section.answersPrompt
-                ? subject.answersPrompt ?? null
-                : section.answersPrompt;
-
-        const resolvedClosedSubtopicsPrompt =
-            section.closedSubtopicsPrompt?.trim() === '' || !section.closedSubtopicsPrompt
-                ? subject.closedSubtopicsPrompt ?? null
-                : section.closedSubtopicsPrompt;
-
-        const resolvedStoriesPrompt =
-            section.vocabluaryPrompt?.trim() === '' || !section.vocabluaryPrompt
-                ? subject.vocabluaryPrompt ?? null
-                : section.vocabluaryPrompt;
-
-        const resolvedWordsPrompt =
-            section.wordsPrompt?.trim() === '' || !section.wordsPrompt
-                ? subject.wordsPrompt ?? null
-                : section.wordsPrompt;
-
-        const resolvedChatPrompt =
-            section.chatPrompt?.trim() === '' || !section.chatPrompt
-                ? subject.chatPrompt ?? null
-                : section.chatPrompt;
-
-        if (withSection) {
-            response.section = {
-                ...section,
-                chronologyPrompt: resolvedChronologyPrompt,
-                solutionGuidePrompt: resolvedSolutionGuidePrompt,
-                literaturePrompt: resolvedLiteraturePrompt,
-                topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
-                topicExpansionPrompt: resolvedTopicExpansionPrompt,
-                subtopicsPrompt: resolvedSubtopicsPrompt,
-                subtopicsStatusPrompt: resolvedSubtopicsStatusPrompt,
-                questionPrompt: resolvedQuestionPrompt,
-                answersPrompt: resolvedAnswersPrompt,
-                closedSubtopicsPrompt: resolvedClosedSubtopicsPrompt,
-                vocabluaryPrompt: resolvedStoriesPrompt,
-                wordsPrompt: resolvedWordsPrompt,
-                chatPrompt: resolvedChatPrompt,
-                solutionGuidePromptOwn: Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== ""),
-                subtopicsPromptOwn: Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== ""),
-                subtopicsStatusPromptOwn: Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== ""),
-                questionPromptOwn: Boolean(section.questionPrompt && section.questionPrompt.trim() !== ""),
-                answersPromptOwn: Boolean(section.answersPrompt && section.answersPrompt.trim() !== ""),
-                closedSubtopicsPromptOwn: Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== ""),
-                vocabluaryPromptOwn: Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== ""),
-                wordsPromptOwn: Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== ""),
-                chatPromptOwn: Boolean(section.chatPrompt && section.chatPrompt.trim() !== ""),
-                topicExpansionPromptOwn: Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== ""),
-                topicFrequencyPromptOwn: Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== ""),
-                literaturePromptOwn: Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== ""),
-                chronologyPromptOwn: Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== "")
-            };
         }
 
         const topic = await this.prismaService.topic.findFirst({
@@ -399,131 +124,27 @@ export class TopicService {
         });
 
         if (!topic) {
-            throw new BadRequestException('Temat nie został znaleziony');
+          throw new BadRequestException('Temat nie został znaleziony');
         }
 
-        response.topic = {
-            ...topic,
-            chronologyPrompt: this.getPrompt(
-              topic.chronologyPrompt,
-              section.chronologyPrompt,
-              subject.chronologyPrompt
-            ) ?? "",
-            solutionGuidePrompt: this.getPrompt(
-              topic.solutionGuidePrompt,
-              section.solutionGuidePrompt,
-              subject.solutionGuidePrompt
-            ) ?? "",
-            topicFrequencyPrompt: this.getPrompt(
-              topic.topicFrequencyPrompt,
-              section.topicFrequencyPrompt,
-              subject.topicFrequencyPrompt
-            ) ?? "",
-            topicExpansionPrompt: this.getPrompt(
-              topic.topicExpansionPrompt,
-              section.topicExpansionPrompt,
-              subject.topicExpansionPrompt
-            ) ?? "",
-            questionPrompt: this.getPrompt(
-              topic.questionPrompt,
-              section.questionPrompt,
-              subject.questionPrompt
-            ) ?? "",
-            answersPrompt: this.getPrompt(
-              topic.answersPrompt,
-              section.answersPrompt,
-              subject.answersPrompt
-            ) ?? "",
-            closedSubtopicsPrompt: this.getPrompt(
-              topic.closedSubtopicsPrompt,
-              section.closedSubtopicsPrompt,
-              subject.closedSubtopicsPrompt
-            ) ?? "",
-            subtopicsPrompt: this.getPrompt(
-              topic.subtopicsPrompt,
-              section.subtopicsPrompt,
-              subject.subtopicsPrompt
-            ) ?? "",
-            subtopicsStatusPrompt: this.getPrompt(
-              topic.subtopicsStatusPrompt,
-              section.subtopicsStatusPrompt,
-              subject.subtopicsStatusPrompt
-            ) ?? "",
-            vocabluaryPrompt: this.getPrompt(
-              topic.vocabluaryPrompt,
-              section.vocabluaryPrompt,
-              subject.vocabluaryPrompt
-            ) ?? "",
-            wordsPrompt: this.getPrompt(
-              topic.wordsPrompt,
-              section.wordsPrompt,
-              subject.wordsPrompt
-            ) ?? "",
-            literaturePrompt: this.getPrompt(
-              topic.literaturePrompt,
-              section.literaturePrompt,
-              subject.literaturePrompt
-            ) ?? "",
-            solutionGuidePromptOwn: Boolean(topic.solutionGuidePrompt && topic.solutionGuidePrompt.trim() !== ""),
-            subtopicsPromptOwn: Boolean(topic.subtopicsPrompt && topic.subtopicsPrompt.trim() !== ""),
-            subtopicsStatusPromptOwn: Boolean(topic.subtopicsStatusPrompt && topic.subtopicsStatusPrompt.trim() !== ""),
-            questionPromptOwn: Boolean(topic.questionPrompt && topic.questionPrompt.trim() !== ""),
-            answersPromptOwn: Boolean(topic.answersPrompt && topic.answersPrompt.trim() !== ""),
-            closedSubtopicsPromptOwn: Boolean(topic.closedSubtopicsPrompt && topic.closedSubtopicsPrompt.trim() !== ""),
-            vocabluaryPromptOwn: Boolean(topic.vocabluaryPrompt && topic.vocabluaryPrompt.trim() !== ""),
-            wordsPromptOwn: Boolean(topic.wordsPrompt && topic.wordsPrompt.trim() !== ""),
-            chatPromptOwn: Boolean(topic.chatPrompt && topic.chatPrompt.trim() !== ""),
-            topicExpansionPromptOwn: Boolean(topic.topicExpansionPrompt && topic.topicExpansionPrompt.trim() !== ""),
-            topicFrequencyPromptOwn: Boolean(topic.topicFrequencyPrompt && topic.topicFrequencyPrompt.trim() !== ""),
-            literaturePromptOwn: Boolean(topic.literaturePrompt && topic.literaturePrompt.trim() !== ""),
-            chronologyPromptOwn: Boolean(topic.chronologyPrompt && topic.chronologyPrompt.trim() !== "")
-          };
+        const finalType =
+          topic.type && topic.type.trim() !== ''
+            ? topic.type
+            : section.type;
 
-        return response;
+        return {
+          topic: {
+            ...topic,
+            type: finalType,
+          },
+          section,
+          subject,
+          statusCode: 200,
+          message: 'Pobrano temat pomyślnie',
+        };
     }
     catch (error) {
         throw new InternalServerErrorException('Nie udało się pobrać tematu');
-    }
-  }
-
-  async findTopicCompletedById(
-    userId: number,
-    subjectId: number,
-    sectionId: number,
-    topicId: number,
-  ) {
-    try {
-      const result = await this.prismaService.$queryRaw<{
-        completed: boolean;
-      }[]>`
-        SELECT EXISTS(
-          SELECT 1 
-          FROM "Topic" t
-          LEFT JOIN "UserSubject" us ON 
-            us."userId" = ${userId} 
-            AND us."subjectId" = t."subjectId"  -- Используем subjectId из Topic
-          LEFT JOIN "UserTopic" ut ON 
-            ut."userId" = ${userId} 
-            AND ut."topicId" = t.id
-          WHERE t.id = ${topicId} 
-            AND t."sectionId" = ${sectionId}
-            AND t."subjectId" = ${subjectId}
-            AND COALESCE(ut."percent", 0) >= COALESCE(us."threshold", 50)
-        ) as completed
-      `;
-
-      const completed = result[0]?.completed ?? false;
-
-      return {
-        statusCode: 200,
-        message: 'Pobrano temat pomyślnie',
-        completed: completed
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Nie udało się pobrać tematu');
     }
   }
 
@@ -575,6 +196,7 @@ export class TopicService {
               if (data.frequency !== undefined) updateData.frequency = data.frequency;
               if (data.note !== undefined) updateData.note = data.note;
               if (data.type !== undefined) updateData.type = data.type;
+              if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
               if (data.information !== undefined) updateData.information = data.information;
 
               const updatedTopic = await prisma.topic.update({

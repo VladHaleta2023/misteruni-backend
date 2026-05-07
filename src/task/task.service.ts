@@ -613,13 +613,7 @@ export class TaskService {
             data.literature = data.literature ?? topic.literature;
             data.threshold = data.threshold ?? threshold;
 
-            const resolvedQuestionPrompt = this.getPrompt(
-                topic.questionPrompt,
-                section.questionPrompt,
-                subject.questionPrompt
-            );
-
-            data.prompt = resolvedQuestionPrompt ?? "";
+            data.prompt = subject.questionPrompt ?? "";
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Subtopics musi być listą stringów');
@@ -691,13 +685,7 @@ export class TaskService {
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
 
-            const resolvedQuestionPrompt = this.getPrompt(
-                topic.questionPrompt,
-                section.questionPrompt,
-                subject.questionPrompt
-            );
-
-            data.prompt = resolvedQuestionPrompt ?? "";
+            data.prompt = subject.writingQuestionPrompt ?? "";
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -824,16 +812,10 @@ export class TaskService {
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.subtopics = data.subtopics ?? formattedSubtopics;
-            data.difficulty = data.difficulty ?? section.difficulty;
+            data.difficulty = data.difficulty ?? topic.difficulty ?? section.difficulty;
             data.words = data.words ?? wordsForData;
 
-            const resolvedQuestionPrompt = this.getPrompt(
-                topic.questionPrompt,
-                section.questionPrompt,
-                subject.questionPrompt
-            );
-
-            data.prompt = resolvedQuestionPrompt ?? "";
+            data.prompt = subject.audioQuestionPrompt ?? "";
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
                 Array.isArray(item) &&
@@ -914,14 +896,8 @@ export class TaskService {
             if (!topic) {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
-
-            const resolvedAnswersPrompt = this.getPrompt(
-                topic.answersPrompt,
-                section.answersPrompt,
-                subject.answersPrompt
-            );
             
-            data.prompt = resolvedAnswersPrompt ?? "";
+            data.prompt = subject.answersPrompt ?? "";
             data.accounts = data.accounts ?? subject.accounts;
             data.balance = data.balance ?? subject.balance;
             data.information = data.information ?? topic.information;
@@ -1019,15 +995,14 @@ export class TaskService {
             data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
-            data.type = data.type ?? section.type;
+            data.type = data.type ?? topic.type ?? section.type;
 
-            const resolvedClosedSubtopicsPrompt = this.getPrompt(
-                topic.closedSubtopicsPrompt,
-                section.closedSubtopicsPrompt,
-                subject.closedSubtopicsPrompt
-            );
-
-            data.prompt = resolvedClosedSubtopicsPrompt ?? "";
+            if (data.type === "Stories")
+                data.prompt = subject.audioClosedPrompt ?? "";
+            else if (data.type === "Writing")
+                data.prompt = subject.writingClosedPrompt ?? "";
+            else
+                data.prompt = subject.closedSubtopicsPrompt ?? "";
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -1151,14 +1126,12 @@ export class TaskService {
             data.balance = data.balance ?? subject.balance;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
+            data.type = data.type ?? topic.type ?? section.type;
 
-            const resolvedChatPrompt = this.getPrompt(
-                topic.chatPrompt,
-                section.chatPrompt,
-                subject.chatPrompt
-            );
-
-            data.prompt = resolvedChatPrompt ?? "";
+            if (data.type === "Stories")
+                data.prompt = subject.audioChatPrompt ?? "";
+            else
+                data.prompt = subject.chatPrompt ?? "";
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -1270,14 +1243,8 @@ export class TaskService {
             if (task.solution !== null && task.solution !== "") {
                 throw new BadRequestException('Poradnik rozwiązania już istnieje');
             }
-
-            const resolvedSolutionGuidePrompt = this.getPrompt(
-                topic.solutionGuidePrompt,
-                section.solutionGuidePrompt,
-                subject.solutionGuidePrompt
-            );
             
-            data.prompt = resolvedSolutionGuidePrompt ?? "";
+            data.prompt = subject.solutionGuidePrompt ?? "";
             data.information = data.information ?? topic.information;
             data.accounts = data.accounts ?? subject.accounts;
             data.balance = data.balance ?? subject.balance;

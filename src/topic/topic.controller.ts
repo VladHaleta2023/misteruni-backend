@@ -14,12 +14,8 @@ export class TopicController {
   async findTopics(
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Query('withSubject') withSubject?: string,
-    @Query('withSection') withSection?: string,
   ) {
-    const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
-    const withSectionBool = !(withSection?.toLowerCase() === 'false');
-    return this.topicService.findTopics(subjectId, sectionId, withSubjectBool, withSectionBool);
+    return this.topicService.findTopics(subjectId, sectionId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -28,27 +24,8 @@ export class TopicController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Query('withSubject') withSubject?: string,
-    @Query('withSection') withSection?: string,
   ) {
-    const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
-    const withSectionBool = !(withSection?.toLowerCase() === 'false');
-
-    return this.topicService.findTopicbyId(subjectId, sectionId, id, withSubjectBool, withSectionBool);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':id/completed')
-  async findTopicCompletedById(
-    @Param('subjectId', ParseIntPipe) subjectId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('id', ParseIntPipe) id: number,
-    @Req() req: Request
-  ) {
-    const user: User = (req as any).user;
-    const userId: number = user.id;
-
-    return this.topicService.findTopicCompletedById(userId, subjectId, sectionId, id);
+    return this.topicService.findTopicbyId(subjectId, sectionId, id);
   }
 
   @UseGuards(JwtAuthGuard)

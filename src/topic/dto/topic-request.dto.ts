@@ -11,6 +11,10 @@ export class TopicUpdateRequest {
 
   @IsOptional()
   @IsString()
+  difficulty?: string;
+
+  @IsOptional()
+  @IsString()
   information?: string;
 
   @IsOptional()

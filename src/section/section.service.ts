@@ -407,74 +407,10 @@ export class SectionService {
                 throw new BadRequestException('Dział nie został znaleziony');
             }
 
-            const solutionGuidePromptOwn = Boolean(section.solutionGuidePrompt && section.solutionGuidePrompt.trim() !== "");
-            const vocabularyGuidePromptOwn = Boolean(section.vocabularyGuidePrompt && section.vocabularyGuidePrompt.trim() !== "");
-            const subtopicsPromptOwn = Boolean(section.subtopicsPrompt && section.subtopicsPrompt.trim() !== "");
-            const subtopicsStatusPromptOwn = Boolean(section.subtopicsStatusPrompt && section.subtopicsStatusPrompt.trim() !== "");
-            const questionPromptOwn = Boolean(section.questionPrompt && section.questionPrompt.trim() !== "");
-            const answersPromptOwn = Boolean(section.answersPrompt && section.answersPrompt.trim() !== "");
-            const closedSubtopicsPromptOwn = Boolean(section.closedSubtopicsPrompt && section.closedSubtopicsPrompt.trim() !== "");
-            const vocabluaryPromptOwn = Boolean(section.vocabluaryPrompt && section.vocabluaryPrompt.trim() !== "");
-            const wordsPromptOwn = Boolean(section.wordsPrompt && section.wordsPrompt.trim() !== "");
-            const chatPromptOwn = Boolean(section.chatPrompt && section.chatPrompt.trim() !== "");
-            const topicExpansionPromptOwn = Boolean(section.topicExpansionPrompt && section.topicExpansionPrompt.trim() !== "");
-            const topicFrequencyPromptOwn = Boolean(section.topicFrequencyPrompt && section.topicFrequencyPrompt.trim() !== "");
-            const chronologyPromptOwn = Boolean(section.chronologyPrompt && section.chronologyPrompt.trim() !== "");
-            const literaturePromptOwn = Boolean(section.literaturePrompt && section.literaturePrompt.trim() !== "");
-
-            const prompts = {
-                vocabularyGuidePrompt: vocabularyGuidePromptOwn ? section.vocabularyGuidePrompt.trim() : (subject.vocabularyGuidePrompt || ""),
-                vocabularyGuidePromptOwn: vocabularyGuidePromptOwn,
-
-                solutionGuidePrompt: solutionGuidePromptOwn ? section.solutionGuidePrompt.trim() : (subject.solutionGuidePrompt || ""),
-                solutionGuidePromptOwn: solutionGuidePromptOwn,
-
-                literaturePrompt: literaturePromptOwn ? section.literaturePrompt.trim() : (subject.literaturePrompt || ""),
-                literaturePromptOwn: literaturePromptOwn,
-
-                topicExpansionPrompt: topicExpansionPromptOwn ? section.topicExpansionPrompt.trim() : (subject.topicExpansionPrompt || ""),
-                topicExpansionPromptOwn: topicExpansionPromptOwn,
-
-                topicFrequencyPrompt: topicFrequencyPromptOwn ? section.topicFrequencyPrompt.trim() : (subject.topicFrequencyPrompt || ""),
-                topicFrequencyPromptOwn: topicFrequencyPromptOwn,
-
-                chronologyPrompt: chronologyPromptOwn ? section.chronologyPrompt.trim() : (subject.chronologyPrompt || ""),
-                chronologyPromptOwn: chronologyPromptOwn,
-
-                subtopicsPrompt: subtopicsPromptOwn ? section.subtopicsPrompt.trim() : (subject.subtopicsPrompt || ""),
-                subtopicsPromptOwn: subtopicsPromptOwn,
-
-                subtopicsStatusPrompt: subtopicsStatusPromptOwn ? section.subtopicsStatusPrompt.trim() : (subject.subtopicsStatusPrompt || ""),
-                subtopicsStatusPromptOwn: subtopicsStatusPromptOwn,
-
-                questionPrompt: questionPromptOwn ? section.questionPrompt.trim() : (subject.questionPrompt || ""),
-                questionPromptOwn: questionPromptOwn,
-
-                answersPrompt: answersPromptOwn ? section.answersPrompt.trim() : (subject.answersPrompt || ""),
-                answersPromptOwn: answersPromptOwn,
-
-                closedSubtopicsPrompt: closedSubtopicsPromptOwn ? section.closedSubtopicsPrompt.trim() : (subject.closedSubtopicsPrompt || ""),
-                closedSubtopicsPromptOwn: closedSubtopicsPromptOwn,
-
-                vocabluaryPrompt: vocabluaryPromptOwn ? section.vocabluaryPrompt.trim() : (subject.vocabluaryPrompt || ""),
-                vocabluaryPromptOwn: vocabluaryPromptOwn,
-
-                wordsPrompt: wordsPromptOwn ? section.wordsPrompt.trim() : (subject.wordsPrompt || ""),
-                wordsPromptOwn: wordsPromptOwn,
-
-                chatAnswerPrompt: chatPromptOwn ? section.chatPrompt.trim() : (subject.chatPrompt || ""),
-                chatPromptOwn: chatPromptOwn,
-            };
-
-            const enrichedSection: any = {
-                ...section,
-                ...prompts,
-            };
-
             const response: any = {
                 statusCode: 200,
                 message: 'Dział został pomyślnie pobrany',
-                section: enrichedSection,
+                section,
             };
 
             if (withSubject) {

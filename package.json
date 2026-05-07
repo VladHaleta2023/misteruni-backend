@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "mister-uni",
   "version": "0.0.1",
   "private": true,

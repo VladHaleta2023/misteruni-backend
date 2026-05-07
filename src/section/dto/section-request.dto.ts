@@ -7,66 +7,6 @@ export class SectionUpdateRequest {
 
   @IsOptional()
   @IsString()
-  solutionGuidePrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  subtopicsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  subtopicsStatusPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  questionPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  solutionPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  answersPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  closedSubtopicsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  vocabluaryPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  wordsPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  chatPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  topicExpansionPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  topicFrequencyPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  chronologyPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  literaturePrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  vocabularyGuidePrompt?: string;
-
-  @IsOptional()
-  @IsString()
   type?: string;
 
   @IsOptional()

@@ -245,12 +245,17 @@ export class SubjectService {
                     subtopicsPromptOwn: true,
                     subtopicsStatusPromptOwn: true,
                     questionPromptOwn: true,
+                    audioQuestionPromptOwn: true,
+                    writingQuestionPromptOwn: true,
                     solutionPromptOwn: true,
                     answersPromptOwn: true,
                     closedSubtopicsPromptOwn: true,
+                    audioClosedPromptOwn: true,
+                    writingClosedPromptOwn: true,
                     vocabluaryPromptOwn: true,
                     wordsPromptOwn: true,
                     chatPromptOwn: true,
+                    audioChatPromptOwn: true,
                     topicExpansionPromptOwn: true,
                     topicFrequencyPromptOwn: true,
                     chronologyPromptOwn: true
@@ -433,7 +438,6 @@ export class SubjectService {
         withSubject = true,
         withSections = true,
         withSubtopics = true,
-        notStories = true,
         allSections = false,
         minSectionPart = 1
     ) {
@@ -455,25 +459,11 @@ export class SubjectService {
                 response.subject = subject;
             }
 
-            const sectionWhere: any = {
-                subjectId,
-                partId: { gte: minSectionPart },
-            };
-
-            if (!allSections) {
-                if (notStories) {
-                    sectionWhere.type = {
-                        not: {
-                            in: ['Stories', 'Writing']
-                        }
-                    };
-                } else if (!notStories) {
-                    sectionWhere.type = 'Stories';
-                }
-            }
-
             const sections = await this.prismaService.section.findMany({
-                where: sectionWhere,
+                where: {
+                    subjectId,
+                    partId: { gte: minSectionPart },
+                },
                 include: {
                     topics: {
                         include: {
@@ -487,68 +477,7 @@ export class SubjectService {
                 orderBy: { partId: 'asc' },
             });
 
-            const sectionLiteraturePromptMap = new Map<number, string>();
-            const sectionSubtopicsPromptMap = new Map<number, string>();
-            const sectionSubtopicsStatusPromptMap = new Map<number, string>();
-            const sectionTopicExpansionPromptMap = new Map<number, string>();
-            const sectionTopicFrequencyPromptMap = new Map<number, string>();
-            const sectionChronologyPromptMap = new Map<number, string>();
-            const sectionWordsPromptMap = new Map<number, string>();
-
-            for (const section of sections) {
-                const resolvedLiteraturePrompt =
-                    !section.literaturePrompt || section.literaturePrompt.trim() === ''
-                        ? subject.literaturePrompt ?? null
-                        : section.literaturePrompt;
-
-                const resolvedSubtopicsPrompt =
-                    !section.subtopicsPrompt || section.subtopicsPrompt.trim() === ''
-                        ? subject.subtopicsPrompt ?? null
-                        : section.subtopicsPrompt;
-
-                const resolvedSubtopicsStatusPrompt =
-                    !section.subtopicsStatusPrompt || section.subtopicsStatusPrompt.trim() === ''
-                        ? subject.subtopicsStatusPrompt ?? null
-                        : section.subtopicsStatusPrompt;
-
-                const resolvedTopicExpansionPrompt =
-                    !section.topicExpansionPrompt || section.topicExpansionPrompt.trim() === ''
-                        ? subject.topicExpansionPrompt ?? null
-                        : section.topicExpansionPrompt;
-
-                const resolvedTopicFrequencyPrompt =
-                    !section.topicFrequencyPrompt || section.topicFrequencyPrompt.trim() === ''
-                        ? subject.topicFrequencyPrompt ?? null
-                        : section.topicFrequencyPrompt;
-
-                const resolvedChronologyPrompt =
-                    !section.chronologyPrompt || section.chronologyPrompt.trim() === ''
-                        ? subject.chronologyPrompt ?? null
-                        : section.chronologyPrompt;
-
-                const resolvedWordsPrompt =
-                    !section.wordsPrompt || section.wordsPrompt.trim() === ''
-                        ? subject.wordsPrompt ?? null
-                        : section.wordsPrompt;
-
-                sectionLiteraturePromptMap.set(section.id, resolvedLiteraturePrompt);
-                sectionSubtopicsPromptMap.set(section.id, resolvedSubtopicsPrompt);
-                sectionSubtopicsStatusPromptMap.set(section.id, resolvedSubtopicsStatusPrompt);
-                sectionTopicExpansionPromptMap.set(section.id, resolvedTopicExpansionPrompt);
-                sectionTopicFrequencyPromptMap.set(section.id, resolvedTopicFrequencyPrompt);
-                sectionChronologyPromptMap.set(section.id, resolvedChronologyPrompt);
-                sectionWordsPromptMap.set(section.id, resolvedWordsPrompt);
-            }
-
             const sectionsWithResolvedPrompts = sections.map(section => {
-                const resolvedLiteraturePrompt = sectionLiteraturePromptMap.get(section.id) ?? null;
-                const resolvedSubtopicsPrompt = sectionSubtopicsPromptMap.get(section.id) ?? null;
-                const resolvedSubtopicsStatusPrompt = sectionSubtopicsStatusPromptMap.get(section.id) ?? null;
-                const resolvedTopicExpansionPrompt = sectionTopicExpansionPromptMap.get(section.id) ?? null;
-                const resolvedTopicFrequencyPrompt = sectionTopicFrequencyPromptMap.get(section.id) ?? null;
-                const resolvedChronologyPrompt = sectionChronologyPromptMap.get(section.id) ?? null;
-                const resolvedWordsPrompt = sectionWordsPromptMap.get(section.id) ?? null;
-
                 const topicsWithPrompts = section.topics.map(topic => {
                     const topicData: any = {
                         id: topic.id,
@@ -557,13 +486,13 @@ export class SubjectService {
                         sectionId: topic.sectionId,
                         note: topic.note,
                         frequency: topic.frequency,
-                        subtopicsPrompt: resolvedSubtopicsPrompt,
-                        subtopicsStatusPrompt: resolvedSubtopicsStatusPrompt,
-                        topicExpansionPrompt: resolvedTopicExpansionPrompt,
-                        topicFrequencyPrompt: resolvedTopicFrequencyPrompt,
-                        wordsPrompt: resolvedWordsPrompt,
-                        literaturePrompt: resolvedLiteraturePrompt,
-                        chronologyPrompt: resolvedChronologyPrompt
+                        subtopicsPrompt: subject.subtopicsPrompt,
+                        subtopicsStatusPrompt: subject.subtopicsStatusPrompt,
+                        topicExpansionPrompt: subject.topicExpansionPrompt,
+                        topicFrequencyPrompt: subject.topicFrequencyPrompt,
+                        wordsPrompt: subject.wordsPrompt,
+                        literaturePrompt: subject.literaturePrompt,
+                        chronologyPrompt: subject.chronologyPrompt
                     };
 
                     if (withSections) {
@@ -595,20 +524,13 @@ export class SubjectService {
                     partId: section.partId,
                     type: section.type,
                     subjectId: section.subjectId,
-                    subtopicsPrompt: section.subtopicsPrompt,
-                    subtopicsStatusPrompt: section.subtopicsStatusPrompt,
-                    topicExpansionPrompt: section.topicExpansionPrompt,
-                    topicFrequencyPrompt: section.topicFrequencyPrompt,
-                    literaturePrompt: section.literaturePrompt,
-                    wordsPrompt: section.wordsPrompt,
-                    closedSubtopicsPrompt: section.closedSubtopicsPrompt,
-                    resolvedSubtopicsPrompt,
-                    resolvedSubtopicsStatusPrompt,
-                    resolvedTopicExpansionPrompt,
-                    resolvedTopicFrequencyPrompt,
-                    resolvedWordsPrompt,
-                    resolvedLiteraturePrompt,
-                    resolvedChronologyPrompt,
+                    subtopicsPrompt: subject.subtopicsPrompt,
+                    subtopicsStatusPrompt: subject.subtopicsStatusPrompt,
+                    topicExpansionPrompt: subject.topicExpansionPrompt,
+                    topicFrequencyPrompt: subject.topicFrequencyPrompt,
+                    literaturePrompt: subject.literaturePrompt,
+                    wordsPrompt: subject.wordsPrompt,
+                    closedSubtopicsPrompt: subject.closedSubtopicsPrompt,
                     topics: topicsWithPrompts
                 };
             });

@@ -50,7 +50,6 @@ export class SubjectController {
     @Query('withSubject') withSubject?: string,
     @Query('withSections') withSections?: string,
     @Query('withSubtopics') withSubtopics?: string,
-    @Query('notStories') notStories?: string,
     @Query('minSectionPart') minSectionPart?: string,
     @Query('allSections') allSections?: string,
   ) {
@@ -58,16 +57,12 @@ export class SubjectController {
     const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
     const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
     const allSectionsBool = allSections === 'true';
-    const notStoriesBool =
-      notStories === undefined
-        ? true
-        : notStories.toLowerCase() === 'true';
     const minSectionPartNumber =
       minSectionPart !== undefined && !isNaN(Number(minSectionPart))
         ? Number(minSectionPart)
         : 1;
 
-    return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, notStoriesBool, allSectionsBool, minSectionPartNumber);
+    return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, allSectionsBool, minSectionPartNumber);
   }
 
   @UseGuards(JwtAuthGuard)

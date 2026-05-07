@@ -35,15 +35,19 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  audioQuestionPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  writingQuestionPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   solutionPrompt?: string;
 
   @IsOptional()
   @IsString()
   answersPrompt?: string;
-
-  @IsOptional()
-  @IsString()
-  closedProblemsPrompt?: string;
 
   @IsOptional()
   @IsString()
@@ -56,6 +60,18 @@ export class SubjectUpdateRequest {
   @IsOptional()
   @IsString()
   chatPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  audioChatPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  audioClosedPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  writingClosedPrompt?: string;
 
   @IsOptional()
   @IsString()
