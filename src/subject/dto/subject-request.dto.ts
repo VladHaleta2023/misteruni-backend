@@ -15,6 +15,14 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  examSheetTemplates?: string;
+
+  @IsOptional()
+  @IsString()
+  examSheetPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   prompt?: string;
 
   @IsOptional()

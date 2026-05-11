@@ -827,6 +827,7 @@ export class SubtopicService {
             const topic = await this.prismaService.topic.findUnique({ where: { id: topicId } });
             if (!topic) throw new BadRequestException('Temat nie został znaleziony');
 
+            data.content = data.content ?? subject.prompt;
             data.subject = data.subject ?? subject.name;
             data.information = data.information ?? topic.information;
             data.accounts = data.accounts ?? subject.accounts;

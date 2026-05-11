@@ -1,5 +1,4 @@
-import { ChatMode } from '@prisma/client';
-import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TaskCreateRequest {
   @IsOptional()

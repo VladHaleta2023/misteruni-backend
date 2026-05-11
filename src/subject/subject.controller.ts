@@ -47,22 +47,14 @@ export class SubjectController {
   @Get(':id/sections/admin')
   async findAdminSections(
     @Param('id', ParseIntPipe) id: number,
-    @Query('withSubject') withSubject?: string,
-    @Query('withSections') withSections?: string,
-    @Query('withSubtopics') withSubtopics?: string,
     @Query('minSectionPart') minSectionPart?: string,
-    @Query('allSections') allSections?: string,
   ) {
-    const withSectionsBool = !(withSections?.toLowerCase() === 'false');
-    const withSubjectBool = !(withSubject?.toLowerCase() === 'false');
-    const withSubtopicsBool = !(withSubtopics?.toLowerCase() === 'false');
-    const allSectionsBool = allSections === 'true';
     const minSectionPartNumber =
       minSectionPart !== undefined && !isNaN(Number(minSectionPart))
         ? Number(minSectionPart)
         : 1;
 
-    return this.subjectService.findAdminSections(id, withSubjectBool, withSectionsBool, withSubtopicsBool, allSectionsBool, minSectionPartNumber);
+    return this.subjectService.findAdminSections(id, minSectionPartNumber);
   }
 
   @UseGuards(JwtAuthGuard)

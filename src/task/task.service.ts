@@ -1,10 +1,10 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, VocabluaryAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
+import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from '../subtopic/subtopic.service';
-import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';

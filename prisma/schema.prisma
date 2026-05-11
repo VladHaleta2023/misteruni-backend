@@ -24,6 +24,7 @@ model User {
   userSubtopics UserSubtopic[]
   userTopics    UserTopic[]
   words         Word[]
+  exams         Exam[]
 }
 
 model UserAuthProvider {
@@ -42,6 +43,8 @@ model Subject {
   id                      Int                @id @default(autoincrement())
   name                    String             @unique
   prompt                  String             @default("")
+  examTemplates           String             @default("")
+  examPrompt              String             @default("")
   accounts                String             @default("")
   balance                 String             @default("")
   createdAt               DateTime           @default(now())
@@ -79,6 +82,7 @@ model Subject {
   words                   Word[]
   tasks                   Task[]
   literatures             Literature[]
+  exams                   Exam[]
 
   @@index([createdAt], map: "idx_subject_createdAt")
 }
@@ -106,6 +110,7 @@ model UserSubject {
   threshold         Int                @default(50)
   updatedAt         DateTime           @updatedAt
   dailyStudyMinutes Int                @default(60)
+  examDate          DateTime           @default(now())
   subject           Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -193,6 +198,31 @@ model UserSubtopic {
   @@index([subtopicId, userId], map: "idx_usersubtopic_subtopic_user")
 }
 
+model Exam {
+  id                 Int           @id @default(autoincrement())
+  subjectId          Int
+  userId             Int
+  partId             Int           @default(-1)
+  timeSpentSeconds   Int           @default(10800)
+  topics             ExamTopic[]
+  tasks              Task[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  subject            Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ExamTopic {
+  examId Int
+  topicId     Int
+
+  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  topic       Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([examId, topicId])
+}
+
 model Section {
   id                    Int            @id @default(autoincrement())
   name                  String
@@ -239,6 +269,7 @@ model Topic {
   userSubtopics         UserSubtopic[]
   userTopics            UserTopic[]
   words                 Word[]
+  examTopics            ExamTopic[]
 
   @@index([sectionId, partId], map: "idx_topic_section_part")
   @@index([subjectId, sectionId], map: "idx_topic_subject_section")
@@ -332,7 +363,6 @@ model Task {
   percentAudio       Int                @default(0)
   percentWords       Int                @default(0)
   userId             Int
-  mode               ChatMode           @default(STUDENT_ANSWER)
   chatFinished       Boolean            @default(false)
   chat               String             @default("")
   audioFiles         AudioFile[]
@@ -341,6 +371,9 @@ model Task {
   subject            Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   words              TaskWord[]
+
+  examId             Int?
+  exam               Exam?              @relation(fields: [examId], references: [id])
 
   @@index([userId, subjectId, finished, updatedAt])
   @@index([topicId, userId])
@@ -420,9 +453,4 @@ enum SubjectDetailLevel {
   BASIC
   EXPANDED
   ACADEMIC
-}
-
-enum ChatMode {
-  STUDENT_ANSWER
-  STUDENT_QUESTION
 }

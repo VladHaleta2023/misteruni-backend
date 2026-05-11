@@ -21,6 +21,16 @@ export class UserSubjectUpdateRequest {
   @IsInt()
   @IsIn([30, 60, 90, 120, 150, 180])
   dailyStudyMinutes?: number;
+
+    @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month?: number;
+
+  @IsOptional()
+  @IsInt()
+  year?: number
 }
 
 export class UserSubjectCreateRequest {
@@ -29,6 +39,16 @@ export class UserSubjectCreateRequest {
   @Min(1)
   @Max(100)
   threshold?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month?: number;
+
+  @IsOptional()
+  @IsInt()
+  year?: number
 
   @IsOptional()
   @IsEnum(SubjectDetailLevel)

@@ -239,6 +239,7 @@ export class SubjectService {
                 message: "Przedmiot został pomyślnie pobrany",
                 subject: {
                     ...subject,
+                    examSheetPromptOwn: true,
                     solutionGuidePromptOwn: true,
                     vocabularyGuidePromptOwn: true,
                     literaturePromptOwn: true,
@@ -435,28 +436,15 @@ export class SubjectService {
 
     async findAdminSections(
         subjectId: number,
-        withSubject = true,
-        withSections = true,
-        withSubtopics = true,
-        allSections = false,
         minSectionPart = 1
     ) {
         try {
-            const response: any = {
-                statusCode: 200,
-                message: 'Pobrano listę sekcji pomyślnie',
-            };
-
             const subject = await this.prismaService.subject.findUnique({
                 where: { id: subjectId },
             });
 
             if (!subject) {
                 throw new BadRequestException('Przedmiot nie został znaleziony');
-            }
-
-            if (withSubject) {
-                response.subject = subject;
             }
 
             const sections = await this.prismaService.section.findMany({
@@ -467,9 +455,9 @@ export class SubjectService {
                 include: {
                     topics: {
                         include: {
-                            subtopics: withSubtopics ? {
+                            subtopics: {
                                 orderBy: { partId: 'asc' },
-                            } : false
+                            }
                         },
                         orderBy: { partId: 'asc' },
                     }
@@ -477,72 +465,12 @@ export class SubjectService {
                 orderBy: { partId: 'asc' },
             });
 
-            const sectionsWithResolvedPrompts = sections.map(section => {
-                const topicsWithPrompts = section.topics.map(topic => {
-                    const topicData: any = {
-                        id: topic.id,
-                        name: topic.name,
-                        partId: topic.partId,
-                        sectionId: topic.sectionId,
-                        note: topic.note,
-                        frequency: topic.frequency,
-                        subtopicsPrompt: subject.subtopicsPrompt,
-                        subtopicsStatusPrompt: subject.subtopicsStatusPrompt,
-                        topicExpansionPrompt: subject.topicExpansionPrompt,
-                        topicFrequencyPrompt: subject.topicFrequencyPrompt,
-                        wordsPrompt: subject.wordsPrompt,
-                        literaturePrompt: subject.literaturePrompt,
-                        chronologyPrompt: subject.chronologyPrompt
-                    };
-
-                    if (withSections) {
-                        topicData.section = {
-                            id: section.id,
-                            name: section.name,
-                            partId: section.partId,
-                            type: section.type
-                        };
-                    }
-
-                    if (withSubtopics) {
-                        topicData.subtopics = topic.subtopics?.map(subtopic => ({
-                            id: subtopic.id,
-                            name: subtopic.name,
-                            partId: subtopic.partId,
-                            importance: subtopic.importance,
-                            detailLevel: subtopic.detailLevel,
-                            topicId: subtopic.topicId
-                        })) || [];
-                    }
-
-                    return topicData;
-                });
-
-                return {
-                    id: section.id,
-                    name: section.name,
-                    partId: section.partId,
-                    type: section.type,
-                    subjectId: section.subjectId,
-                    subtopicsPrompt: subject.subtopicsPrompt,
-                    subtopicsStatusPrompt: subject.subtopicsStatusPrompt,
-                    topicExpansionPrompt: subject.topicExpansionPrompt,
-                    topicFrequencyPrompt: subject.topicFrequencyPrompt,
-                    literaturePrompt: subject.literaturePrompt,
-                    wordsPrompt: subject.wordsPrompt,
-                    closedSubtopicsPrompt: subject.closedSubtopicsPrompt,
-                    topics: topicsWithPrompts
-                };
-            });
-
-            const sectionsWithNonEmptyTopics = sectionsWithResolvedPrompts.filter(
-                section => section.topics.length > 0
-            );
-
-            response.sections = sectionsWithNonEmptyTopics;
-
-            return response;
-
+            return {
+                statusCode: 200,
+                message: "Pobrano listę sekcji pomyślnie",
+                subject,
+                sections
+            };
         } catch (error) {
             throw new InternalServerErrorException(
                 `Nie udało się pobrać sekcji: ${error.message}`

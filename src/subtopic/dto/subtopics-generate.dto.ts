@@ -7,6 +7,10 @@ export class SubtopicsAIGenerate {
 
   @IsOptional()
   @IsString()
+  content?: string;
+
+  @IsOptional()
+  @IsString()
   subject?: string;
 
   @IsOptional()

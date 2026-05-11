@@ -97,11 +97,23 @@ export class UserSubjectService {
             }
 
             const result = await this.prismaService.$transaction(async (tx) => {
+                let examDate: Date | undefined
+
+                if (
+                    data.month !== undefined &&
+                    data.year !== undefined
+                ) {
+                    examDate = new Date(Date.UTC(data.year, data.month - 1, 1))
+                }
+
                 const userSubject = await tx.userSubject.create({
                     data: {
                         userId,
                         subjectId,
-                        ...data
+                        dailyStudyMinutes: data.dailyStudyMinutes,
+                        detailLevel: data.detailLevel,
+                        threshold: data.threshold,
+                        examDate: examDate
                     }
                 });
 
@@ -117,6 +129,7 @@ export class UserSubjectService {
                     await tx.$executeRaw`
                     INSERT INTO "Word" (
                         "text",
+                        "translate",
                         "frequency",
                         "userId",
                         "subjectId",
@@ -125,6 +138,7 @@ export class UserSubjectService {
                     )
                     SELECT
                         w."text",
+                        w."translate",
                         w."frequency",
                         ${userId},
                         w."subjectId",
@@ -251,6 +265,15 @@ export class UserSubjectService {
                 throw new NotFoundException('Przedmiot nie został znaleziony');
             }
 
+            let examDate: Date | undefined
+
+            if (
+                data.month !== undefined &&
+                data.year !== undefined
+            ) {
+                examDate = new Date(Date.UTC(data.year, data.month - 1, 1))
+            }
+
             const userSubject = await this.prismaService.userSubject.update({
                 where: {
                     userId_subjectId: {
@@ -258,7 +281,12 @@ export class UserSubjectService {
                         userId
                     }
                 },
-                data
+                data: {
+                    dailyStudyMinutes: data.dailyStudyMinutes,
+                    detailLevel: data.detailLevel,
+                    threshold: data.threshold,
+                    ...(examDate && { examDate })
+                }
             })
 
             return {

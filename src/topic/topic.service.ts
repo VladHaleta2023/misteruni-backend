@@ -278,7 +278,7 @@ export class TopicService {
       data.section = data.section ?? section.name;
       data.topic = data.topic ?? topic.name;
       data.type = data.type ?? topic.type;
-      data.difficulty = data.difficulty ?? section.difficulty;
+      data.difficulty = data.difficulty ?? topic.difficulty ?? section.difficulty;
       data.information = data.information ?? topic.information;
 
       if (!Array.isArray(data.words) || !data.words.every(item =>
