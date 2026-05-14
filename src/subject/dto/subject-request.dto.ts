@@ -15,11 +15,11 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
-  examSheetTemplates?: string;
+  examTemplates?: string;
 
   @IsOptional()
   @IsString()
-  examSheetPrompt?: string;
+  examPrompt?: string;
 
   @IsOptional()
   @IsString()

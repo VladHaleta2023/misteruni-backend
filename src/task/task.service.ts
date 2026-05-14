@@ -34,15 +34,6 @@ export class TaskService {
         }
     }
 
-    private getPrompt = (...prompts: (string | null | undefined)[]): string | null => {
-        for (const prompt of prompts) {
-            if (prompt && prompt.trim() !== '') {
-                return prompt;
-            }
-        }
-        return null;
-    };
-
     private async syncUserProgressTables(userId: number, subjectId: number, tx: Prisma.TransactionClient) {
         await tx.$executeRaw`
             INSERT INTO "UserSection" ("userId", "subjectId", "sectionId", "percent", "createdAt", "updatedAt")

@@ -15,6 +15,7 @@ import { WordModule } from './word/word.module';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { UserSubjectModule } from './user-subject/user-subject.module';
+import { ExamModule } from './exam/exam.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { UserSubjectModule } from './user-subject/user-subject.module';
     UserModule,
     AuthModule,
     UserSubjectModule,
+    ExamModule,
   ],
   controllers: [AppController],
   providers: [AppService],

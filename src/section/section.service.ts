@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { PrismaService } from '../prisma/prisma.service';
 import { SectionUpdateRequest } from '../section/dto/section-request.dto';
 import { TimezoneService } from '../timezone/timezone.service';
+import { SubjectDetailLevel } from '@prisma/client';
 
 @Injectable()
 export class SectionService {
@@ -18,6 +19,7 @@ export class SectionService {
             importance?: number;
             isSubtopic?: boolean;
             isWriting?: boolean;
+            detailLevel?: SubjectDetailLevel;
         }>,
         dailyStudyMinutes: number,
         userId: number,
@@ -57,23 +59,30 @@ export class SectionService {
 
                 let baseTimeMinutes = 0;
 
-                // Writing topic = 2h
                 if (item.isWriting) {
-
-                    baseTimeMinutes = 120;
-
+                    baseTimeMinutes = 90;
                 }
-                // Subtopics
                 else if (item.isSubtopic) {
+                    let initialTimeMinutes = 2;
+
+                    switch (item.detailLevel) {
+                        case SubjectDetailLevel.BASIC:
+                            initialTimeMinutes = 2;
+                            break;
+                        case SubjectDetailLevel.EXPANDED:
+                            initialTimeMinutes = 4;
+                            break;
+                        case SubjectDetailLevel.ACADEMIC:
+                            initialTimeMinutes = 6;
+                            break;
+                        default:
+                            initialTimeMinutes = 2;
+                    }
 
                     const importance = item.importance ?? 100;
-
-                    baseTimeMinutes = 20 * (importance / 100);
-
+                    baseTimeMinutes = initialTimeMinutes * (importance / 100);
                 }
-                // Words
                 else {
-
                     baseTimeMinutes = 3;
                 }
 
@@ -103,7 +112,6 @@ export class SectionService {
             };
 
         } catch (error) {
-
             console.error(
                 'Error in calculatePrediction:',
                 error
@@ -141,68 +149,6 @@ export class SectionService {
         return diffDays;
     }
 
-    private getWillNotFinishPercent(
-        sections: any[],
-        threshold: number,
-        dailyStudyMinutes: number,
-        examDate: Date
-    ): number {
-        const notStartedSections = sections.filter(s => s.status === "started");
-        
-        if (notStartedSections.length === 0) {
-            return 0;
-        }
-
-        const sectionsWithTime = notStartedSections.map(section => {
-            let totalTimeMinutes = 0;
-
-            for (const topic of section.topics) {
-                const remainingToThreshold = Math.max(0, threshold - topic.percent);
-                if (remainingToThreshold <= 0) continue;
-
-                if (topic.type === "Writing") {
-                    totalTimeMinutes += 120 * (remainingToThreshold / 100);
-                }
-                else if (topic.subtopics && topic.subtopics.length > 0) {
-                    const totalImportance = topic.subtopics.reduce(
-                        (sum: number, st: any) => sum + (st.importance || 100),
-                        0
-                    );
-                    const avgImportance = totalImportance / topic.subtopics.length;
-                    totalTimeMinutes += 20 * (avgImportance / 100) * (remainingToThreshold / 100);
-                }
-                else {
-                    totalTimeMinutes += 3 * (remainingToThreshold / 100);
-                }
-            }
-
-            return {
-                section,
-                daysNeeded: totalTimeMinutes / dailyStudyMinutes
-            };
-        });
-
-        sectionsWithTime.sort((a, b) => a.daysNeeded - b.daysNeeded);
-
-        const today = new Date();
-        const daysToExam = Math.ceil((examDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
-        let remainingDays = daysToExam;
-        let willNotFinishCount = 0;
-
-        for (const item of sectionsWithTime) {
-            if (item.daysNeeded <= remainingDays) {
-                remainingDays -= item.daysNeeded;
-            } else {
-                willNotFinishCount++;
-            }
-        }
-
-        const willNotFinishPercent = (willNotFinishCount / sections.length) * 100;
-        
-        return Math.ceil(willNotFinishPercent);
-    }
-
     private async getPredictionSubtopics(
         userId: number,
         subjectId: number,
@@ -215,6 +161,7 @@ export class SectionService {
                 st.name,
                 st.importance,
                 st."topicId",
+                st."detailLevel",
                 st."sectionId",
                 COALESCE(ust.percent, 0) as percent
 
@@ -304,10 +251,10 @@ export class SectionService {
                 finished: true
             },
             orderBy: {
-                updatedAt: 'asc'
+                createdAt: 'asc'
             },
             select: {
-                updatedAt: true
+                createdAt: true
             }
         });
     }
@@ -411,6 +358,7 @@ export class SectionService {
                     .push({
                         id: subtopic.id,
                         name: subtopic.name,
+                        detailLevel: subtopic.detailLevel,
                         percent: subtopic.percent,
                         status: this.getStatus(
                             subtopic.percent,
@@ -432,7 +380,6 @@ export class SectionService {
                 new Map<number, number>();
 
             predictionSubtopics.forEach(subtopic => {
-
                 const currentSum =
                     topicImportanceMap.get(
                         subtopic.topicId
@@ -445,7 +392,6 @@ export class SectionService {
             });
 
             for (const row of currentPercents) {
-
                 topicPercentMap.set(
                     row.topicId,
                     row.topicPercent
@@ -462,30 +408,6 @@ export class SectionService {
                 );
             }
 
-            // SUBTOPIC PREDICTION
-            const topicItems =
-                Array.from(topicImportanceMap.keys())
-                    .map(topicId => {
-
-                        const totalImportance =
-                            topicImportanceMap.get(topicId) || 0;
-
-                        const currentPercent =
-                            topicCurrentPercentMap.get(topicId) || 0;
-
-                        return {
-                            percent: currentPercent,
-                            importance: totalImportance,
-                            isSubtopic: true
-                        };
-                    });
-
-            const pendingTopics =
-                topicItems.filter(
-                    topic => topic.percent < threshold
-                );
-
-            // WRITING TOPICS
             const writingItems =
                 sectionsWithTopics
                     .filter(
@@ -496,17 +418,13 @@ export class SectionService {
                             topicCurrentPercentMap.get(
                                 row.topicId
                             ) || 0,
-
-                        importance: 120,
-
+                        importance: 90,
                         isWriting: true
                     }));
 
-            // WORDS
             const pendingWords =
                 words
                     .map(w => {
-
                         const percent =
                             w.totalAttemptCount === 0
                                 ? 0
@@ -524,7 +442,6 @@ export class SectionService {
 
             const allWords =
                 words.map(w => {
-
                     const percent =
                         w.totalAttemptCount === 0
                             ? 0
@@ -539,12 +456,21 @@ export class SectionService {
                     };
                 });
 
+            const pendingSubtopicItems = predictionSubtopics
+                .filter(subtopic => {
+                    const topicPercent = topicPercentMap.get(subtopic.topicId) ?? 0;
+                    return topicPercent < threshold;
+                })
+                .map(subtopic => ({
+                    percent: subtopic.percent,
+                    importance: subtopic.importance ?? 0,
+                    isSubtopic: true,
+                    detailLevel: subtopic.detailLevel as SubjectDetailLevel
+                }));
+
             const predictionItems = [
-
-                ...pendingTopics,
-
+                ...pendingSubtopicItems,
                 ...writingItems,
-
                 ...pendingWords.map(w => ({
                     percent: w.percent,
                     importance: w.importance ?? 0,
@@ -556,12 +482,10 @@ export class SectionService {
                 new Map<number, any>();
 
             for (const row of sectionsWithTopics) {
-
                 let section =
                     sectionMap.get(row.sectionId);
 
                 if (!section) {
-
                     section = {
                         id: row.sectionId,
                         name: row.sectionName,
@@ -588,7 +512,6 @@ export class SectionService {
                 }
 
                 if (row.topicId) {
-
                     const topicPercent =
                         topicPercentMap.get(
                             row.topicId
@@ -641,21 +564,15 @@ export class SectionService {
                 .filter(section => section.topics.length > 0);
 
             const initialNow =
-                firstTask?.updatedAt ?? new Date();
+                firstTask?.createdAt ?? new Date();
 
-            const initialTopicItems =
-                Array.from(topicImportanceMap.keys())
-                    .map(topicId => {
-
-                        const totalImportance =
-                            topicImportanceMap.get(topicId) || 0;
-
-                        return {
-                            percent: 0,
-                            importance: totalImportance,
-                            isSubtopic: true
-                        };
-                    });
+            const initialSubtopicItems = predictionSubtopics
+                .map(subtopic => ({
+                    percent: 0,
+                    importance: subtopic.importance ?? 0,
+                    isSubtopic: true,
+                    detailLevel: subtopic.detailLevel as SubjectDetailLevel
+                }));
 
             const initialWritingItems =
                 writingItems.map(item => ({
@@ -664,11 +581,8 @@ export class SectionService {
                 }));
 
             const initialItems = [
-
-                ...initialTopicItems,
-
+                ...initialSubtopicItems,
                 ...initialWritingItems,
-
                 ...allWords.map(w => ({
                     percent: 0,
                     importance: w.importance ?? 0,
@@ -703,7 +617,6 @@ export class SectionService {
             let deltaDays: number | null = null;
 
             if (firstTask) {
-
                 deltaDays =
                     this.getDaysDifference(
                         initialPrediction.date,

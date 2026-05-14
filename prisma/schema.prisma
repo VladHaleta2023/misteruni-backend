@@ -214,11 +214,13 @@ model Exam {
 }
 
 model ExamTopic {
-  examId Int
-  topicId     Int
+  examId  Int
+  topicId Int
 
-  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
-  topic       Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  partId  Int
+
+  exam    Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  topic   Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@id([examId, topicId])
 }

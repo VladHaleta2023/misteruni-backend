@@ -239,7 +239,7 @@ export class SubjectService {
                 message: "Przedmiot został pomyślnie pobrany",
                 subject: {
                     ...subject,
-                    examSheetPromptOwn: true,
+                    examPromptOwn: true,
                     solutionGuidePromptOwn: true,
                     vocabularyGuidePromptOwn: true,
                     literaturePromptOwn: true,
