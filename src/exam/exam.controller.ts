@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpException, Param, ParseIntPipe, Post, Req, UseGuards } from '@nestjs/common';
 import { ExamService } from './exam.service';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Request } from 'express';
 import { User } from '@prisma/client';
 import { ExamAIGenerate } from './dto/exam-generate.dto';
