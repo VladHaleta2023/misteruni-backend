@@ -29,7 +29,6 @@ export class SectionService {
 
             const pendingItems = items
                 .map(item => {
-
                     const remainingToThreshold = Math.max(
                         0,
                         threshold - item.percent
@@ -44,7 +43,6 @@ export class SectionService {
                 .filter(item => item.remainingToThreshold > 0);
 
             if (!pendingItems.length || dailyStudyMinutes <= 0) {
-
                 const local = this.timezoneService.utcToLocal(now);
 
                 return {
@@ -53,50 +51,50 @@ export class SectionService {
                 };
             }
 
-            let totalTimeMinutes = 0;
+            let totalTimeSeconds = 0;
 
             for (const item of pendingItems) {
 
-                let baseTimeMinutes = 0;
+                let baseTimeSeconds = 0;
 
                 if (item.isWriting) {
-                    baseTimeMinutes = 90;
+                    baseTimeSeconds = 5400;
                 }
                 else if (item.isSubtopic) {
-                    let initialTimeMinutes = 2;
+                    let initialTimeSeconds = 120;
 
                     switch (item.detailLevel) {
                         case SubjectDetailLevel.BASIC:
-                            initialTimeMinutes = 2;
+                            initialTimeSeconds = 120;
                             break;
                         case SubjectDetailLevel.EXPANDED:
-                            initialTimeMinutes = 4;
+                            initialTimeSeconds = 240;
                             break;
                         case SubjectDetailLevel.ACADEMIC:
-                            initialTimeMinutes = 6;
+                            initialTimeSeconds = 360;
                             break;
                         default:
-                            initialTimeMinutes = 2;
+                            initialTimeSeconds = 120;
                     }
 
                     const importance = item.importance ?? 100;
-                    baseTimeMinutes = initialTimeMinutes * (importance / 100);
+                    baseTimeSeconds = initialTimeSeconds * (importance / 100);
                 }
                 else {
-                    baseTimeMinutes = 3;
+                    baseTimeSeconds = 600;
                 }
 
                 const fractionOfFull =
                     item.remainingToThreshold / 100;
 
                 const time =
-                    baseTimeMinutes * fractionOfFull;
+                    baseTimeSeconds * fractionOfFull;
 
-                totalTimeMinutes += time;
+                totalTimeSeconds += time;
             }
 
             const daysNeeded =
-                totalTimeMinutes / dailyStudyMinutes;
+                totalTimeSeconds / (dailyStudyMinutes * 60);
 
             const predictionDate = new Date(
                 now.getTime() +

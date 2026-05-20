@@ -72,6 +72,7 @@ model Subject {
   audioChatPrompt         String             @default("")
   topicFrequencyPrompt    String             @default("")
   literaturePrompt        String             @default("")
+  totalTimeSpent          Int                @default(0)
   sections                Section[]
   subtopics               Subtopic[]
   topics                  Topic[]
@@ -166,6 +167,7 @@ model UserTopic {
   @@index([userId, subjectId, sectionId], map: "idx_usertopic_user_subject_section_full")
   @@index([topicId, userId, subjectId], map: "idx_usertopic_topic_user_subject")
   @@index([userId, subjectId, percent], map: "idx_usertopic_percent_covering")
+  @@index([userId, subjectId, topicId, percent])
 }
 
 model UserSubtopic {
@@ -196,6 +198,7 @@ model UserSubtopic {
   @@index([subtopicId, userId], map: "idx_usersubtopic_join_percent")
   @@index([userId, subjectId, subtopicId], map: "idx_usersubtopic_user_subject_subtopic_full")
   @@index([subtopicId, userId], map: "idx_usersubtopic_subtopic_user")
+  @@index([userId, subjectId, topicId, subtopicId, percent])
 }
 
 model Exam {
@@ -203,7 +206,6 @@ model Exam {
   subjectId          Int
   userId             Int
   partId             Int           @default(-1)
-  timeSpentSeconds   Int           @default(10800)
   topics             ExamTopic[]
   tasks              Task[]
   createdAt          DateTime      @default(now())
@@ -211,18 +213,21 @@ model Exam {
 
   subject            Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, subjectId, partId(sort: Desc)])
 }
 
 model ExamTopic {
-  examId  Int
-  topicId Int
+  examId    Int
+  topicId   Int
+  partId    Int
 
-  partId  Int
-
-  exam    Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
-  topic   Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  exam      Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  topic     Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@id([examId, topicId])
+  @@index([examId])
+  @@index([topicId])
 }
 
 model Section {
@@ -285,6 +290,8 @@ model Topic {
   @@index([sectionId, id, type, name, frequency], map: "idx_topic_covering")
   @@index([subjectId, type], map: "idx_topic_subject_type_opt")
   @@index([sectionId, partId, id, name, type, frequency], map: "idx_topic_lateral_covering")
+   @@index([subjectId, id])
+  @@index([subjectId, type, frequency(sort: Desc)])
 }
 
 model Subtopic {
@@ -319,6 +326,7 @@ model Subtopic {
   @@index([subjectId, sectionId, topicId, detailLevel, id, name, importance], map: "idx_subtopic_covering_filter")
   @@index([subjectId, detailLevel, topicId, sectionId], map: "idx_subtopic_cte_covering")
   @@index([topicId, sectionId, subjectId, detailLevel], map: "idx_subtopic_topic_section_detail")
+  @@index([subjectId, detailLevel, partId])
 }
 
 model SubtopicProgress {
@@ -367,6 +375,7 @@ model Task {
   userId             Int
   chatFinished       Boolean            @default(false)
   chat               String             @default("")
+  timeSpentSeconds   Int                @default(0)
   audioFiles         AudioFile[]
   progresses         SubtopicProgress[]
   topic              Topic              @relation(fields: [topicId], references: [id], onDelete: Cascade)
@@ -384,6 +393,9 @@ model Task {
   @@index([id, text, percent, updatedAt], map: "idx_task_covering_main")
   @@index([userId, topicId, finished, order], map: "idx_task_user_topic_finished_order")
   @@index([userId, subjectId, finished, updatedAt], map: "idx_task_firsttask_optimized")
+  @@index([examId, userId, finished])
+  @@index([examId, userId, subjectId, topicId, order])
+  @@index([examId, finished], map: "idx_task_exam_finished_filter")
 }
 
 model AudioFile {

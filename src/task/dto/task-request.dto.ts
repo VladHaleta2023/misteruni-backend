@@ -39,7 +39,7 @@ export class TaskCreateRequest {
   solution: string
 }
 
-export class TaskUpdateRequest {
+export class TaskUpdateFinishedRequest {
   @IsOptional()
   @IsBoolean()
   finished: boolean;

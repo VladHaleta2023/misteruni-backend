@@ -14,6 +14,10 @@ export class SubjectUpdateRequest {
   name?: string;
 
   @IsOptional()
+  @IsInt()
+  totalTimeSpent?: number;
+
+  @IsOptional()
   @IsString()
   examTemplates?: string;
 

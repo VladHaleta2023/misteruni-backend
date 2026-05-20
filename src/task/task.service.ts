@@ -216,7 +216,8 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
-        id: number
+        id: number,
+        examId?: number
     ) {
         try {
             const userSubject = await this.prismaService.userSubject.findUnique({
@@ -335,6 +336,15 @@ export class TaskService {
                 LEFT JOIN audio_agg aa ON aa."taskId" = t.id
             `;
 
+            if (examId && task[0]) {
+                await this.prismaService.task.update({
+                    where: { id: task[0].id, userId },
+                    data: { examId }
+                });
+
+                task[0].examId = examId;
+            }
+
             return {
                 statusCode: 200,
                 message: 'Pobrano zadanie pomyślnie',
@@ -396,6 +406,7 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
+        examId?: number
     ) {
         try {
             const userSubject = await this.prismaService.userSubject.findUnique({
@@ -524,6 +535,15 @@ export class TaskService {
                     task: null,
                 };
             }
+
+            if (examId) {
+                await this.prismaService.task.update({
+                    where: { id: task[0].id, userId },
+                    data: { examId }
+                })
+            }
+
+            task[0].examId = examId;
 
             return {
                 statusCode: 200,
@@ -1290,7 +1310,8 @@ export class TaskService {
         subjectId: number,
         sectionId: number,
         topicId: number,
-        taskData: TaskCreateRequest
+        taskData: TaskCreateRequest,
+        examId?: number
     ) {
         try {
             return await this.prismaService.$transaction(async (tx) => {
@@ -1426,6 +1447,13 @@ export class TaskService {
                             tx
                         );
                     }
+                }
+
+                if (examId) {
+                    await tx.task.update({
+                        where: { id: taskId, userId },
+                        data: { examId }
+                    });
                 }
 
                 return {
@@ -1968,6 +1996,44 @@ export class TaskService {
         } catch (error) {
             console.error(error);
             throw new InternalServerErrorException('Nie udało się dodać wyrazu');
+        }
+    }
+
+    async updateTimeSpentTaskById(
+        userId: number,
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+        additionalSeconds: number
+    ) {
+        try {
+            const existing = await this.prismaService.task.findUnique({ where: { id } });
+            if (!existing) {
+                return {
+                    statusCode: 404,
+                    message: `Zadanie nie zostało znalezione`,
+                };
+            }
+
+            const newTaskTimeSpentSeconds = existing.timeSpentSeconds + additionalSeconds;
+
+            const updatedTask = await this.prismaService.task.update({
+                where: { id },
+                data: {
+                    timeSpentSeconds: newTaskTimeSpentSeconds
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Czas zadania został pomyślnie zaktualizowany',
+                task: updatedTask,
+            };
+        }
+        catch (error) {
+            console.error(`Nie udało się zaktualizować czas zadania:`, error);
+            throw new InternalServerErrorException('Błąd podczas aktualizacji czasu zadania');
         }
     }
 }

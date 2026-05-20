@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { TaskService } from './task.service';
 import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
-import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateFinishedRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';
@@ -45,7 +45,8 @@ export class TaskController {
     @Param('subjectId', ParseIntPipe) subjectId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
-    @Req() req: Request
+    @Req() req: Request,
+    @Query('examId') examId?: number
   ) {
     let aborted = false;
 
@@ -59,7 +60,8 @@ export class TaskController {
 
     const user: User = (req as any).user;
     const userId: number = user.id;
-    const result = await this.taskService.findPendingTask(userId, subjectId, sectionId, topicId);
+
+    const result = await this.taskService.findPendingTask(userId, subjectId, sectionId, topicId, examId);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);
@@ -106,7 +108,8 @@ export class TaskController {
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Req() req: Request
+    @Req() req: Request,
+    @Query('examId') examId?: number
   ) {
     let aborted = false;
 
@@ -120,7 +123,7 @@ export class TaskController {
 
     const user: User = (req as any).user;
     const userId: number = user.id;
-    const result = await this.taskService.findTaskById(userId, subjectId, sectionId, topicId, id);
+    const result = await this.taskService.findTaskById(userId, subjectId, sectionId, topicId, id, examId);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);
@@ -374,7 +377,8 @@ export class TaskController {
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('topicId', ParseIntPipe) topicId: number,
     @Body() taskData: TaskCreateRequest,
-    @Req() req: Request
+    @Req() req: Request,
+    @Query('examId') examId?: number
   ) {
     let aborted = false;
 
@@ -388,7 +392,7 @@ export class TaskController {
 
     const user: User = (req as any).user;
     const userId: number = user.id;
-    const result = await this.taskService.createTaskTransaction(userId, subjectId, sectionId, topicId, taskData);
+    const result = await this.taskService.createTaskTransaction(userId, subjectId, sectionId, topicId, taskData, examId);
 
     if (aborted) {
       throw new HttpException('Client aborted', 499);
@@ -504,6 +508,33 @@ export class TaskController {
       const user: User = (req as any).user;
       const userId: number = user.id;
       const result = await this.taskService.updateFinished(userId, subjectId, sectionId, topicId, id);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/add-time')
+  async updateTimeSpentTaskById(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
+    @Body('additionalSeconds') additionalSeconds: number
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const user: User = (req as any).user;
+      const userId: number = user.id;
+      const result = await this.taskService.updateTimeSpentTaskById(userId, subjectId, sectionId, topicId, id, additionalSeconds);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {
