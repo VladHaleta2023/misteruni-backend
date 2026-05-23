@@ -548,7 +548,6 @@ export class SubjectService {
                     AND TRIM(lit) <> ''
                     AND NOT (TRIM(lit) LIKE '\[%' AND TRIM(lit) LIKE '%\]%')
                 ) t
-                WHERE literature = 'Biblia: Księga Rodzaju'
                 ORDER BY literature ASC;
             `;
 
