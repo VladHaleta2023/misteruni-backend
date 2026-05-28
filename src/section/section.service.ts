@@ -70,9 +70,6 @@ export class SectionService {
                         case SubjectDetailLevel.EXPANDED:
                             initialTimeSeconds = 240;
                             break;
-                        case SubjectDetailLevel.ACADEMIC:
-                            initialTimeSeconds = 360;
-                            break;
                         default:
                             initialTimeSeconds = 120;
                     }
@@ -150,9 +147,9 @@ export class SectionService {
     private async getPredictionSubtopics(
         userId: number,
         subjectId: number,
-        detailLevels: string[]
+        detailLevels: string[],
+        topicDifficulties: string[]
     ) {
-
         return this.prismaService.$queryRaw<any[]>`
             SELECT 
                 st.id,
@@ -162,23 +159,33 @@ export class SectionService {
                 st."detailLevel",
                 st."sectionId",
                 COALESCE(ust.percent, 0) as percent
-
             FROM "Subtopic" st
-
             LEFT JOIN "UserSubtopic" ust 
                 ON ust."subtopicId" = st.id 
                 AND ust."userId" = ${userId}
-
             WHERE 
                 st."subjectId" = ${subjectId}
                 AND st."detailLevel" = ANY(${detailLevels}::"SubjectDetailLevel"[])
-
+                AND EXISTS (
+                    SELECT 1 FROM "Topic" t 
+                    WHERE t.id = st."topicId" 
+                    AND t."difficulty" = ANY(${topicDifficulties}::text[])
+                )
             ORDER BY st.importance DESC;
         `;
     }
 
+    private getTopicDifficulties(userDetailLevel: SubjectDetailLevel): string[] {
+        switch (userDetailLevel) {
+            case 'BASIC': return ['Podstawowy'];
+            case 'EXPANDED': return ['Podstawowy', 'Rozszerzony'];
+            default: return ['Podstawowy'];
+        }
+    }
+
     private async getSectionsWithTopics(
-        subjectId: number
+        subjectId: number,
+        topicDifficulties: string[]
     ) {
         return this.prismaService.$queryRaw<any[]>`
             SELECT 
@@ -194,6 +201,7 @@ export class SectionService {
             FROM "Section" s
             LEFT JOIN "Topic" t 
                 ON t."sectionId" = s.id
+                AND t."difficulty" = ANY(${topicDifficulties}::text[])
             WHERE 
                 s."subjectId" = ${subjectId}
             ORDER BY s."partId" ASC, t."partId" ASC;
@@ -225,11 +233,23 @@ export class SectionService {
         `;
     }
 
-    private async getWordsWithProgress(userId: number, subjectId: number) {
+    private async getWordsWithProgress(
+        userId: number, 
+        subjectId: number,
+        topicDifficulties: string[]  // ДОБАВИТЬ параметр
+    ) {
         return this.prismaService.$queryRaw<any[]>`
-            SELECT frequency, "totalAttemptCount", "totalCorrectCount"
-            FROM "Word"
-            WHERE "userId" = ${userId} AND "subjectId" = ${subjectId}
+            SELECT 
+                w.frequency, 
+                w."totalAttemptCount", 
+                w."totalCorrectCount",
+                t."difficulty" as "topicDifficulty"
+            FROM "Word" w
+            INNER JOIN "Topic" t ON t.id = w."topicId"
+            WHERE 
+                w."userId" = ${userId} 
+                AND w."subjectId" = ${subjectId}
+                AND t."difficulty" = ANY(${topicDifficulties}::text[])
         `;
     }
 
@@ -305,6 +325,8 @@ export class SectionService {
             const detailLevels =
                 this.getDetailLevels(detailLevel);
 
+            const topicDifficulties = this.getTopicDifficulties(detailLevel);
+
             const [
                 predictionSubtopics,
                 sectionsWithTopics,
@@ -317,10 +339,11 @@ export class SectionService {
                 this.getPredictionSubtopics(
                     userId,
                     subjectId,
-                    detailLevels
+                    detailLevels,
+                    topicDifficulties
                 ),
 
-                this.getSectionsWithTopics(subjectId),
+                this.getSectionsWithTopics(subjectId, topicDifficulties),
 
                 this.getCurrentPercents(
                     userId,
@@ -329,7 +352,8 @@ export class SectionService {
 
                 this.getWordsWithProgress(
                     userId,
-                    subjectId
+                    subjectId,
+                    topicDifficulties
                 ),
 
                 this.getLiteratureNames(subjectId),

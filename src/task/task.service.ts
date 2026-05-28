@@ -1573,7 +1573,6 @@ export class TaskService {
             switch (level) {
                 case 'BASIC': return ['BASIC'];
                 case 'EXPANDED': return ['BASIC', 'EXPANDED'];
-                case 'ACADEMIC': return ['BASIC', 'EXPANDED', 'ACADEMIC'];
                 default: return ['BASIC'];
             }
         };

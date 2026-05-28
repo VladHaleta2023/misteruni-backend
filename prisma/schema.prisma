@@ -67,7 +67,6 @@ model Subject {
   isVisible               Boolean            @default(false)
   subtopicsStatusPrompt   String             @default("")
   vocabularyGuidePrompt   String             @default("")
-  minDetailLevel          SubjectDetailLevel @default(BASIC)
   chatPrompt              String             @default("")
   audioChatPrompt         String             @default("")
   topicFrequencyPrompt    String             @default("")
@@ -239,7 +238,7 @@ model Section {
   partId                Int            @default(-1)
   type                  String         @default("")
   category              String         @default("")
-  difficulty            String         @default("")
+  difficulty            String         @default("Podstawowy")
   subject               Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subtopics             Subtopic[]
   topics                Topic[]
@@ -264,7 +263,7 @@ model Topic {
   updatedAt             DateTime       @updatedAt
   partId                Int            @default(-1)
   type                  String         @default("")
-  difficulty            String         @default("")
+  difficulty            String         @default("Podstawowy")
   information           String         @default("")
   literature            String         @default("")
   frequency             Int            @default(0)
@@ -466,5 +465,4 @@ enum UserRole {
 enum SubjectDetailLevel {
   BASIC
   EXPANDED
-  ACADEMIC
 }

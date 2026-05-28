@@ -71,7 +71,8 @@ export class SubtopicService {
                     SELECT 
                         t.id, t.name, t.note, t."partId", t.frequency,
                         COALESCE(ut.percent, 0) as percent,
-                        (SELECT threshold FROM user_settings) as threshold
+                        (SELECT threshold FROM user_settings) as threshold,
+                        t.difficulty as topic_difficulty
                     FROM "Topic" t
                     LEFT JOIN "UserTopic" ut ON ut."userId" = ${userId} 
                         AND ut."subjectId" = ${subjectId}
@@ -92,7 +93,7 @@ export class SubtopicService {
                                 AND NOT (TRIM(lit) LIKE '[%' AND TRIM(lit) LIKE '%]%')
                             ),
                             ARRAY[]::text[]
-                        ) as literatures  -- Переименовано с literature на literatures
+                        ) as literatures
                     FROM "Topic" t
                     LEFT JOIN LATERAL unnest(
                         string_to_array(t.literature, E'\n')
@@ -108,7 +109,8 @@ export class SubtopicService {
                     ti."partId" as "topicPartId",
                     ti.frequency as "topicFrequency",
                     ti.percent as "topicPercent",
-                    tl.literatures as "topicLiteratures",  -- Переименовано с literature на literatures
+                    tl.literatures as "topicLiteratures",
+                    ti.topic_difficulty as "topicDifficulty",
                     CASE 
                         WHEN ti.percent >= ti.threshold THEN 'completed'
                         WHEN ti.percent > 0 THEN 'progress'
@@ -134,7 +136,7 @@ export class SubtopicService {
                     AND s."subjectId" = ${subjectId}
                     AND s."detailLevel"::text = ANY(
                         CASE (SELECT detail_level FROM user_settings)
-                            WHEN 'ACADEMIC' THEN ARRAY['BASIC', 'EXPANDED', 'ACADEMIC']::text[]
+                            -- 🔥 USUNIĘTO ACADEMIC
                             WHEN 'EXPANDED' THEN ARRAY['BASIC', 'EXPANDED']::text[]
                             ELSE ARRAY['BASIC']::text[]
                         END
@@ -161,7 +163,8 @@ export class SubtopicService {
                 frequency: topicRow.topicFrequency,
                 percent: topicRow.topicPercent,
                 status: topicRow.topicStatus as Status,
-                literatures: topicRow.topicLiteratures || []
+                literatures: topicRow.topicLiteratures || [],
+                difficulty: topicRow.topicDifficulty
             };
 
             const subtopics = data
@@ -915,6 +918,7 @@ export class SubtopicService {
             data.subject = data.subject ?? subject.name;
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
+            data.difficulty = data.difficulty ?? topic.difficulty;
 
             if (!Array.isArray(data.subtopics) || !data.subtopics.every(item =>
                 Array.isArray(item) &&

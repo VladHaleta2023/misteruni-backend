@@ -2,8 +2,7 @@ import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, Max, Min } from 'class-vali
 
 export enum SubjectDetailLevel {
   BASIC = "BASIC",
-  EXPANDED = "EXPANDED",
-  ACADEMIC = "ACADEMIC"
+  EXPANDED = "EXPANDED"
 }
 
 export class UserSubjectUpdateRequest {
@@ -22,7 +21,7 @@ export class UserSubjectUpdateRequest {
   @IsIn([30, 60, 90, 120, 150, 180])
   dailyStudyMinutes?: number;
 
-    @IsOptional()
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(12)

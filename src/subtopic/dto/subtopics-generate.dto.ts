@@ -65,6 +65,10 @@ export class SubtopicsStatusAIGenerate {
 
   @IsOptional()
   @IsString()
+  difficulty?: string;
+
+  @IsOptional()
+  @IsString()
   topic?: string;
 
   @IsString()

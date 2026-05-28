@@ -5,6 +5,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { ExamCreateRequest } from './dto/exam-request.dto';
+import { SubjectDetailLevel } from '@prisma/client';
 
 @Injectable()
 export class ExamService {
@@ -460,7 +461,7 @@ export class ExamService {
         signal?: AbortSignal
     ) {
         const url = `${this.fastapiUrl}/admin/exam-generate`;
-    
+
         try {
             const subject = await this.prismaService.subject.findUnique({ where: { id: subjectId } });
 
@@ -474,6 +475,16 @@ export class ExamService {
 
             const threshold = userSubject?.threshold ?? 50;
             const detailLevel = userSubject?.detailLevel ?? 'BASIC';
+
+            const getTopicDifficulties = (level: SubjectDetailLevel): string[] => {
+                switch (level) {
+                    case 'BASIC': return ['Podstawowy'];
+                    case 'EXPANDED': return ['Podstawowy', 'Rozszerzony'];
+                    default: return ['Podstawowy'];
+                }
+            };
+
+            const topicDifficulties = getTopicDifficulties(detailLevel);
 
             const result = await this.prismaService.$queryRaw<any[]>`
                 WITH subtopics_base AS (
@@ -492,11 +503,15 @@ export class ExamService {
                     WHERE st."subjectId" = ${subjectId}
                     AND st."detailLevel"::text = ANY(
                             CASE ${detailLevel}::text
-                                WHEN 'ACADEMIC' THEN ARRAY['BASIC','EXPANDED','ACADEMIC']::text[]
                                 WHEN 'EXPANDED' THEN ARRAY['BASIC','EXPANDED']::text[]
                                 ELSE ARRAY['BASIC']::text[]
                             END
                         )
+                    AND EXISTS (
+                        SELECT 1 FROM "Topic" t
+                        WHERE t.id = st."topicId"
+                        AND t."difficulty" = ANY(${topicDifficulties}::text[])
+                    )
                 ),
 
                 filtered_subtopics AS (
@@ -517,21 +532,17 @@ export class ExamService {
 
                 combined_subtopics AS (
                     SELECT * FROM filtered_subtopics
-
                     UNION ALL
-
                     SELECT * FROM fallback_subtopics
                 ),
 
                 ranked_subtopics AS (
                     SELECT
                         cs.*,
-
                         ROW_NUMBER() OVER (
                             PARTITION BY cs."topicId"
                             ORDER BY cs."partId" ASC
                         ) AS rn
-
                     FROM combined_subtopics cs
                 ),
 
@@ -544,22 +555,18 @@ export class ExamService {
                 subtopics_calc AS (
                     SELECT 
                         st."topicId",
-
                         ROUND(
                             SUM(
                                 CASE 
                                     WHEN st."detailLevel" = 'BASIC' THEN 120
                                     WHEN st."detailLevel" = 'EXPANDED' THEN 240
-                                    WHEN st."detailLevel" = 'ACADEMIC' THEN 360
                                     ELSE 120
                                 END
                                 * (st.importance / 100.0)
                                 * ((100 - st.percent) / 100.0)
                             )
                         )::int AS sub_time,
-
                         COUNT(*) AS sub_count
-
                     FROM final_subtopics st
                     GROUP BY st."topicId"
                 ),
@@ -578,6 +585,7 @@ export class ExamService {
                         AND ut."userId" = ${userId}
                         AND ut."subjectId" = ${subjectId}
                     WHERE t."subjectId" = ${subjectId}
+                    AND t."difficulty" = ANY(${topicDifficulties}::text[])
                 )
 
                 SELECT
@@ -586,21 +594,17 @@ export class ExamService {
                     tb.frequency,
                     tb.percent,
                     tb.type,
-
                     CASE 
                         WHEN tb.type = 'WRITING' THEN 5400
                         WHEN tb.type = 'STORIES' THEN 600
                         ELSE COALESCE(sc.sub_time, 0)
                     END::int AS time
-
                 FROM topics_base tb
                 LEFT JOIN subtopics_calc sc
                     ON sc."topicId" = tb.id
-
                 WHERE 
                     tb.type IN ('WRITING', 'STORIES')
                     OR sc.sub_count > 0
-
                 ORDER BY tb.frequency DESC;
             `;
 

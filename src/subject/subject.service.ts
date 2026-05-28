@@ -190,15 +190,13 @@ export class SubjectService {
         type AvailableSubject = {
             id: number;
             name: string;
-            minDetailLevel: string;
         }
 
         try {
             const availableSubjects = await this.prismaService.$queryRaw<AvailableSubject[]>`
                 SELECT 
                     s.id,
-                    s.name,
-                    s."minDetailLevel"
+                    s.name
                 FROM "Subject" s
                 WHERE s."isVisible" = true
                 AND NOT EXISTS (
