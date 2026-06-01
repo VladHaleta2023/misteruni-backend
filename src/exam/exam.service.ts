@@ -578,7 +578,7 @@ export class ExamService {
                         t.name,
                         t.frequency AS frequency,
                         COALESCE(ut.percent, 0)::int AS percent,
-                        COALESCE(NULLIF(t.type, ''), 'GENERAL') AS type
+                        COALESCE(NULLIF(t.type, ''), 'General') AS type
                     FROM "Topic" t
                     LEFT JOIN "UserTopic" ut
                         ON ut."topicId" = t.id
@@ -595,15 +595,15 @@ export class ExamService {
                     tb.percent,
                     tb.type,
                     CASE 
-                        WHEN tb.type = 'WRITING' THEN 5400
-                        WHEN tb.type = 'STORIES' THEN 600
+                        WHEN tb.type = 'Writing' THEN 5400
+                        WHEN tb.type = 'Stories' THEN 600
                         ELSE COALESCE(sc.sub_time, 0)
                     END::int AS time
                 FROM topics_base tb
                 LEFT JOIN subtopics_calc sc
                     ON sc."topicId" = tb.id
                 WHERE 
-                    tb.type IN ('WRITING', 'STORIES')
+                    tb.type IN ('Writing', 'Stories')
                     OR sc.sub_count > 0
                 ORDER BY tb.frequency DESC;
             `;
