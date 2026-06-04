@@ -27,7 +27,11 @@ export class TopicUpdateRequest {
 
   @IsOptional()
   @IsString()
-  note?: string;
+  noteBasicLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  noteExpandedLevel?: string;
 
   @IsOptional()
   @IsArray()

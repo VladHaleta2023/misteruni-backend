@@ -194,7 +194,8 @@ export class TopicService {
               if (data.name !== undefined) updateData.name = data.name;
               if (data.literature !== undefined) updateData.literature = data.literature;
               if (data.frequency !== undefined) updateData.frequency = data.frequency;
-              if (data.note !== undefined) updateData.note = data.note;
+              if (data.noteBasicLevel !== undefined) updateData.noteBasicLevel = data.noteBasicLevel;
+              if (data.noteExpandedLevel !== undefined) updateData.noteExpandedLevel = data.noteExpandedLevel;
               if (data.type !== undefined) updateData.type = data.type;
               if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
               if (data.information !== undefined) updateData.information = data.information;

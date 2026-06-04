@@ -267,7 +267,8 @@ model Topic {
   information           String         @default("")
   literature            String         @default("")
   frequency             Int            @default(0)
-  note                  String         @default("")
+  noteBasicLevel        String         @default("")
+  noteExpandedLevel     String         @default("")
   subtopics             Subtopic[]
   tasks                 Task[]
   section               Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)

@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 import { StorageService } from './storage/storage.service';
 
@@ -226,5 +226,73 @@ export class AppService {
             console.error('❌ Ошибка при копировании слов:', error);
             throw new InternalServerErrorException('Не удалось скопировать предмет');
         } 
+    }
+
+    async getSubjectInformation(subjectId: number) {
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId }
+            });
+
+            if (!subject) throw new BadRequestException("Не удалось найти предмет");
+
+            const sections = await this.prismaService.section.findMany({
+                where: {
+                    subjectId,
+                },
+                orderBy: [
+                    {
+                        partId: 'asc',
+                    },
+                    {
+                        id: 'asc',
+                    },
+                ],
+                select: {
+                    name: true,
+                    topics: {
+                        orderBy: [
+                            {
+                                partId: 'asc',
+                            },
+                            {
+                                id: 'asc',
+                            },
+                        ],
+                        select: {
+                            name: true,
+                            frequency: true,
+                            difficulty: true,
+                            information: true,
+                            subtopics: {
+                                orderBy: [
+                                    {
+                                        partId: 'asc',
+                                    },
+                                    {
+                                        id: 'asc',
+                                    },
+                                ],
+                                select: {
+                                    name: true,
+                                    importance: true,
+                                    detailLevel: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            return {
+                statusCode: 200,
+                message: "Предмет получен",
+                sections
+            };
+        }
+        catch (error) {
+            console.error('❌ Ошибка при получение данных:', error);
+            throw new InternalServerErrorException('Не удалось получить данные предмета');
+        }
     }
 }

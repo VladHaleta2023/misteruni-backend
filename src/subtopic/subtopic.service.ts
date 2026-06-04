@@ -69,7 +69,7 @@ export class SubtopicService {
                 ),
                 topic_info AS (
                     SELECT 
-                        t.id, t.name, t.note, t."partId", t.frequency,
+                        t.id, t.name, t."noteBasicLevel", t."noteExpandedLevel", t."partId", t.frequency,
                         COALESCE(ut.percent, 0) as percent,
                         (SELECT threshold FROM user_settings) as threshold,
                         t.difficulty as topic_difficulty
@@ -105,7 +105,8 @@ export class SubtopicService {
                     -- Тема
                     ti.id as "topicId",
                     ti.name as "topicName",
-                    ti.note as "topicNote",
+                    ti."noteBasicLevel" as "topicNoteBasicLevel",
+                    ti."noteExpandedLevel" as "topicNoteExpandedLevel",
                     ti."partId" as "topicPartId",
                     ti.frequency as "topicFrequency",
                     ti.percent as "topicPercent",
@@ -136,7 +137,6 @@ export class SubtopicService {
                     AND s."subjectId" = ${subjectId}
                     AND s."detailLevel"::text = ANY(
                         CASE (SELECT detail_level FROM user_settings)
-                            -- 🔥 USUNIĘTO ACADEMIC
                             WHEN 'EXPANDED' THEN ARRAY['BASIC', 'EXPANDED']::text[]
                             ELSE ARRAY['BASIC']::text[]
                         END
@@ -148,17 +148,16 @@ export class SubtopicService {
                 ORDER BY s."partId" ASC
             `;
 
-            // Проверяем что тема найдена
             if (data.length === 0 || !data[0].topicId) {
                 throw new BadRequestException('Temat nie został znaleziony');
             }
 
-            // Первая строка содержит данные темы
             const topicRow = data[0];
             const topic = {
                 id: topicRow.topicId,
                 name: topicRow.topicName,
-                note: topicRow.topicNote,
+                noteBasicLevel: topicRow.topicNoteBasicLevel,
+                noteExpandedLevel: topicRow.topicNoteExpandedLevel,
                 partId: topicRow.topicPartId,
                 frequency: topicRow.topicFrequency,
                 percent: topicRow.topicPercent,
@@ -219,17 +218,15 @@ export class SubtopicService {
                     -- Тема
                     t.id as "topicId",
                     t.name as "topicName",
-                    t.note as "topicNote",
+                    t."noteBasicLevel" as "topicNoteBasicLevel",
+                    t."noteExpandedLevel" as "topicNoteExpandedLevel",
                     t."partId" as "topicPartId",
                     t.frequency as "topicFrequency",
-                    
-                    -- Подтема
                     s.id as "subtopicId",
                     s.name as "subtopicName",
                     s.importance,
                     s."partId",
                     s."detailLevel"
-                    
                 FROM "Topic" t
                 LEFT JOIN "Subtopic" s ON s."topicId" = t.id
                     AND s."sectionId" = ${sectionId}
@@ -246,7 +243,8 @@ export class SubtopicService {
             const topic = {
                 id: topicRow.topicId,
                 name: topicRow.topicName,
-                note: topicRow.topicNote,
+                noteBasicLevel: topicRow.topicNoteBasicLevel,
+                noteExpandedLevel: topicRow.topicNoteExpandedLevel,
                 partId: topicRow.topicPartId,
                 frequency: topicRow.topicFrequency,
             };
@@ -1010,7 +1008,6 @@ export class SubtopicService {
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
-            data.note = data.note ?? topic.note;
             data.subtopics = data.subtopics ?? subtopicNames;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
@@ -1030,8 +1027,7 @@ export class SubtopicService {
                 !Array.isArray(r.subtopics) ||
                 !Array.isArray(r.errors) ||
                 typeof r.attempt !== 'number' ||
-                typeof r.literature !== 'string' ||
-                typeof r.note !== 'string'
+                typeof r.literature !== 'string'
             ) {
                 throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
             }
