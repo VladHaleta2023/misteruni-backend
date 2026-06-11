@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { TaskService } from './task.service';
-import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
+import { ChatAIGenerate, ChatTheoryAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
 import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateFinishedRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -371,6 +371,33 @@ export class TaskController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':id/chat-theory-generate')
+  async chatTheoryAIGenerate(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) taskId: number,
+    @Body() data: ChatTheoryAIGenerate,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const user: User = (req as any).user;
+      const userId: number = user.id;
+      const result = await this.taskService.chatTheoryAIGenerate(userId, subjectId, sectionId, topicId, taskId, data, controller.signal);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('task-transaction')
   async upsertTaskTransaction(
     @Param('subjectId', ParseIntPipe) subjectId: number,
@@ -508,6 +535,32 @@ export class TaskController {
       const user: User = (req as any).user;
       const userId: number = user.id;
       const result = await this.taskService.updateFinished(userId, subjectId, sectionId, topicId, id);
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new HttpException('Client aborted', 499);
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':id/theory-finished')
+  async updateTheoryFinished(
+    @Param('subjectId', ParseIntPipe) subjectId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('topicId', ParseIntPipe) topicId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request
+  ) {
+    const controller = new AbortController();
+
+    req.on('close', () => controller.abort());
+
+    try {
+      const user: User = (req as any).user;
+      const userId: number = user.id;
+      const result = await this.taskService.updateTheoryFinished(userId, subjectId, sectionId, topicId, id);
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {

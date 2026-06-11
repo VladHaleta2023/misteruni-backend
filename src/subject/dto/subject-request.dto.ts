@@ -27,6 +27,10 @@ export class SubjectUpdateRequest {
 
   @IsOptional()
   @IsString()
+  theoryPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   prompt?: string;
 
   @IsOptional()
@@ -92,6 +96,10 @@ export class SubjectUpdateRequest {
   @IsOptional()
   @IsString()
   topicExpansionPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  topicWritingExpansionPrompt?: string;
 
   @IsOptional()
   @IsString()

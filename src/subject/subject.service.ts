@@ -256,8 +256,10 @@ export class SubjectService {
                     chatPromptOwn: true,
                     audioChatPromptOwn: true,
                     topicExpansionPromptOwn: true,
+                    topicWritingExpansionPromptOwn: true,
                     topicFrequencyPromptOwn: true,
-                    chronologyPromptOwn: true
+                    chronologyPromptOwn: true,
+                    theoryPromptOwn: true
                 }
             };
         } catch (error) {

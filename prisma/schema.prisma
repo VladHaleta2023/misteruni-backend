@@ -40,49 +40,51 @@ model UserAuthProvider {
 }
 
 model Subject {
-  id                      Int                @id @default(autoincrement())
-  name                    String             @unique
-  prompt                  String             @default("")
-  examTemplates           String             @default("")
-  examPrompt              String             @default("")
-  accounts                String             @default("")
-  balance                 String             @default("")
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
-  url                     String             @default("")
-  type                    String             @default("")
-  subtopicsPrompt         String             @default("")
-  solutionGuidePrompt     String             @default("")
-  questionPrompt          String             @default("")
-  audioQuestionPrompt     String             @default("")
-  writingQuestionPrompt   String             @default("")
-  answersPrompt           String             @default("")
-  closedSubtopicsPrompt   String             @default("")
-  audioClosedPrompt       String             @default("")
-  writingClosedPrompt     String             @default("")
-  vocabluaryPrompt        String             @default("")
-  topicExpansionPrompt    String             @default("")
-  chronologyPrompt        String             @default("")
-  wordsPrompt             String             @default("")
-  isVisible               Boolean            @default(false)
-  subtopicsStatusPrompt   String             @default("")
-  vocabularyGuidePrompt   String             @default("")
-  chatPrompt              String             @default("")
-  audioChatPrompt         String             @default("")
-  topicFrequencyPrompt    String             @default("")
-  literaturePrompt        String             @default("")
-  totalTimeSpent          Int                @default(0)
-  sections                Section[]
-  subtopics               Subtopic[]
-  topics                  Topic[]
-  userSections            UserSection[]
-  users                   UserSubject[]
-  userSubtopics           UserSubtopic[]
-  userTopics              UserTopic[]
-  words                   Word[]
-  tasks                   Task[]
-  literatures             Literature[]
-  exams                   Exam[]
+  id                          Int                @id @default(autoincrement())
+  name                        String             @unique
+  prompt                      String             @default("")
+  examTemplates               String             @default("")
+  examPrompt                  String             @default("")
+  accounts                    String             @default("")
+  balance                     String             @default("")
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+  url                         String             @default("")
+  type                        String             @default("")
+  subtopicsPrompt             String             @default("")
+  solutionGuidePrompt         String             @default("")
+  questionPrompt              String             @default("")
+  audioQuestionPrompt         String             @default("")
+  writingQuestionPrompt       String             @default("")
+  answersPrompt               String             @default("")
+  closedSubtopicsPrompt       String             @default("")
+  audioClosedPrompt           String             @default("")
+  writingClosedPrompt         String             @default("")
+  vocabluaryPrompt            String             @default("")
+  topicExpansionPrompt        String             @default("")
+  topicWritingExpansionPrompt String             @default("")
+  chronologyPrompt            String             @default("")
+  wordsPrompt                 String             @default("")
+  isVisible                   Boolean            @default(false)
+  subtopicsStatusPrompt       String             @default("")
+  vocabularyGuidePrompt       String             @default("")
+  chatPrompt                  String             @default("")
+  audioChatPrompt             String             @default("")
+  topicFrequencyPrompt        String             @default("")
+  literaturePrompt            String             @default("")
+  theoryPrompt                String             @default("")
+  totalTimeSpent              Int                @default(0)
+  sections                    Section[]
+  subtopics                   Subtopic[]
+  topics                      Topic[]
+  userSections                UserSection[]
+  users                       UserSubject[]
+  userSubtopics               UserSubtopic[]
+  userTopics                  UserTopic[]
+  words                       Word[]
+  tasks                       Task[]
+  literatures                 Literature[]
+  exams                       Exam[]
 
   @@index([createdAt], map: "idx_subject_createdAt")
 }
@@ -362,6 +364,7 @@ model Task {
   userOptionIndex    Int                @default(0)
   order              Int                @default(0)
   finished           Boolean            @default(false)
+  theoryFinished     Boolean            @default(false)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   topicId            Int

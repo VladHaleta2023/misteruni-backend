@@ -121,17 +121,24 @@ export class ExamService {
                         t.name,
                         t."sectionId",
                         t."subjectId",
-                        t."partId",
+                        et."partId" AS "partId",
                         t.type,
                         t.frequency,
                         t."createdAt",
                         t."updatedAt",
                         t.information,
                         t.literature,
-                        t.note,
-                        t.difficulty
+                        t."noteBasicLevel",
+                        t."noteExpandedLevel",
+                        t.difficulty,
+                        CASE 
+                            WHEN us."detailLevel" = 'EXPANDED' THEN t."noteExpandedLevel"
+                            ELSE t."noteBasicLevel"
+                        END as "topicNote"
                     FROM "ExamTopic" et
                     JOIN "Topic" t ON et."topicId" = t.id
+                    JOIN "UserSubject" us ON us."userId" = ${userId} 
+                        AND us."subjectId" = ${subjectId}
                     WHERE et."examId" = ${examId}
                     AND t."subjectId" = ${subjectId}
                     ORDER BY et."partId" ASC
@@ -218,7 +225,7 @@ export class ExamService {
                     "updatedAt",
                     information,
                     literature,
-                    note,
+                    "topicNote",  -- Заменяем noteBasicLevel и noteExpandedLevel на topicNote
                     difficulty,
                     task
                 FROM exam_topics_with_task
@@ -244,7 +251,7 @@ export class ExamService {
                 updatedAt: row.updatedAt,
                 information: row.information,
                 literature: row.literature,
-                note: row.note,
+                topicNote: row.topicNote,  // Только одно поле
                 difficulty: row.difficulty,
                 task: row.task
             }));
@@ -330,7 +337,7 @@ export class ExamService {
                     subjectId: subjectId
                 },
                 orderBy: {
-                    partId: 'desc'
+                    partId: 'asc'
                 }
             });
 
@@ -549,7 +556,7 @@ export class ExamService {
                 final_subtopics AS (
                     SELECT *
                     FROM ranked_subtopics
-                    WHERE rn <= 5
+                    WHERE rn <= 3
                 ),
 
                 subtopics_calc AS (
@@ -558,9 +565,9 @@ export class ExamService {
                         ROUND(
                             SUM(
                                 CASE 
-                                    WHEN st."detailLevel" = 'BASIC' THEN 120
-                                    WHEN st."detailLevel" = 'EXPANDED' THEN 240
-                                    ELSE 120
+                                    WHEN st."detailLevel" = 'BASIC' THEN 240
+                                    WHEN st."detailLevel" = 'EXPANDED' THEN 360
+                                    ELSE 240
                                 END
                                 * (st.importance / 100.0)
                                 * ((100 - st.percent) / 100.0)

@@ -1,7 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChatAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
+import { ChatAIGenerate, ChatTheoryAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
 import { firstValueFrom } from 'rxjs';
 import { SubtopicService } from '../subtopic/subtopic.service';
 import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
@@ -73,10 +73,15 @@ export class TaskService {
         try {
             const result = await this.prismaService.$queryRaw<any[]>`
                 WITH 
-                threshold_val AS (
-                    SELECT COALESCE(threshold, 50) as val
+                user_settings AS (
+                    SELECT COALESCE(threshold, 50) as threshold,
+                        COALESCE("detailLevel", 'BASIC') as detail_level
                     FROM "UserSubject"
                     WHERE "userId" = ${userId} AND "subjectId" = ${subjectId}
+                    LIMIT 1
+                ),
+                threshold_val AS (
+                    SELECT threshold as val FROM user_settings
                 ),
                 topic_literature AS (
                     SELECT 
@@ -97,11 +102,14 @@ export class TaskService {
                     ) as lit
                 ),
                 data AS (
-                    SELECT 
-                        -- Тема
+                    SELECT
                         t.id as "topicId",
                         t.name as "topicName",
-                        t.note as "topicNote",
+                        t.information as "topicInformation",
+                        CASE 
+                            WHEN (SELECT detail_level FROM user_settings) = 'EXPANDED' THEN t."noteExpandedLevel"
+                            ELSE t."noteBasicLevel"
+                        END as "topicNote",
                         t."partId" as "topicPartId",
                         t.frequency as "topicFrequency",
                         tl.literatures as "topicLiteratures",
@@ -111,8 +119,6 @@ export class TaskService {
                             WHEN COALESCE(ut.percent, 0) > 0 THEN 'progress'
                             ELSE 'started'
                         END as "topicStatus",
-                        
-                        -- Задачи (сгруппированные по дате)
                         COALESCE(
                             (SELECT json_object_agg(
                                 task_date, 
@@ -164,6 +170,7 @@ export class TaskService {
                 id: row.topicId,
                 name: row.topicName,
                 note: row.topicNote,
+                information: row.topicInformation,
                 partId: row.topicPartId,
                 frequency: row.topicFrequency,
                 percent: row.topicPercent,
@@ -224,16 +231,20 @@ export class TaskService {
                 where: {
                     userId_subjectId: { userId, subjectId }
                 },
-                select: { threshold: true }
+                select: { threshold: true, detailLevel: true }
             });
 
             const threshold = userSubject?.threshold ?? 50;
+            const detailLevel = userSubject?.detailLevel ?? 'BASIC';
 
             const task = await this.prismaService.$queryRaw<any[]>`
                 WITH task_main AS (
                     SELECT
                         t.*,
-                        tp.note AS "topicNote",
+                        CASE 
+                            WHEN ${detailLevel}::text = 'EXPANDED' THEN tp."noteExpandedLevel"
+                            ELSE tp."noteBasicLevel"
+                        END AS "topicNote",
                         tp.name AS "topicName",
                         tp."literature" AS "topicLiterature"
                     FROM "Task" t
@@ -413,16 +424,20 @@ export class TaskService {
                 where: {
                     userId_subjectId: { userId, subjectId },
                 },
-                select: { threshold: true },
+                select: { threshold: true, detailLevel: true },
             });
 
             const threshold = userSubject?.threshold ?? 50;
+            const detailLevel = userSubject?.detailLevel ?? 'BASIC';
 
             const task = await this.prismaService.$queryRaw<any[]>`
                 WITH task_main AS (
                     SELECT
                         t.*,
-                        tp.note AS "topicNote",
+                        CASE 
+                            WHEN ${detailLevel}::text = 'EXPANDED' THEN tp."noteExpandedLevel"
+                            ELSE tp."noteBasicLevel"
+                        END AS "topicNote",
                         tp.name AS "topicName",
                         tp."literature" AS "topicLiterature"
                     FROM "Task" t
@@ -612,7 +627,7 @@ export class TaskService {
             const belowThreshold = subtopics.filter(s => s.percent < threshold);
             const finalSubtopics = belowThreshold.length > 0 ? belowThreshold : subtopics;
 
-            const formattedSubtopics = finalSubtopics.slice(0, 5).map(s => s.name);
+            const formattedSubtopics = finalSubtopics.slice(0, 3).map(s => s.name);
 
             data.subtopics = data.subtopics ?? formattedSubtopics;
             data.subject = data.subject ?? subject.name;
@@ -623,6 +638,7 @@ export class TaskService {
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
             data.threshold = data.threshold ?? threshold;
+            data.difficulty = data.difficulty ?? topic.difficulty;
 
             data.prompt = subject.questionPrompt ?? "";
 
@@ -695,6 +711,7 @@ export class TaskService {
             data.section = data.section ?? section.name;
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
+            data.difficulty = data.difficulty ?? topic.difficulty;
 
             data.prompt = subject.writingQuestionPrompt ?? "";
 
@@ -912,6 +929,7 @@ export class TaskService {
             data.accounts = data.accounts ?? subject.accounts;
             data.balance = data.balance ?? subject.balance;
             data.information = data.information ?? topic.information;
+            data.difficulty = data.difficulty ?? topic.difficulty;
 
             if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
                 throw new BadRequestException('Errors musi być listą stringów');
@@ -1208,6 +1226,139 @@ export class TaskService {
         }
     }
 
+    async chatTheoryAIGenerate(
+        userId: number,
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        taskId: number,
+        data: ChatTheoryAIGenerate,
+        signal?: AbortSignal
+    ) {
+        const url = `${this.fastapiUrl}/admin/chat-theory-generate`;
+        
+        try {
+            const subject = await this.prismaService.subject.findUnique({
+                where: { id: subjectId },
+            });
+
+            if (!subject) {
+                throw new BadRequestException('Przedmiot nie został znaleziony');
+            }
+
+            const userSubject = await this.prismaService.userSubject.findUnique({
+                where: {
+                    userId_subjectId: {
+                        userId,
+                        subjectId
+                    }
+                },
+                select: {
+                    detailLevel: true,
+                }
+            });
+
+            if (!userSubject)  {
+                throw new BadRequestException('Przedmiot użytkownika nie został znaleziony');
+            }
+
+            const section = await this.prismaService.section.findUnique({
+                where: { id: sectionId },
+            });
+
+            if (!section) {
+                throw new BadRequestException('Dział nie został znaleziony');
+            }
+
+            const topic = await this.prismaService.topic.findUnique({
+                where: { id: topicId },
+            });
+
+            if (!topic) {
+                throw new BadRequestException('Temat nie został znaleziony');
+            }
+
+            const task = await this.prismaService.task.findUnique({
+                where: { id: taskId },
+            });
+
+            if (!task) {
+                throw new BadRequestException('Zadanie nie zostało znalezione');
+            }
+
+            let note = topic.noteBasicLevel;
+            if (userSubject.detailLevel === SubjectDetailLevel.EXPANDED)
+                note = topic.noteExpandedLevel;
+
+            data.note = data.note ?? note;
+            data.subject = data.subject ?? subject.name;
+            data.information = data.information ?? topic.information;
+            data.accounts = data.accounts ?? subject.accounts;
+            data.balance = data.balance ?? subject.balance;
+            data.section = data.section ?? section.name;
+            data.topic = data.topic ?? topic.name;
+            data.prompt = subject.theoryPrompt ?? "";
+
+            if (!Array.isArray(data.errors) || !data.errors.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            if (!Array.isArray(data.subtopics) || !data.subtopics.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Subtopics musi być listą stringów');
+            }
+
+            if (!Array.isArray(data.options) || !data.options.every(item => typeof item === 'string')) {
+                throw new BadRequestException('Options musi być listą stringów');
+            }
+
+            const response$ = this.httpService.post(url, data, { signal });
+            const response = await firstValueFrom(response$);
+            const r = response.data;
+
+            if (
+                typeof r.prompt !== 'string' ||
+                typeof r.changed !== 'string' ||
+                !Array.isArray(r.errors) ||
+                !Array.isArray(r.subtopics) ||
+                !Array.isArray(r.options) ||
+                typeof r.attempt !== 'number' ||
+                typeof r.text !== 'string' ||
+                typeof r.note !== 'string' ||
+                typeof r.subject !== 'string' ||
+                typeof r.section !== 'string' ||
+                typeof r.topic !== 'string' ||
+                typeof r.chat !== 'string'
+            ) {
+                throw new BadRequestException('Niepoprawna struktura odpowiedzi z serwera.');
+            }
+
+            if (!r.errors.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Errors musi być listą stringów');
+            }
+
+            if (!r.subtopics.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Subtopics musi być listą stringów');
+            }
+
+            if (!r.options.every((item: any) => typeof item === 'string')) {
+                throw new BadRequestException('Options musi być listą stringów');
+            }
+
+            return {
+                statusCode: 201,
+                message: "Generacja czatu teorii zadania udane",
+                ...r
+            };
+        }
+        catch (error) {
+            if (error.response && error.response.data) {
+                const fastApiErrorMessage = error.response.data.detail || JSON.stringify(error.response.data);
+                throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
     async solutionGuideAIGenerate(
         subjectId: number,
         sectionId: number,
@@ -1427,7 +1578,20 @@ export class TaskService {
 
                     if (taskData.explanation && taskData.explanation.trim() !== '') {
                         const percentAudio = taskData.percent ?? 0;
-                        const finalPercent = Math.ceil((percentAudio + percentWords) / 2);
+                        let finalPercent: number;
+                        
+                        const topic = await tx.topic.findUnique({
+                            where: { id: topicId },
+                            select: { type: true }
+                        });
+                        
+                        const topicType = topic?.type ?? "";
+                        
+                        if (topicType === "Writing") {
+                            finalPercent = percentAudio;
+                        } else {
+                            finalPercent = Math.ceil((percentAudio + percentWords) / 2);
+                        }
 
                         await tx.task.update({
                             where: { id: taskId, userId },
@@ -1631,11 +1795,17 @@ export class TaskService {
         topicId: number,
         tx: Prisma.TransactionClient
     ) {
+        const topic = await tx.topic.findUnique({
+            where: { id: topicId },
+            select: { type: true }
+        });
+
+        const type = topic?.type ?? "";
+
         const tasks = await tx.task.findMany({
             where: {
                 userId,
                 topicId,
-                finished: true
             },
             select: { percent: true }
         });
@@ -1647,26 +1817,31 @@ export class TaskService {
             )
             : 0;
 
-        const words = await tx.word.findMany({
-            where: {
-                userId,
-                topicId,
-                subjectId
-            },
-            select: {
-                totalAttemptCount: true
-            }
-        });
+        let coveragePercent: number;
 
-        const totalWords = words.length;
+        if (type === "Writing") {
+            coveragePercent = 100;
+        } else {
+            const words = await tx.word.findMany({
+                where: {
+                    userId,
+                    topicId,
+                    subjectId
+                },
+                select: {
+                    totalAttemptCount: true
+                }
+            });
 
-        const wordsWithAttempts = words.filter(
-            w => (w.totalAttemptCount ?? 0) > 0
-        ).length;
+            const totalWords = words.length;
+            const wordsWithAttempts = words.filter(
+                w => (w.totalAttemptCount ?? 0) > 0
+            ).length;
 
-        const coveragePercent = totalWords > 0
-            ? Math.ceil((wordsWithAttempts / totalWords) * 100)
-            : 0;
+            coveragePercent = totalWords > 0
+                ? Math.ceil((wordsWithAttempts / totalWords) * 100)
+                : 0;
+        }
 
         const topicPercent = Math.min(
             100,
@@ -1751,7 +1926,11 @@ export class TaskService {
                     data: { explanation: data.explanation, percent: averagePercent._avg.percent || 0 }
                 });
 
-                await this.updateSubtopicsProgress(userId, subjectId, sectionId, topicId, subtopicIds, tx);
+                 if (subtopicIds.length > 0) {
+                    await this.updateSubtopicsProgress(userId, subjectId, sectionId, topicId, subtopicIds, tx);
+                } else {
+                    await this.updateTopicAndSectionPercentsByTasks(userId, subjectId, sectionId, topicId, tx);
+                }
 
                 return { statusCode: 200, message: 'Podtematy zadania zostały policzone' };
             }, { timeout: 900000 });
@@ -1828,6 +2007,42 @@ export class TaskService {
         catch (error) {
             console.error(`Nie udało się zaktualizować zakończenie zadania:`, error);
             throw new InternalServerErrorException('Błąd podczas aktualizacji zakończenie zadania');
+        }
+    }
+
+    async updateTheoryFinished(
+        userId: number,
+        subjectId: number,
+        sectionId: number,
+        topicId: number,
+        id: number,
+    ) {
+        try {
+            const existing = await this.prismaService.task.findUnique({ where: { id } });
+            if (!existing) {
+                return {
+                    statusCode: 404,
+                    message: `Zadanie nie zostało znalezione`,
+                };
+            }
+
+            const updatedTask = await this.prismaService.task.update({
+                where: { id },
+                data: {
+                    theoryFinished: true,
+                    chat: ""
+                }
+            });
+
+            return {
+                statusCode: 200,
+                message: 'Teoria zadania została pomyślnie zakończona',
+                task: updatedTask,
+            };
+        }
+        catch (error) {
+            console.error(`Nie udało się zaktualizować zakończenie teorii zadania:`, error);
+            throw new InternalServerErrorException('Błąd podczas aktualizacji zakończenie teorii zadania');
         }
     }
 

@@ -39,6 +39,10 @@ export class TaskAIGenerate {
   @IsString()
   topic?: string;
 
+  @IsOptional()
+  @IsString()
+  difficulty?: string;
+
   @IsString()
   changed: string;
 
@@ -98,6 +102,10 @@ export class WritingAIGenerate {
   @IsOptional()
   @IsString()
   topic?: string;
+
+  @IsOptional()
+  @IsString()
+  difficulty?: string;
 
   @IsString()
   changed: string;
@@ -227,6 +235,10 @@ export class OptionsAIGenerate {
   @IsOptional()
   @IsString()
   balance?: string;
+
+  @IsOptional()
+  @IsString()
+  difficulty?: string;
 
   @IsString()
   changed: string;
@@ -411,6 +423,64 @@ export class ChatAIGenerate {
 
   @IsBoolean()
   chatFinished: boolean;
+}
+
+export class ChatTheoryAIGenerate {
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @IsOptional()
+  @IsString()
+  information?: string;
+
+  @IsOptional()
+  @IsString()
+  accounts?: string;
+
+  @IsOptional()
+  @IsString()
+  balance?: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
+
+  @IsString()
+  changed: string;
+
+  @IsInt()
+  attempt: number;
+
+  @IsString()
+  text: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  subtopics: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  options: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  errors: string[];
+
+  @IsString()
+  chat: string;
 }
 
 export class VocabluaryAIGenerate {

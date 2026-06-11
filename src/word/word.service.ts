@@ -173,40 +173,63 @@ export class WordService {
             const whereCondition: any = {
                 userId,
                 subjectId,
-                topicId: topicId ?? null,
+
+                ...(topicId != null
+                    ? {
+                        topicId
+                    }
+                    : {
+                        OR: [
+                            {
+                                topicId: null
+                            },
+                            {
+                                topicId: { not: null },
+                                totalAttemptCount: { gt: 0 }
+                            }
+                        ]
+                    }),
+
                 ...(taskId != null
-                    ? { tasks: { some: { taskId, userId } } }
+                    ? {
+                        tasks: {
+                            some: {
+                                taskId,
+                                userId
+                            }
+                        }
+                    }
                     : {}),
+
                 ...(Array.isArray(wordIds) && wordIds.length > 0
-                    ? { id: { in: wordIds } }
+                    ? {
+                        id: {
+                            in: wordIds
+                        }
+                    }
                     : {}),
             };
 
             const words = await this.prismaService.word.findMany({
-                where: whereCondition,
-                include: {
-                    tasks: {
-                        include: {
-                            task: {
-                                select: {
-                                    id: true,
-                                    text: true,
-                                    topic: {
-                                        select: { id: true, sectionId: true, subjectId: true }
-                                    },
-                                }
-                            }
-                        }
-                    }
-                }
+                where: whereCondition
             });
 
+            const isGlobalMode = topicId == null;
+
             const formattedWords = words.map(word => {
-                const percent = word.totalAttemptCount > 0
-                    ? Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100))
-                    : 0;
+                const basePercent =
+                    word.totalAttemptCount > 0
+                        ? word.totalCorrectCount / word.totalAttemptCount
+                        : 0;
+
+                const masteryCoef = Math.min(word.totalCorrectCount, 5) / 5;
+
+                const percent = isGlobalMode
+                    ? Math.min(100, Math.ceil(basePercent * masteryCoef * 100))
+                    : Math.min(100, Math.ceil(basePercent * 100));
 
                 let status: Status;
+
                 if (percent === 0) status = 'started';
                 else if (percent < threshold) status = 'progress';
                 else status = 'completed';
@@ -215,7 +238,7 @@ export class WordService {
                     ...word,
                     percent,
                     status,
-                    tasks: word.tasks.map(tw => tw.task),
+                    masteryCoef
                 };
             });
 
@@ -230,6 +253,22 @@ export class WordService {
             else wordsStatus = 'completed';
 
             const sortedWords = formattedWords.sort((a, b) => {
+                if (isGlobalMode) {
+                    if (a.updatedAt !== b.updatedAt) {
+                        return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+                    }
+
+                    if (a.percent !== b.percent) {
+                        return a.percent - b.percent;
+                    }
+
+                    if (a.frequency !== b.frequency) {
+                        return b.frequency - a.frequency;
+                    }
+
+                    return a.text.localeCompare(b.text);
+                }
+
                 const getPriority = (percent: number) => {
                     if (percent === 0) return 1;
                     if (percent < threshold) return 0;

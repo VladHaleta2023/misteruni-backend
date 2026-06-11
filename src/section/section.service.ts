@@ -61,17 +61,17 @@ export class SectionService {
                     baseTimeSeconds = 5400;
                 }
                 else if (item.isSubtopic) {
-                    let initialTimeSeconds = 120;
+                    let initialTimeSeconds = 240;
 
                     switch (item.detailLevel) {
                         case SubjectDetailLevel.BASIC:
-                            initialTimeSeconds = 120;
-                            break;
-                        case SubjectDetailLevel.EXPANDED:
                             initialTimeSeconds = 240;
                             break;
+                        case SubjectDetailLevel.EXPANDED:
+                            initialTimeSeconds = 360;
+                            break;
                         default:
-                            initialTimeSeconds = 120;
+                            initialTimeSeconds = 240;
                     }
 
                     const importance = item.importance ?? 100;
@@ -558,11 +558,26 @@ export class SectionService {
                         frequency:
                             row.topicFrequency || 0,
                         status: topicStatus,
-                        subtopics: topicSubtopics
+                        subtopics: topicSubtopics,
+                        partId: row.topicPartId
                     };
 
                     section.topics.push(topic);
                 }
+            }
+
+            for (const section of sectionMap.values()) {
+                section.topics.sort((a, b) => {
+                    const getTypePriority = (type: string) => {
+                        if (type === 'Stories') return 1;
+                        if (type === 'Writing') return 2;
+                        return 0;
+                    };
+                    const priorityA = getTypePriority(a.type);
+                    const priorityB = getTypePriority(b.type);
+                    if (priorityA !== priorityB) return priorityA - priorityB;
+                    return (a.partId || 0) - (b.partId || 0);
+                });
             }
 
             const enrichedSections = Array.from(sectionMap.values())

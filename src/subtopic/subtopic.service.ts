@@ -69,10 +69,20 @@ export class SubtopicService {
                 ),
                 topic_info AS (
                     SELECT 
-                        t.id, t.name, t."noteBasicLevel", t."noteExpandedLevel", t."partId", t.frequency,
+                        t.id, 
+                        t.name, 
+                        t."noteBasicLevel", 
+                        t."noteExpandedLevel", 
+                        t."partId", 
+                        t.frequency,
+                        t.information,
                         COALESCE(ut.percent, 0) as percent,
                         (SELECT threshold FROM user_settings) as threshold,
-                        t.difficulty as topic_difficulty
+                        t.difficulty as topic_difficulty,
+                        CASE 
+                            WHEN (SELECT detail_level FROM user_settings) = 'EXPANDED' THEN t."noteExpandedLevel"
+                            ELSE t."noteBasicLevel"
+                        END as "topicNote"
                     FROM "Topic" t
                     LEFT JOIN "UserTopic" ut ON ut."userId" = ${userId} 
                         AND ut."subjectId" = ${subjectId}
@@ -101,14 +111,13 @@ export class SubtopicService {
                     WHERE t.id = ${topicId}
                     GROUP BY t.id
                 )
-                SELECT 
-                    -- Тема
+                SELECT
                     ti.id as "topicId",
                     ti.name as "topicName",
-                    ti."noteBasicLevel" as "topicNoteBasicLevel",
-                    ti."noteExpandedLevel" as "topicNoteExpandedLevel",
+                    ti."topicNote" as "topicNote",
                     ti."partId" as "topicPartId",
                     ti.frequency as "topicFrequency",
+                    ti.information as "topicInformation",
                     ti.percent as "topicPercent",
                     tl.literatures as "topicLiteratures",
                     ti.topic_difficulty as "topicDifficulty",
@@ -117,8 +126,6 @@ export class SubtopicService {
                         WHEN ti.percent > 0 THEN 'progress'
                         ELSE 'started'
                     END as "topicStatus",
-                    
-                    -- Подтема
                     s.id as "subtopicId",
                     s.name as "subtopicName",
                     s.importance,
@@ -156,8 +163,8 @@ export class SubtopicService {
             const topic = {
                 id: topicRow.topicId,
                 name: topicRow.topicName,
-                noteBasicLevel: topicRow.topicNoteBasicLevel,
-                noteExpandedLevel: topicRow.topicNoteExpandedLevel,
+                note: topicRow.topicNote,
+                information: topicRow.topicInformation,
                 partId: topicRow.topicPartId,
                 frequency: topicRow.topicFrequency,
                 percent: topicRow.topicPercent,
