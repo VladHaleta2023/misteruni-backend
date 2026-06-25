@@ -7,8 +7,8 @@ import { SubtopicModule } from '../subtopic/subtopic.module';
 import { TimezoneModule } from '../timezone/timezone.module';
 import { AuthModule } from '../auth/auth.module';
 import { TaskModule } from '../task/task.module';
-import { ExamModule } from 'src/exam/exam.module';
-import { SectionModule } from 'src/section/section.module';
+import { ExamModule } from '../exam/exam.module';
+import { SectionModule } from '../section/section.module';
 
 @Module({
   imports: [

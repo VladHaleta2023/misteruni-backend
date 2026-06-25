@@ -11,7 +11,7 @@ import { File } from '../file.type';
 import { TaskService } from '../task/task.service';
 import { ExamService } from '../exam/exam.service';
 import { SectionService } from '../section/section.service';
-import { TimezoneService } from 'src/timezone/timezone.service';
+import { TimezoneService } from '../timezone/timezone.service';
 
 @Injectable()
 export class SubjectService {

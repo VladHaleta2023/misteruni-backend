@@ -3,7 +3,7 @@ import { ExamService } from './exam.service';
 import { ExamController } from './exam.controller';
 import { AuthModule } from '../auth/auth.module';
 import { HttpModule } from '@nestjs/axios';
-import { TimezoneModule } from 'src/timezone/timezone.module';
+import { TimezoneModule } from '../timezone/timezone.module';
 
 @Module({
   imports: [
