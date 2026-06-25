@@ -7,6 +7,8 @@ import { SubtopicModule } from '../subtopic/subtopic.module';
 import { TimezoneModule } from '../timezone/timezone.module';
 import { AuthModule } from '../auth/auth.module';
 import { TaskModule } from '../task/task.module';
+import { ExamModule } from 'src/exam/exam.module';
+import { SectionModule } from 'src/section/section.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { TaskModule } from '../task/task.module';
     }),
     StorageModule,
     AuthModule,
+    ExamModule,
+    SectionModule,
     SubtopicModule,
     TimezoneModule,
     forwardRef(() => TaskModule),

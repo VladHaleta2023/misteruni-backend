@@ -3,6 +3,7 @@ import { ExamService } from './exam.service';
 import { ExamController } from './exam.controller';
 import { AuthModule } from '../auth/auth.module';
 import { HttpModule } from '@nestjs/axios';
+import { TimezoneModule } from 'src/timezone/timezone.module';
 
 @Module({
   imports: [
@@ -10,9 +11,11 @@ import { HttpModule } from '@nestjs/axios';
       timeout: 900000,
       maxRedirects: 5,
     }),
-    AuthModule
+    AuthModule,
+    TimezoneModule
   ],
   controllers: [ExamController],
   providers: [ExamService],
+  exports: [ExamService]
 })
 export class ExamModule {}

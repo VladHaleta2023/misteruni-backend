@@ -58,20 +58,20 @@ export class SectionService {
                 let baseTimeSeconds = 0;
 
                 if (item.isWriting) {
-                    baseTimeSeconds = 5400;
+                    baseTimeSeconds = 3600;
                 }
                 else if (item.isSubtopic) {
-                    let initialTimeSeconds = 240;
+                    let initialTimeSeconds = 1200;
 
                     switch (item.detailLevel) {
                         case SubjectDetailLevel.BASIC:
-                            initialTimeSeconds = 240;
+                            initialTimeSeconds = 1200;
                             break;
                         case SubjectDetailLevel.EXPANDED:
-                            initialTimeSeconds = 360;
+                            initialTimeSeconds = 1500;
                             break;
                         default:
-                            initialTimeSeconds = 240;
+                            initialTimeSeconds = 1200;
                     }
 
                     const importance = item.importance ?? 100;
@@ -675,6 +675,7 @@ export class SectionService {
                 prediction: prediction.date,
                 deltaDays,
                 subjectId,
+                subjectUrl: subject.url,
                 literatures: literatures.map(
                     lit => lit.name
                 )

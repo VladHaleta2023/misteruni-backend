@@ -9,6 +9,9 @@ import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { File } from '../file.type';
 import { TaskService } from '../task/task.service';
+import { ExamService } from '../exam/exam.service';
+import { SectionService } from '../section/section.service';
+import { TimezoneService } from 'src/timezone/timezone.service';
 
 @Injectable()
 export class SubjectService {
@@ -19,6 +22,9 @@ export class SubjectService {
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
         private readonly configService: ConfigService,
+        private readonly examService: ExamService,
+        private readonly sectionService: SectionService,
+        private readonly timezoneService: TimezoneService,
         @Inject(forwardRef(() => TaskService))
         private readonly taskService: TaskService,
     ) {
@@ -709,6 +715,502 @@ export class SubjectService {
                 throw new HttpException(`Błąd API: ${fastApiErrorMessage}`, HttpStatus.INTERNAL_SERVER_ERROR);
             }
             throw new InternalServerErrorException(`Błąd serwisu generującego: ${error.message || error.toString()}`);
+        }
+    }
+
+    private async getRemainingDaysToExam(userId: number, subjectId: number): Promise<number> {
+        const userSubject = await this.prismaService.userSubject.findUnique({
+            where: { userId_subjectId: { userId, subjectId } },
+            select: { examDate: true }
+        });
+        
+        if (!userSubject?.examDate) return 0;
+        
+        const now = new Date();
+        const examDate = new Date(userSubject.examDate);
+        const diffTime = examDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        return Math.max(0, diffDays);
+    }
+
+    private async getExamStats(userId: number, subjectId: number): Promise<{
+        averagePercent: number;
+        examsCount: number;
+    }> {
+        const result = await this.prismaService.$queryRaw<Array<{
+            avg_percent: number;
+            exams_count: number;
+        }>>`
+            SELECT 
+                COALESCE(AVG(percent), 0)::int as avg_percent,
+                COUNT(*)::int as exams_count
+            FROM (
+                SELECT 
+                    e.id,
+                    COALESCE(
+                        (SELECT AVG(t.percent)::int
+                        FROM (
+                            SELECT DISTINCT ON (t."topicId") t.percent
+                            FROM "Task" t
+                            WHERE t."examId" = e.id
+                            AND t."userId" = ${userId}
+                            ORDER BY t."topicId", t."order" ASC
+                        ) t
+                        ), 0
+                    ) as percent
+                FROM "Exam" e
+                WHERE e."userId" = ${userId}
+                AND e."subjectId" = ${subjectId}
+                AND (
+                    -- Экзамен завершен по времени
+                    COALESCE(
+                        (SELECT SUM(t."timeSpentSeconds")
+                        FROM "Task" t WHERE t."examId" = e.id AND t."userId" = ${userId}
+                        ), 0
+                    ) >= (SELECT s."totalTimeSpent" * 60 FROM "Subject" s WHERE s.id = ${subjectId})
+                    -- Или все темы пройдены
+                    OR (
+                        SELECT COUNT(DISTINCT et."topicId")
+                        FROM "ExamTopic" et WHERE et."examId" = e.id
+                    ) = (
+                        SELECT COUNT(DISTINCT t."topicId")
+                        FROM "Task" t WHERE t."examId" = e.id AND t."userId" = ${userId} AND t.finished = true
+                    )
+                )
+            ) finished_exams
+        `;
+        
+        return {
+            averagePercent: result[0]?.avg_percent || 0,
+            examsCount: result[0]?.exams_count || 0
+        };
+    }
+
+    private async getTotalVerificationPercent(userId: number, subjectId: number): Promise<{
+        completed: number;
+        progress: number;
+        started: number;
+        willNotFinish: number;
+        totalCovered: number;
+    }> {
+        const result = await this.prismaService.$queryRaw<Array<{
+            status: string;
+            count: number;
+        }>>`
+            SELECT 
+                CASE 
+                    WHEN us.percent >= us2.threshold THEN 'completed'
+                    WHEN us.percent > 0 THEN 'progress'
+                    ELSE 'started'
+                END as status,
+                COUNT(*)::int as count
+            FROM "UserSection" us
+            JOIN "UserSubject" us2 ON us2."userId" = us."userId" 
+                AND us2."subjectId" = us."subjectId"
+            WHERE us."userId" = ${userId}
+                AND us."subjectId" = ${subjectId}
+            GROUP BY 
+                CASE 
+                    WHEN us.percent >= us2.threshold THEN 'completed'
+                    WHEN us.percent > 0 THEN 'progress'
+                    ELSE 'started'
+                END
+        `;
+        
+        const completed = result.find(r => r.status === 'completed')?.count || 0;
+        const progress = result.find(r => r.status === 'progress')?.count || 0;
+        const started = result.find(r => r.status === 'started')?.count || 0;
+        const total = completed + progress + started;
+        
+        const userSubject = await this.prismaService.userSubject.findUnique({
+            where: { userId_subjectId: { userId, subjectId } },
+            select: { examDate: true }
+        });
+        
+        let willNotFinish = 0;
+        if (userSubject?.examDate && total > 0) {
+            const now = new Date();
+            const examDate = new Date(userSubject.examDate);
+            const daysToExam = Math.ceil((examDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (daysToExam <= 0) {
+                willNotFinish = Math.ceil((started / total) * 100);
+            }
+        }
+        
+        return {
+            completed: total > 0 ? Math.ceil((completed / total) * 100) : 0,
+            progress: total > 0 ? Math.ceil((progress / total) * 100) : 0,
+            started: total > 0 ? Math.ceil((started / total) * 100) : 0,
+            willNotFinish,
+            totalCovered: total > 0 ? Math.ceil(((completed + progress) / total) * 100) : 0
+        };
+    }
+
+    async getDailyProgressTable(userId: number, subjectId: number): Promise<Array<{
+        date: string;
+        dayOfWeek: string;
+        deltaPercent: number;
+        timeSpentMinutes: number;
+        plannedMinutes: number;
+        cumulativeDeltaDays: number;
+    }>> {
+        const userSubject = await this.prismaService.userSubject.findUnique({
+            where: { userId_subjectId: { userId, subjectId } },
+            select: { dailyStudyMinutes: true }
+        });
+        
+        if (!userSubject) return [];
+        
+        const dailyPlanMinutes = userSubject.dailyStudyMinutes || 60;
+        
+        const firstTask = await this.prismaService.task.findFirst({
+            where: { userId, subjectId, finished: true },
+            orderBy: { createdAt: 'asc' },
+            select: { createdAt: true }
+        });
+        
+        if (!firstTask) return [];
+        
+        const startDateUTC = new Date(firstTask.createdAt);
+        const startDateLocal = this.timezoneService.utcToLocal(startDateUTC);
+        startDateLocal.setHours(0, 0, 0, 0);
+        
+        const todayLocal = this.timezoneService.utcToLocal(new Date());
+        todayLocal.setHours(23, 59, 59, 999);
+        
+        const startDateForQuery = this.timezoneService.localToUTC(startDateLocal);
+        const endDateForQuery = this.timezoneService.localToUTC(todayLocal);
+        
+        const dailyTaskStats = await this.prismaService.$queryRaw<Array<{
+            task_date: Date;
+            total_seconds: number;
+        }>>`
+            SELECT 
+                DATE(t."updatedAt") as task_date,
+                COALESCE(SUM(t."timeSpentSeconds"), 0)::int as total_seconds
+            FROM "Task" t
+            WHERE t."userId" = ${userId}
+                AND t."subjectId" = ${subjectId}
+                AND t.finished = true
+                AND t."updatedAt" >= ${startDateForQuery}
+                AND t."updatedAt" <= ${endDateForQuery}
+            GROUP BY DATE(t."updatedAt")
+            ORDER BY task_date ASC
+        `;
+        
+        const dailyStatsMap = new Map<string, number>();
+        dailyTaskStats.forEach(stat => {
+            const utcDate = new Date(stat.task_date);
+            const localDate = this.timezoneService.utcToLocal(utcDate);
+            const dateStr = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
+            
+            const currentValue = dailyStatsMap.get(dateStr) || 0;
+            dailyStatsMap.set(dateStr, currentValue + Math.round(stat.total_seconds / 60));
+        });
+        
+        const allDays: Array<{
+            date: string;
+            dayOfWeek: string;
+            deltaPercent: number;
+            timeSpentMinutes: number;
+            plannedMinutes: number;
+            cumulativeDeltaDays: number;
+        }> = [];
+        
+        let cumulativeDeltaMinutes = 0;
+        const currentDate = new Date(startDateLocal);
+        const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'];
+        
+        while (currentDate <= todayLocal) {
+            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+            const actualMinutes = dailyStatsMap.get(dateStr) || 0;
+            
+            const dailyDeltaMinutes = actualMinutes - dailyPlanMinutes;
+            
+            const deltaPercent = dailyPlanMinutes > 0 
+                ? Math.round((dailyDeltaMinutes / dailyPlanMinutes) * 100) 
+                : 0;
+            
+            cumulativeDeltaMinutes += dailyDeltaMinutes;
+            
+            const cumulativeDeltaDays = dailyPlanMinutes > 0 
+                ? Math.trunc(cumulativeDeltaMinutes / dailyPlanMinutes)
+                : 0;
+            
+            allDays.push({
+                date: `${String(currentDate.getDate()).padStart(2, '0')}.${String(currentDate.getMonth() + 1).padStart(2, '0')}.${currentDate.getFullYear()}`,
+                dayOfWeek: dayNames[currentDate.getDay()],
+                deltaPercent,
+                timeSpentMinutes: actualMinutes,
+                plannedMinutes: dailyPlanMinutes,
+                cumulativeDeltaDays
+            });
+            
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        
+        return allDays.reverse();
+    }
+
+    private async getWordStats(userId: number, subjectId: number): Promise<{
+        checkedWordsCount: number;
+        totalWordsCount: number;
+        coveragePercent: number;
+    }> {
+        const allWords = await this.prismaService.word.findMany({
+            where: { userId, subjectId },
+            select: { totalAttemptCount: true }
+        });
+
+        const totalCount = allWords.length;
+        const checkedCount = allWords.filter(w => (w.totalAttemptCount ?? 0) > 0).length;
+        
+        const coveragePercent = totalCount > 0 
+            ? parseFloat(((checkedCount / totalCount) * 100).toFixed(2))
+            : 0;
+
+        return {
+            checkedWordsCount: checkedCount,
+            totalWordsCount: totalCount,
+            coveragePercent
+        };
+    }
+
+    private async getAudioTaskStats(userId: number, subjectId: number): Promise<{
+        audioTasksCount: number;
+        averageAudioScore: number;
+    }> {
+        const result = await this.prismaService.$queryRaw<Array<{
+            count: number;
+            avg_percent: number;
+        }>>`
+            SELECT 
+                COUNT(*)::int as count,
+                COALESCE(AVG(t.percent), 0)::int as avg_percent
+            FROM "Task" t
+            JOIN "Topic" tp ON tp.id = t."topicId"
+            WHERE t."userId" = ${userId}
+                AND t."subjectId" = ${subjectId}
+                AND t.finished = true
+                AND tp.type = 'Stories'
+        `;
+
+        return {
+            audioTasksCount: result[0]?.count || 0,
+            averageAudioScore: result[0]?.avg_percent || 0
+        };
+    }
+
+    private async getWritingTaskStats(userId: number, subjectId: number): Promise<{
+        writingTasksCount: number;
+        averageWritingScore: number;
+    }> {
+        const result = await this.prismaService.$queryRaw<Array<{
+            count: number;
+            avg_percent: number;
+        }>>`
+            SELECT 
+                COUNT(*)::int as count,
+                COALESCE(AVG(t.percent), 0)::int as avg_percent
+            FROM "Task" t
+            JOIN "Topic" tp ON tp.id = t."topicId"
+            WHERE t."userId" = ${userId}
+                AND t."subjectId" = ${subjectId}
+                AND t.finished = true
+                AND tp.type = 'Writing'
+        `;
+
+        return {
+            writingTasksCount: result[0]?.count || 0,
+            averageWritingScore: result[0]?.avg_percent || 0
+        };
+    }
+
+    private mapStatisticRecord(record: any) {
+        return {
+            remainingDaysToExam: record.remainingDaysToExam,
+            examsCount: record.examsCount,
+            averageExamScore: record.averageExamScore,
+            totalCovered: record.totalCovered,
+            predictedScore: record.predictedScore,
+            checkedWordsCount: record.checkedWordsCount,
+            wordsCoveragePercent: record.wordsCoveragePercent,
+            audioTasksCount: record.audioTasksCount,
+            averageAudioScore: record.averageAudioScore,
+            writingTasksCount: record.writingTasksCount,
+            averageWritingScore: record.averageWritingScore
+        };
+    }
+
+    private async saveAndGetStatisticHistory(
+        userId: number,
+        subjectId: number,
+        params: any
+    ) {
+        const now = new Date();
+        
+        const todayUTC = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            0, 0, 0, 0
+        ));
+
+        return await this.prismaService.$transaction(async (tx) => {
+            const allRecords = await tx.statistic.findMany({
+                where: { userId, subjectId },
+                orderBy: { date: 'desc' }
+            });
+
+            if (allRecords.length === 0 || allRecords.length === 1) {
+                if (allRecords.length === 1) {
+                    await tx.statistic.deleteMany({
+                        where: { userId, subjectId }
+                    });
+                }
+                
+                await tx.statistic.create({
+                    data: {
+                        userId,
+                        subjectId,
+                        date: todayUTC,
+                        ...params
+                    }
+                });
+                
+                await tx.statistic.create({
+                    data: {
+                        userId,
+                        subjectId,
+                        date: todayUTC,
+                        ...params
+                    }
+                });
+            }
+            else if (allRecords.length === 2) {
+                const lastRecord = allRecords[0];
+                
+                if (lastRecord.date.getTime() === todayUTC.getTime()) {
+                    await tx.statistic.update({
+                        where: { id: lastRecord.id },
+                        data: params
+                    });
+                } else {
+                    await tx.statistic.delete({
+                        where: { id: allRecords[1].id }
+                    });
+                    
+                    await tx.statistic.create({
+                        data: {
+                            userId,
+                            subjectId,
+                            date: todayUTC,
+                            ...params
+                        }
+                    });
+                }
+            }
+
+            const lastTwo = await tx.statistic.findMany({
+                where: { userId, subjectId },
+                orderBy: { date: 'desc' },
+                take: 2
+            });
+
+            const current = lastTwo[0];
+            const previous = lastTwo[1];
+
+            return {
+                current: {
+                    date: current.date,
+                    ...this.mapStatisticRecord(current)
+                },
+                previous: {
+                    date: previous.date,
+                    ...this.mapStatisticRecord(previous)
+                }
+            };
+        });
+    }
+
+    async getUserStatistic(userId: number, id: number) {
+        try {
+            const [subject, userSubject] = await Promise.all([
+                this.prismaService.subject.findUnique({
+                    where: { id },
+                    select: { id: true, name: true }
+                }),
+                this.prismaService.userSubject.findUnique({
+                    where: { userId_subjectId: { userId, subjectId: id } },
+                    select: {
+                        threshold: true,
+                        detailLevel: true,
+                        dailyStudyMinutes: true,
+                        examDate: true
+                    }
+                })
+            ]);
+
+            if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
+            if (!userSubject) throw new BadRequestException('Użytkownik nie jest zapisany na ten przedmiot');
+
+            const [
+                remainingDays,
+                examStats,
+                verificationPercent,
+                dailyProgress,
+                wordStats,
+                audioTaskStats,
+                writingTaskStats,
+            ] = await Promise.all([
+                this.getRemainingDaysToExam(userId, id),
+                this.getExamStats(userId, id),
+                this.getTotalVerificationPercent(userId, id),
+                this.getDailyProgressTable(userId, id),
+                this.getWordStats(userId, id),
+                this.getAudioTaskStats(userId, id),
+                this.getWritingTaskStats(userId, id),
+            ]);
+
+            const predictedScore = Math.round(
+                examStats.averagePercent * 0.6 + verificationPercent.totalCovered * 0.4
+            );
+
+            const statisticParams = {
+                remainingDaysToExam: remainingDays,
+                examsCount: examStats.examsCount,
+                averageExamScore: examStats.averagePercent,
+                totalCovered: verificationPercent.totalCovered,
+                predictedScore: predictedScore,
+                checkedWordsCount: wordStats.checkedWordsCount,
+                wordsCoveragePercent: wordStats.coveragePercent,
+                audioTasksCount: audioTaskStats.audioTasksCount,
+                averageAudioScore: audioTaskStats.averageAudioScore,
+                writingTasksCount: writingTaskStats.writingTasksCount,
+                averageWritingScore: writingTaskStats.averageWritingScore
+            };
+
+            const statisticHistory = await this.saveAndGetStatisticHistory(
+                userId,
+                id,
+                statisticParams
+            );
+
+            return {
+                statusCode: 200,
+                message: 'Statystyki zostały pomyślnie pobrane',
+                statistic: {
+                    current: statisticHistory.current,
+                    previous: statisticHistory.previous,
+                    dailyProgress: dailyProgress
+                }
+            };
+        } catch (error) {
+            console.error('Error in getUserStatistic:', error);
+            if (error instanceof BadRequestException) throw error;
+            throw new InternalServerErrorException('Nie udało się pobrać statystyki');
         }
     }
 }

@@ -455,6 +455,28 @@ model TaskWord {
   @@index([wordId])
 }
 
+model Statistic {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  subjectId Int
+  date      DateTime
+  remainingDaysToExam  Int
+  examsCount           Int
+  averageExamScore     Int
+  totalCovered         Int
+  predictedScore       Int
+  checkedWordsCount    Int
+  wordsCoveragePercent Float
+  audioTasksCount      Int
+  averageAudioScore    Int
+  writingTasksCount    Int
+  averageWritingScore  Int
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, subjectId, date(sort: Desc)])
+}
+
 enum AuthProvider {
   LOCAL
   GOOGLE

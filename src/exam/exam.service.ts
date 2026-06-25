@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { ExamCreateRequest } from './dto/exam-request.dto';
 import { SubjectDetailLevel } from '@prisma/client';
+import { TimezoneService } from '../timezone/timezone.service';
 
 @Injectable()
 export class ExamService {
@@ -14,7 +15,8 @@ export class ExamService {
     constructor(
         private readonly prismaService: PrismaService,
         private readonly httpService: HttpService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly timezoneService: TimezoneService
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -24,6 +26,11 @@ export class ExamService {
         else {
             this.fastapiUrl = this.configService.get<string>('FASTAPI_URL') || undefined;
         }
+    }
+
+    private formatLocalDate(date: Date): string {
+        const local = this.timezoneService.utcToLocal(date);
+        return `${String(local.getDate()).padStart(2, '0')}.${String(local.getMonth() + 1).padStart(2, '0')}.${local.getFullYear()}`;
     }
 
     private async getExamTotalTimeSpentByTasks(
@@ -302,6 +309,8 @@ export class ExamService {
 
         return {
             ...exam,
+            createdAt: this.timezoneService.utcToLocal(exam.createdAt),
+            updatedAt: this.timezoneService.utcToLocal(exam.updatedAt),
             finished: examFinished,
             remainingExamTimeSeconds,
             percent: averagePercent,
@@ -399,8 +408,10 @@ export class ExamService {
                 )
             );
 
+            const finishedExams = enrichedExams.filter(exam => exam.finished === true);
+
             return {
-                exams: enrichedExams,
+                exams: finishedExams,
                 statusCode: 200,
                 message: 'Arkusze zostały pobrane'
             };
@@ -602,7 +613,7 @@ export class ExamService {
                     tb.percent,
                     tb.type,
                     CASE 
-                        WHEN tb.type = 'Writing' THEN 5400
+                        WHEN tb.type = 'Writing' THEN 3600
                         WHEN tb.type = 'Stories' THEN 600
                         ELSE COALESCE(sc.sub_time, 0)
                     END::int AS time

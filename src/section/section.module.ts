@@ -16,5 +16,6 @@ import { HttpModule } from '@nestjs/axios';
   ],
   controllers: [SectionController],
   providers: [SectionService],
+  exports: [SectionService]
 })
 export class SectionModule {}

@@ -9,6 +9,7 @@ import { OptionsService } from '../options/options.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
 import { Prisma, SubjectDetailLevel } from '@prisma/client';
+import { TimezoneService } from '../timezone/timezone.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -22,7 +23,8 @@ export class TaskService {
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
         private readonly optionsService: OptionsService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly timezoneService: TimezoneService
     ) {
         const node_env = this.configService.get<string>('APP_ENV') || 'development';
 
@@ -131,16 +133,22 @@ export class TaskService {
                                         json_build_object(
                                             'id', tk.id,
                                             'text', tk.text,
+                                            'finished', tk.finished,
+                                            'answered', tk.answered,
                                             'percent', tk.percent,
                                             'explanation', COALESCE(tk.explanation, ''),
-                                            'userSolution', COALESCE(tk."userSolution", ''),
-                                            'finished', tk.finished,
                                             'status', CASE 
                                                 WHEN tk.percent = 0 THEN 'started'
                                                 WHEN tk.percent < (SELECT val FROM threshold_val) THEN 'progress'
                                                 ELSE 'completed'
-                                            END
-                                        ) ORDER BY tk."updatedAt" DESC
+                                            END,
+                                            'options', tk.options,
+                                            'userOptionIndex', tk."userOptionIndex",
+                                            'correctOptionIndex', tk."correctOptionIndex",
+                                            'userSolution', COALESCE(tk."userSolution", ''),
+                                            'examId', NULL
+                                        )
+                                        ORDER BY tk."updatedAt" DESC
                                     ) as task_array
                                 FROM "Task" tk
                                 WHERE tk."userId" = ${userId} 
@@ -184,21 +192,28 @@ export class TaskService {
             Object.entries(tasksByDate)
                 .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
                 .forEach(([dateStr, tasks]: [string, any]) => {
-                    const date = new Date(dateStr);
-                    const day = String(date.getDate()).padStart(2, '0');
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const year = String(date.getFullYear());
+                    const utcDate = new Date(dateStr);
+                    const localDate = this.timezoneService.utcToLocal(utcDate);
+                    
+                    const day = String(localDate.getDate()).padStart(2, '0');
+                    const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                    const year = String(localDate.getFullYear());
                     
                     elements.push({
                         date: { day, month, year },
                         tasks: tasks.map((task: any) => ({
                             id: task.id,
                             text: task.text,
-                            percent: task.percent,
-                            explanation: task.explanation,
-                            userSolution: task.userSolution,
                             finished: task.finished,
-                            status: task.status as Status
+                            answered: task.answered,
+                            percent: task.percent,
+                            status: task.status as Status,
+                            options: task.options || [],
+                            userOptionIndex: task.userOptionIndex ?? 0,
+                            correctOptionIndex: task.correctOptionIndex ?? 0,
+                            userSolution: task.userSolution || '',
+                            explanation: task.explanation || '',
+                            examId: task.examId ?? null
                         }))
                     });
                 });

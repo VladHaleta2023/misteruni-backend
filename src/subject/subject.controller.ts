@@ -14,6 +14,18 @@ export class SubjectController {
   constructor(private readonly subjectService: SubjectService) {}
 
   @UseGuards(JwtAuthGuard)
+  @Get(':id/statistic')
+  async getUserStatistic(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request
+  ) {
+    const user: User = (req as any).user;
+    const userId: number = user.id;
+
+    return this.subjectService.getUserStatistic(userId, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(':id/generate')
   async subjectAIPlanGenerate(
     @Param('id', ParseIntPipe) id: number,
