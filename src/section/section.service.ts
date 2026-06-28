@@ -61,21 +61,15 @@ export class SectionService {
                     baseTimeSeconds = 3600;
                 }
                 else if (item.isSubtopic) {
-                    let initialTimeSeconds = 1200;
-
-                    switch (item.detailLevel) {
-                        case SubjectDetailLevel.BASIC:
-                            initialTimeSeconds = 1200;
-                            break;
-                        case SubjectDetailLevel.EXPANDED:
-                            initialTimeSeconds = 1500;
-                            break;
-                        default:
-                            initialTimeSeconds = 1200;
-                    }
-
                     const importance = item.importance ?? 100;
-                    baseTimeSeconds = initialTimeSeconds * (importance / 100);
+    
+                    if (item.detailLevel === SubjectDetailLevel.BASIC) {
+                        baseTimeSeconds = (10 + 10 * (importance / 100)) * 60;
+                    } else if (item.detailLevel === SubjectDetailLevel.EXPANDED) {
+                        baseTimeSeconds = (12 + 13 * (importance / 100)) * 60;
+                    } else {
+                        baseTimeSeconds = 600;
+                    }
                 }
                 else {
                     baseTimeSeconds = 600;
@@ -275,6 +269,43 @@ export class SectionService {
                 createdAt: true
             }
         });
+    }
+
+    private calculateCoveragePercent(
+        sectionsWithTopics: any[],
+        threshold: number
+    ): number {
+        let totalPercentSum = 0;
+        let topicCount = 0;
+
+        for (const section of sectionsWithTopics) {
+            for (const topic of section.topics) {
+                const cappedPercent = Math.min(topic.percent, threshold);
+                totalPercentSum += cappedPercent;
+                topicCount++;
+            }
+        }
+
+        if (topicCount === 0) return 0;
+
+        const maxPossibleSum = threshold * topicCount;
+        return Math.ceil((totalPercentSum / maxPossibleSum) * 100);
+    }
+
+    private flattenTopicsFromSections(sections: any[]): any[] {
+        const allTopics: any[] = [];
+        
+        for (const section of sections) {
+            for (const topic of section.topics) {
+                allTopics.push({
+                    ...topic,
+                    sectionId: section.id,
+                    sectionName: section.name
+                });
+            }
+        }
+        
+        return allTopics;
     }
 
     async findSections(
@@ -661,10 +692,17 @@ export class SectionService {
                     );
             }
 
+            const allTopics = this.flattenTopicsFromSections(enrichedSections);
+
             const totalPercent = this.calculateTotalPercent(
-                enrichedSections,
+                allTopics,
                 new Date(examDate),
                 prediction.daysNeeded
+            );
+
+            const coveragePercent = this.calculateCoveragePercent(
+                enrichedSections,
+                threshold
             );
 
             return {
@@ -672,6 +710,7 @@ export class SectionService {
                 message: 'Działy zostały pomyślnie pobrane',
                 sections: enrichedSections,
                 total: totalPercent,
+                coverage: coveragePercent,
                 prediction: prediction.date,
                 deltaDays,
                 subjectId,
@@ -706,11 +745,11 @@ export class SectionService {
     }
 
     private calculateTotalPercent(
-        sectionsWithStatus: any[],
+        topicsWithStatus: any[],
         examDate: Date,
         predictionDaysNeeded: number
     ) {
-        if (sectionsWithStatus.length === 0) {
+        if (topicsWithStatus.length === 0) {
             return {
                 completed: 0,
                 progress: 0,
@@ -723,21 +762,26 @@ export class SectionService {
         let progressCount = 0;
         let startedCount = 0;
 
-        for (const section of sectionsWithStatus) {
-            if (section.status === "completed") {
+        for (const topic of topicsWithStatus) {
+            if (topic.status === "completed") {
                 completedCount++;
-            } else if (section.status === "progress") {
+            } else if (topic.status === "progress") {
                 progressCount++;
-            } else if (section.status === "started") {
+            } else if (topic.status === "started") {
                 startedCount++;
             }
         }
 
-        const total = sectionsWithStatus.length;
+        const total = topicsWithStatus.length;
         
         const completedPercent = Math.ceil((completedCount / total) * 100);
-        const progressPercent = Math.ceil((progressCount / total) * 100);
-        const totalStartedPercent = Math.ceil((startedCount / total) * 100);
+        let progressPercent = Math.ceil((progressCount / total) * 100);
+        
+        if (completedPercent + progressPercent > 100) {
+            progressPercent = Math.max(0, 100 - completedPercent);
+        }
+        
+        let startedPercent = Math.max(0, 100 - completedPercent - progressPercent);
         
         let willNotFinishPercent = 0;
         
@@ -749,17 +793,29 @@ export class SectionService {
         }
         
         if (daysToExam <= 0) {
-            willNotFinishPercent = totalStartedPercent;
+            willNotFinishPercent = startedPercent;
         }
         else if (predictionDaysNeeded > daysToExam) {
             const shortageRatio = (predictionDaysNeeded - daysToExam) / predictionDaysNeeded;
-            willNotFinishPercent = Math.ceil(totalStartedPercent * shortageRatio);
-            willNotFinishPercent = Math.min(willNotFinishPercent, totalStartedPercent);
+            willNotFinishPercent = Math.ceil(startedPercent * shortageRatio);
+            willNotFinishPercent = Math.min(willNotFinishPercent, startedPercent);
         }
         
         willNotFinishPercent = Math.max(0, willNotFinishPercent);
         
-        const startedPercent = totalStartedPercent - willNotFinishPercent;
+        startedPercent = startedPercent - willNotFinishPercent;
+
+        const totalSum = completedPercent + progressPercent + startedPercent + willNotFinishPercent;
+        if (totalSum !== 100) {
+            if (totalSum > 100) {
+                const diff = totalSum - 100;
+                startedPercent = Math.max(0, startedPercent - diff);
+            }
+            else {
+                const diff = 100 - totalSum;
+                startedPercent = startedPercent + diff;
+            }
+        }
 
         return {
             completed: completedPercent,

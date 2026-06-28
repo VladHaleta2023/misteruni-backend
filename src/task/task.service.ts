@@ -642,7 +642,7 @@ export class TaskService {
             const belowThreshold = subtopics.filter(s => s.percent < threshold);
             const finalSubtopics = belowThreshold.length > 0 ? belowThreshold : subtopics;
 
-            const formattedSubtopics = finalSubtopics.slice(0, 3).map(s => s.name);
+            const formattedSubtopics = finalSubtopics.slice(0, 2).map(s => s.name);
 
             data.subtopics = data.subtopics ?? formattedSubtopics;
             data.subject = data.subject ?? subject.name;
@@ -653,7 +653,12 @@ export class TaskService {
             data.topic = data.topic ?? topic.name;
             data.literature = data.literature ?? topic.literature;
             data.threshold = data.threshold ?? threshold;
-            data.difficulty = data.difficulty ?? topic.difficulty;
+
+            let difficulty = "Podstawowy";
+            if (userSubject?.detailLevel === "EXPANDED" && topic.difficulty === "Podstawowy")
+                difficulty = "Rozszerzony";
+            
+            data.difficulty = data.difficulty ?? difficulty;
 
             data.prompt = subject.questionPrompt ?? "";
 
@@ -1416,10 +1421,6 @@ export class TaskService {
             if (!task) {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
             }
-
-            if (task.solution !== null && task.solution !== "") {
-                throw new BadRequestException('Poradnik rozwiązania już istnieje');
-            }
             
             data.prompt = subject.solutionGuidePrompt ?? "";
             data.information = data.information ?? topic.information;
@@ -1974,8 +1975,7 @@ export class TaskService {
             const updatedTask = await this.prismaService.task.update({
                 where: { id, userId },
                 data: {
-                    ...userData,
-                    answered: true,
+                    ...userData
                 }
             });
 
@@ -2076,10 +2076,6 @@ export class TaskService {
 
             if (!task) {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
-            }
-
-            if (task.solution !== null && task.solution !== "") {
-                throw new BadRequestException('Poradnik rozwiązania już istnieje');
             }
 
             const updatedTask = await this.prismaService.task.update({

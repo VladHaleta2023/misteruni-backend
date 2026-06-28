@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpException, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { TaskService } from './task.service';
 import { ChatAIGenerate, ChatTheoryAIGenerate, InteractiveTaskAIGenerate, OptionsAIGenerate, ProblemsAIGenerate, SolutionGuideAIGenerate, TaskAIGenerate, WritingAIGenerate } from './dto/task-generate.dto';
-import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUpdateFinishedRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
+import { SolutionGuideRequest, SubtopicsProgressUpdateRequest, TaskCreateRequest, TaskUpdateChatRequest, TaskUserSolutionRequest } from './dto/task-request.dto';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '@prisma/client';

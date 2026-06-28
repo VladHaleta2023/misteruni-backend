@@ -63,6 +63,9 @@ export class TaskUserSolutionRequest {
   @IsString()
   userSolution: string;
 
+  @IsBoolean()
+  answered: boolean;
+
   @IsInt()
   userOptionIndex: number;
 }

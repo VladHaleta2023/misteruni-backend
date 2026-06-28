@@ -567,7 +567,7 @@ export class ExamService {
                 final_subtopics AS (
                     SELECT *
                     FROM ranked_subtopics
-                    WHERE rn <= 3
+                    WHERE rn <= 2
                 ),
 
                 subtopics_calc AS (
@@ -576,8 +576,8 @@ export class ExamService {
                         ROUND(
                             SUM(
                                 CASE 
-                                    WHEN st."detailLevel" = 'BASIC' THEN 240
-                                    WHEN st."detailLevel" = 'EXPANDED' THEN 360
+                                    WHEN st."detailLevel" = 'BASIC' THEN 360
+                                    WHEN st."detailLevel" = 'EXPANDED' THEN 480
                                     ELSE 240
                                 END
                                 * (st.importance / 100.0)

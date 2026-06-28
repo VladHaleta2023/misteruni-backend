@@ -12,6 +12,7 @@ import { TaskService } from '../task/task.service';
 import { ExamService } from '../exam/exam.service';
 import { SectionService } from '../section/section.service';
 import { TimezoneService } from '../timezone/timezone.service';
+import { SubjectDetailLevel } from '@prisma/client';
 
 @Injectable()
 export class SubjectService {
@@ -718,136 +719,6 @@ export class SubjectService {
         }
     }
 
-    private async getRemainingDaysToExam(userId: number, subjectId: number): Promise<number> {
-        const userSubject = await this.prismaService.userSubject.findUnique({
-            where: { userId_subjectId: { userId, subjectId } },
-            select: { examDate: true }
-        });
-        
-        if (!userSubject?.examDate) return 0;
-        
-        const now = new Date();
-        const examDate = new Date(userSubject.examDate);
-        const diffTime = examDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        return Math.max(0, diffDays);
-    }
-
-    private async getExamStats(userId: number, subjectId: number): Promise<{
-        averagePercent: number;
-        examsCount: number;
-    }> {
-        const result = await this.prismaService.$queryRaw<Array<{
-            avg_percent: number;
-            exams_count: number;
-        }>>`
-            SELECT 
-                COALESCE(AVG(percent), 0)::int as avg_percent,
-                COUNT(*)::int as exams_count
-            FROM (
-                SELECT 
-                    e.id,
-                    COALESCE(
-                        (SELECT AVG(t.percent)::int
-                        FROM (
-                            SELECT DISTINCT ON (t."topicId") t.percent
-                            FROM "Task" t
-                            WHERE t."examId" = e.id
-                            AND t."userId" = ${userId}
-                            ORDER BY t."topicId", t."order" ASC
-                        ) t
-                        ), 0
-                    ) as percent
-                FROM "Exam" e
-                WHERE e."userId" = ${userId}
-                AND e."subjectId" = ${subjectId}
-                AND (
-                    -- Экзамен завершен по времени
-                    COALESCE(
-                        (SELECT SUM(t."timeSpentSeconds")
-                        FROM "Task" t WHERE t."examId" = e.id AND t."userId" = ${userId}
-                        ), 0
-                    ) >= (SELECT s."totalTimeSpent" * 60 FROM "Subject" s WHERE s.id = ${subjectId})
-                    -- Или все темы пройдены
-                    OR (
-                        SELECT COUNT(DISTINCT et."topicId")
-                        FROM "ExamTopic" et WHERE et."examId" = e.id
-                    ) = (
-                        SELECT COUNT(DISTINCT t."topicId")
-                        FROM "Task" t WHERE t."examId" = e.id AND t."userId" = ${userId} AND t.finished = true
-                    )
-                )
-            ) finished_exams
-        `;
-        
-        return {
-            averagePercent: result[0]?.avg_percent || 0,
-            examsCount: result[0]?.exams_count || 0
-        };
-    }
-
-    private async getTotalVerificationPercent(userId: number, subjectId: number): Promise<{
-        completed: number;
-        progress: number;
-        started: number;
-        willNotFinish: number;
-        totalCovered: number;
-    }> {
-        const result = await this.prismaService.$queryRaw<Array<{
-            status: string;
-            count: number;
-        }>>`
-            SELECT 
-                CASE 
-                    WHEN us.percent >= us2.threshold THEN 'completed'
-                    WHEN us.percent > 0 THEN 'progress'
-                    ELSE 'started'
-                END as status,
-                COUNT(*)::int as count
-            FROM "UserSection" us
-            JOIN "UserSubject" us2 ON us2."userId" = us."userId" 
-                AND us2."subjectId" = us."subjectId"
-            WHERE us."userId" = ${userId}
-                AND us."subjectId" = ${subjectId}
-            GROUP BY 
-                CASE 
-                    WHEN us.percent >= us2.threshold THEN 'completed'
-                    WHEN us.percent > 0 THEN 'progress'
-                    ELSE 'started'
-                END
-        `;
-        
-        const completed = result.find(r => r.status === 'completed')?.count || 0;
-        const progress = result.find(r => r.status === 'progress')?.count || 0;
-        const started = result.find(r => r.status === 'started')?.count || 0;
-        const total = completed + progress + started;
-        
-        const userSubject = await this.prismaService.userSubject.findUnique({
-            where: { userId_subjectId: { userId, subjectId } },
-            select: { examDate: true }
-        });
-        
-        let willNotFinish = 0;
-        if (userSubject?.examDate && total > 0) {
-            const now = new Date();
-            const examDate = new Date(userSubject.examDate);
-            const daysToExam = Math.ceil((examDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-            
-            if (daysToExam <= 0) {
-                willNotFinish = Math.ceil((started / total) * 100);
-            }
-        }
-        
-        return {
-            completed: total > 0 ? Math.ceil((completed / total) * 100) : 0,
-            progress: total > 0 ? Math.ceil((progress / total) * 100) : 0,
-            started: total > 0 ? Math.ceil((started / total) * 100) : 0,
-            willNotFinish,
-            totalCovered: total > 0 ? Math.ceil(((completed + progress) / total) * 100) : 0
-        };
-    }
-
     async getDailyProgressTable(userId: number, subjectId: number): Promise<Array<{
         date: string;
         dayOfWeek: string;
@@ -954,80 +825,6 @@ export class SubjectService {
         return allDays.reverse();
     }
 
-    private async getWordStats(userId: number, subjectId: number): Promise<{
-        checkedWordsCount: number;
-        totalWordsCount: number;
-        coveragePercent: number;
-    }> {
-        const allWords = await this.prismaService.word.findMany({
-            where: { userId, subjectId },
-            select: { totalAttemptCount: true }
-        });
-
-        const totalCount = allWords.length;
-        const checkedCount = allWords.filter(w => (w.totalAttemptCount ?? 0) > 0).length;
-        
-        const coveragePercent = totalCount > 0 
-            ? parseFloat(((checkedCount / totalCount) * 100).toFixed(2))
-            : 0;
-
-        return {
-            checkedWordsCount: checkedCount,
-            totalWordsCount: totalCount,
-            coveragePercent
-        };
-    }
-
-    private async getAudioTaskStats(userId: number, subjectId: number): Promise<{
-        audioTasksCount: number;
-        averageAudioScore: number;
-    }> {
-        const result = await this.prismaService.$queryRaw<Array<{
-            count: number;
-            avg_percent: number;
-        }>>`
-            SELECT 
-                COUNT(*)::int as count,
-                COALESCE(AVG(t.percent), 0)::int as avg_percent
-            FROM "Task" t
-            JOIN "Topic" tp ON tp.id = t."topicId"
-            WHERE t."userId" = ${userId}
-                AND t."subjectId" = ${subjectId}
-                AND t.finished = true
-                AND tp.type = 'Stories'
-        `;
-
-        return {
-            audioTasksCount: result[0]?.count || 0,
-            averageAudioScore: result[0]?.avg_percent || 0
-        };
-    }
-
-    private async getWritingTaskStats(userId: number, subjectId: number): Promise<{
-        writingTasksCount: number;
-        averageWritingScore: number;
-    }> {
-        const result = await this.prismaService.$queryRaw<Array<{
-            count: number;
-            avg_percent: number;
-        }>>`
-            SELECT 
-                COUNT(*)::int as count,
-                COALESCE(AVG(t.percent), 0)::int as avg_percent
-            FROM "Task" t
-            JOIN "Topic" tp ON tp.id = t."topicId"
-            WHERE t."userId" = ${userId}
-                AND t."subjectId" = ${subjectId}
-                AND t.finished = true
-                AND tp.type = 'Writing'
-        `;
-
-        return {
-            writingTasksCount: result[0]?.count || 0,
-            averageWritingScore: result[0]?.avg_percent || 0
-        };
-    }
-
     private mapStatisticRecord(record: any) {
         return {
             remainingDaysToExam: record.remainingDaysToExam,
@@ -1061,7 +858,10 @@ export class SubjectService {
         return await this.prismaService.$transaction(async (tx) => {
             const allRecords = await tx.statistic.findMany({
                 where: { userId, subjectId },
-                orderBy: { date: 'desc' }
+                orderBy: [
+                    { date: 'desc' },
+                    { updatedAt: 'desc' }
+                ]
             });
 
             if (allRecords.length === 0 || allRecords.length === 1) {
@@ -1091,7 +891,7 @@ export class SubjectService {
             }
             else if (allRecords.length === 2) {
                 const lastRecord = allRecords[0];
-                
+
                 if (lastRecord.date.getTime() === todayUTC.getTime()) {
                     await tx.statistic.update({
                         where: { id: lastRecord.id },
@@ -1115,7 +915,10 @@ export class SubjectService {
 
             const lastTwo = await tx.statistic.findMany({
                 where: { userId, subjectId },
-                orderBy: { date: 'desc' },
+                orderBy: [
+                    { date: 'desc' },
+                    { updatedAt: 'desc' }
+                ],
                 take: 2
             });
 
@@ -1156,40 +959,182 @@ export class SubjectService {
             if (!subject) throw new BadRequestException('Przedmiot nie został znaleziony');
             if (!userSubject) throw new BadRequestException('Użytkownik nie jest zapisany na ten przedmiot');
 
-            const [
-                remainingDays,
-                examStats,
-                verificationPercent,
-                dailyProgress,
-                wordStats,
-                audioTaskStats,
-                writingTaskStats,
-            ] = await Promise.all([
-                this.getRemainingDaysToExam(userId, id),
-                this.getExamStats(userId, id),
-                this.getTotalVerificationPercent(userId, id),
-                this.getDailyProgressTable(userId, id),
-                this.getWordStats(userId, id),
-                this.getAudioTaskStats(userId, id),
-                this.getWritingTaskStats(userId, id),
-            ]);
+            const threshold = userSubject.threshold || 50;
+            const detailLevel = userSubject.detailLevel || 'BASIC';
+            const topicDifficulties = detailLevel === 'EXPANDED' 
+                ? ['Podstawowy', 'Rozszerzony'] 
+                : ['Podstawowy'];
+
+            const stats = await this.prismaService.$queryRaw<Array<{
+                remaining_days: number;
+                avg_exam_percent: number;
+                exams_count: number;
+                coverage_percent: number;
+                checked_words: number;
+                total_words: number;
+                words_coverage: number;
+                audio_count: number;
+                audio_avg: number;
+                writing_count: number;
+                writing_avg: number;
+            }>>`
+                WITH 
+                -- Coverage percent (tak jak w findSections)
+                coverage_data AS (
+                    SELECT 
+                        CEIL(
+                            SUM(LEAST(COALESCE(avg_data.avg_pct, 0), ${threshold})) * 100.0 
+                            / (${threshold} * COUNT(*))
+                        ) AS coverage_percent
+                    FROM "Topic" t
+                    LEFT JOIN (
+                        SELECT 
+                            st."topicId",
+                            AVG(ust.percent)::int AS avg_pct
+                        FROM "UserSubtopic" ust
+                        JOIN "Subtopic" st ON st.id = ust."subtopicId"
+                        WHERE ust."userId" = ${userId}
+                        GROUP BY st."topicId"
+                    ) avg_data ON avg_data."topicId" = t.id
+                    WHERE t."subjectId" = ${id}
+                        AND t."difficulty" = ANY(${topicDifficulties}::text[])
+                        AND t.type NOT IN ('Stories', 'Writing')
+                ),
+                -- Exam stats
+                exam_data AS (
+                    SELECT 
+                        COALESCE(AVG(percent), 0)::int AS avg_exam_percent,
+                        COUNT(*)::int AS exams_count
+                    FROM (
+                        SELECT 
+                            e.id,
+                            COALESCE(
+                                (SELECT AVG(t2.percent)::int
+                                FROM (
+                                    SELECT DISTINCT ON (t2."topicId") t2.percent
+                                    FROM "Task" t2
+                                    WHERE t2."examId" = e.id
+                                        AND t2."userId" = ${userId}
+                                    ORDER BY t2."topicId", t2."order" ASC
+                                ) t2
+                                ), 0
+                            ) AS percent
+                        FROM "Exam" e
+                        WHERE e."userId" = ${userId}
+                            AND e."subjectId" = ${id}
+                            AND (
+                                COALESCE(
+                                    (SELECT SUM(t3."timeSpentSeconds")
+                                    FROM "Task" t3 
+                                    WHERE t3."examId" = e.id AND t3."userId" = ${userId}
+                                    ), 0
+                                ) >= (SELECT s."totalTimeSpent" * 60 FROM "Subject" s WHERE s.id = ${id})
+                                OR (
+                                    SELECT COUNT(DISTINCT et."topicId")
+                                    FROM "ExamTopic" et WHERE et."examId" = e.id
+                                ) = (
+                                    SELECT COUNT(DISTINCT t4."topicId")
+                                    FROM "Task" t4 
+                                    WHERE t4."examId" = e.id 
+                                        AND t4."userId" = ${userId} 
+                                        AND t4.finished = true
+                                )
+                            )
+                    ) finished_exams
+                ),
+                -- Word stats
+                word_data AS (
+                    SELECT 
+                        COUNT(*) FILTER (WHERE w."totalAttemptCount" > 0) AS checked_words,
+                        COUNT(*) AS total_words,
+                        CASE 
+                            WHEN COUNT(*) > 0 
+                            THEN (COUNT(*) FILTER (WHERE w."totalAttemptCount" > 0) * 100.0 / COUNT(*))::float
+                            ELSE 0 
+                        END AS words_coverage
+                    FROM "Word" w
+                    WHERE w."userId" = ${userId}
+                        AND w."subjectId" = ${id}
+                ),
+                -- Audio stats
+                audio_data AS (
+                    SELECT 
+                        COUNT(*)::int AS audio_count,
+                        COALESCE(AVG(t.percent), 0)::int AS audio_avg
+                    FROM "Task" t
+                    JOIN "Topic" tp ON tp.id = t."topicId"
+                    WHERE t."userId" = ${userId}
+                        AND t."subjectId" = ${id}
+                        AND t.finished = true
+                        AND tp.type = 'Stories'
+                ),
+                -- Writing stats
+                writing_data AS (
+                    SELECT 
+                        COUNT(*)::int AS writing_count,
+                        COALESCE(AVG(t.percent), 0)::int AS writing_avg
+                    FROM "Task" t
+                    JOIN "Topic" tp ON tp.id = t."topicId"
+                    WHERE t."userId" = ${userId}
+                        AND t."subjectId" = ${id}
+                        AND t.finished = true
+                        AND tp.type = 'Writing'
+                ),
+                -- Remaining days
+                days_data AS (
+                    SELECT 
+                        CASE 
+                            WHEN ${userSubject.examDate ?? new Date()}::date <= CURRENT_DATE THEN 0
+                            ELSE (${userSubject.examDate ?? new Date()}::date - CURRENT_DATE)
+                        END AS remaining_days
+                )
+                SELECT 
+                    d.remaining_days,
+                    e.avg_exam_percent,
+                    e.exams_count,
+                    c.coverage_percent,
+                    w.checked_words,
+                    w.total_words,
+                    w.words_coverage,
+                    a.audio_count,
+                    a.audio_avg,
+                    wr.writing_count,
+                    wr.writing_avg
+                FROM days_data d
+                CROSS JOIN exam_data e
+                CROSS JOIN coverage_data c
+                CROSS JOIN word_data w
+                CROSS JOIN audio_data a
+                CROSS JOIN writing_data wr
+            `;
+
+            const s = stats[0];
+
+            const remainingDays = s?.remaining_days || 0;
+            const coveragePercent = s?.coverage_percent || 0;
 
             const predictedScore = Math.round(
-                examStats.averagePercent * 0.6 + verificationPercent.totalCovered * 0.4
+                (s?.avg_exam_percent || 0) * 0.6 + coveragePercent * 0.4
+            );
+
+            const dailyProgress = await this.getDailyProgressTableOptimized(
+                userId, 
+                id, 
+                userSubject.dailyStudyMinutes || 60
             );
 
             const statisticParams = {
                 remainingDaysToExam: remainingDays,
-                examsCount: examStats.examsCount,
-                averageExamScore: examStats.averagePercent,
-                totalCovered: verificationPercent.totalCovered,
-                predictedScore: predictedScore,
-                checkedWordsCount: wordStats.checkedWordsCount,
-                wordsCoveragePercent: wordStats.coveragePercent,
-                audioTasksCount: audioTaskStats.audioTasksCount,
-                averageAudioScore: audioTaskStats.averageAudioScore,
-                writingTasksCount: writingTaskStats.writingTasksCount,
-                averageWritingScore: writingTaskStats.averageWritingScore
+                examsCount: s?.exams_count || 0,
+                averageExamScore: s?.avg_exam_percent || 0,
+                totalCovered: coveragePercent,
+                predictedScore,
+                checkedWordsCount: Number(s?.checked_words) || 0,
+                wordsCoveragePercent: Number(s?.words_coverage) || 0,
+                audioTasksCount: s?.audio_count || 0,
+                averageAudioScore: s?.audio_avg || 0,
+                writingTasksCount: s?.writing_count || 0,
+                averageWritingScore: s?.writing_avg || 0
             };
 
             const statisticHistory = await this.saveAndGetStatisticHistory(
@@ -1204,7 +1149,7 @@ export class SubjectService {
                 statistic: {
                     current: statisticHistory.current,
                     previous: statisticHistory.previous,
-                    dailyProgress: dailyProgress
+                    dailyProgress
                 }
             };
         } catch (error) {
@@ -1212,5 +1157,158 @@ export class SubjectService {
             if (error instanceof BadRequestException) throw error;
             throw new InternalServerErrorException('Nie udało się pobrać statystyki');
         }
+    }
+
+    private async getDailyProgressTableOptimized(
+        userId: number,
+        subjectId: number,
+        dailyPlanMinutes: number
+    ): Promise<Array<{
+        date: string;
+        dayOfWeek: string;
+        deltaPercent: number;
+        timeSpentMinutes: number;
+        plannedMinutes: number;
+        cumulativeDeltaDays: number;
+    }>> {
+        const taskData = await this.prismaService.$queryRaw<Array<{
+            taskId: number;
+            taskDate: Date;
+            topicType: string;
+            subtopicId: number | null;
+            subtopicPercent: number | null;
+            importance: number | null;
+            detailLevel: string | null;
+            timeSpentSeconds: number;
+        }>>`
+            WITH task_with_progress AS (
+                SELECT 
+                    t.id AS "taskId",
+                    DATE(t."updatedAt") AS "taskDate",
+                    t."timeSpentSeconds",
+                    t."topicId",
+                    tp.type AS "topicType",
+                    sp."subtopicId",
+                    sp.percent AS "subtopicPercent",
+                    s.importance,
+                    s."detailLevel"
+                FROM "Task" t
+                JOIN "Topic" tp ON tp.id = t."topicId"
+                LEFT JOIN "SubtopicProgress" sp ON sp."taskId" = t.id
+                LEFT JOIN "Subtopic" s ON s.id = sp."subtopicId"
+                WHERE t."userId" = ${userId}
+                    AND t."subjectId" = ${subjectId}
+                    AND t.finished = true
+            )
+            SELECT 
+                twp."taskId",
+                twp."taskDate",
+                twp."timeSpentSeconds",
+                twp."topicType",
+                twp."subtopicId",
+                twp."subtopicPercent",
+                twp.importance,
+                twp."detailLevel"
+            FROM task_with_progress twp
+            ORDER BY twp."taskDate" ASC
+        `;
+
+        const dailyTasksMap = new Map<string, Array<{
+            taskId: number;
+            topicType: string;
+            subtopicId: number | null;
+            subtopicPercent: number | null;
+            importance: number | null;
+            detailLevel: string | null;
+            timeSpentSeconds: number;
+        }>>();
+
+        for (const task of taskData) {
+            const dateKey = task.taskDate.toISOString().split('T')[0];
+            if (!dailyTasksMap.has(dateKey)) {
+                dailyTasksMap.set(dateKey, []);
+            }
+            dailyTasksMap.get(dateKey)!.push({
+                taskId: task.taskId,
+                topicType: task.topicType,
+                subtopicId: task.subtopicId,
+                subtopicPercent: task.subtopicPercent,
+                importance: task.importance,
+                detailLevel: task.detailLevel,
+                timeSpentSeconds: task.timeSpentSeconds
+            });
+        }
+
+        const result: Array<any> = [];
+        let cumulativeDeltaMinutes = 0;
+        const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'];
+
+        const sortedDates = Array.from(dailyTasksMap.keys()).sort();
+
+        for (const dateKey of sortedDates) {
+            const tasks = dailyTasksMap.get(dateKey)!;
+            let totalDailySeconds = 0;
+
+            for (const task of tasks) {
+                let timeSeconds = 0;
+
+                if (task.topicType === 'Writing') {
+                    let percent = 0;
+                    if (task.subtopicPercent !== null) {
+                        percent = task.subtopicPercent;
+                    }
+                    
+                    timeSeconds = 3600 * (percent / 100);
+                }
+                else if (task.topicType === 'Stories') {
+                    let percent = 0;
+                    if (task.subtopicPercent !== null) {
+                        percent = task.subtopicPercent;
+                    } else {
+                        percent = Math.min(100, Math.round((task.timeSpentSeconds / 600) * 100));
+                    }
+                    timeSeconds = 600 * (percent / 100);
+                }
+                else if (task.subtopicId !== null && task.subtopicPercent !== null) {
+                    const importance = task.importance ?? 100;
+                    const percent = task.subtopicPercent;
+                    const detailLevel = task.detailLevel as SubjectDetailLevel || 'BASIC';
+
+                    let baseTimeSeconds = 0;
+                    if (detailLevel === SubjectDetailLevel.BASIC) {
+                        baseTimeSeconds = (10 + 10 * (importance / 100)) * 60;
+                    } else if (detailLevel === SubjectDetailLevel.EXPANDED) {
+                        baseTimeSeconds = (12 + 13 * (importance / 100)) * 60;
+                    } else {
+                        baseTimeSeconds = 600;
+                    }
+
+                    timeSeconds = baseTimeSeconds * (percent / 100);
+                }
+                else {
+                    timeSeconds = task.timeSpentSeconds;
+                }
+
+                totalDailySeconds += timeSeconds;
+            }
+
+            const actualMinutes = Math.ceil(totalDailySeconds / 60);
+            const deltaMinutes = actualMinutes - dailyPlanMinutes;
+            cumulativeDeltaMinutes += deltaMinutes;
+
+            const dateObj = new Date(dateKey);
+            const dateStr = `${String(dateObj.getDate()).padStart(2, '0')}.${String(dateObj.getMonth() + 1).padStart(2, '0')}.${dateObj.getFullYear()}`;
+
+            result.push({
+                date: dateStr,
+                dayOfWeek: dayNames[dateObj.getDay()],
+                deltaPercent: dailyPlanMinutes > 0 ? Math.round((deltaMinutes / dailyPlanMinutes) * 100) : 0,
+                timeSpentMinutes: actualMinutes,
+                plannedMinutes: dailyPlanMinutes,
+                cumulativeDeltaDays: dailyPlanMinutes > 0 ? Math.trunc(cumulativeDeltaMinutes / dailyPlanMinutes) : 0
+            });
+        }
+
+        return result.reverse();
     }
 }

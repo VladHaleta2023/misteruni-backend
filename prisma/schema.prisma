@@ -473,8 +473,10 @@ model Statistic {
   averageWritingScore  Int
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId, subjectId, date(sort: Desc)])
+  @@index([userId, subjectId, updatedAt(sort: Desc)])
 }
 
 enum AuthProvider {
