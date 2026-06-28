@@ -576,8 +576,8 @@ export class ExamService {
                         ROUND(
                             SUM(
                                 CASE 
-                                    WHEN st."detailLevel" = 'BASIC' THEN 360
-                                    WHEN st."detailLevel" = 'EXPANDED' THEN 480
+                                    WHEN st."detailLevel" = 'BASIC' THEN 240
+                                    WHEN st."detailLevel" = 'EXPANDED' THEN 360
                                     ELSE 240
                                 END
                                 * (st.importance / 100.0)
