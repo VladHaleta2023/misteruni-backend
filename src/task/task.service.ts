@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
 import { Prisma, SubjectDetailLevel } from '@prisma/client';
 import { TimezoneService } from '../timezone/timezone.service';
+import { WordService } from 'src/word/word.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
@@ -20,6 +21,7 @@ export class TaskService {
     constructor(
         private readonly prismaService: PrismaService,
         private readonly subtopicService: SubtopicService,
+        private readonly wordService: WordService,
         private readonly httpService: HttpService,
         private readonly storageService: StorageService,
         private readonly optionsService: OptionsService,
@@ -299,7 +301,7 @@ export class TaskService {
                                 'percent', wd.percent
                             )
                         ) AS words,
-                        BOOL_AND(wd.percent >= ${threshold}) AS "wordsCompleted"
+                        BOOL_AND(wd."totalCorrectCount" > 0) AS "wordsCompleted"
                     FROM words_detailed wd
                     GROUP BY wd."taskId"
                 ),
@@ -495,7 +497,7 @@ export class TaskService {
                                 'percent', wd.percent
                             )
                         ) AS words,
-                        BOOL_AND(wd.percent >= ${threshold}) AS "wordsCompleted"
+                        BOOL_AND(wd."totalCorrectCount" > 0) AS "wordsCompleted"
                     FROM words_detailed wd
                     GROUP BY wd."taskId"
                 ),
@@ -1472,6 +1474,52 @@ export class TaskService {
         }
     }
 
+    async getTopicWordsCoverage(
+        userId: number,
+        subjectId: number,
+        topicId: number
+    ): Promise<number> {
+        try {
+            const allWords = await this.prismaService.word.findMany({
+                where: {
+                    userId,
+                    subjectId,
+                    topicId
+                },
+                select: {
+                    id: true
+                }
+            });
+
+            const totalWords = allWords.length;
+
+            const usedWordsResult = await this.prismaService.taskWord.findMany({
+                where: {
+                    word: {
+                        userId,
+                        subjectId,
+                        topicId
+                    }
+                },
+                select: {
+                    wordId: true
+                },
+                distinct: ['wordId']
+            });
+
+            const usedWords = usedWordsResult.length;
+
+            const coveragePercent = totalWords > 0
+                ? Math.round((usedWords / totalWords) * 100)
+                : 0;
+
+            return coveragePercent;
+        } catch (error) {
+            console.error('Błąd obliczania pokrycia słów:', error);
+            return 0;
+        }
+    }
+
     async createTaskTransaction(
         userId: number,
         subjectId: number,
@@ -1558,8 +1606,6 @@ export class TaskService {
                         });
                     }
                 } else {
-                    let percentWords = 0;
-
                     if (taskData.words && taskData.words.length > 0) {
                         const taskWords = await tx.word.findMany({
                             where: {
@@ -1576,46 +1622,14 @@ export class TaskService {
                                 create: { taskId, wordId: w.id }
                             });
                         }
-
-                        if (taskWords.length > 0) {
-                            let total = 0;
-                            
-                            for (const w of taskWords) {
-                                let wordPercent = 0;
-                                if (w.totalAttemptCount > 0) {
-                                    wordPercent = Math.min(100, Math.ceil(w.totalCorrectCount / w.totalAttemptCount * 100));
-                                }
-                                total += wordPercent;
-                            }
-                            
-                            percentWords = Math.ceil(total / taskWords.length);
-                        }
                     }
 
                     if (taskData.explanation && taskData.explanation.trim() !== '') {
-                        const percentAudio = taskData.percent ?? 0;
-                        let finalPercent: number;
-                        
-                        const topic = await tx.topic.findUnique({
-                            where: { id: topicId },
-                            select: { type: true }
-                        });
-                        
-                        const topicType = topic?.type ?? "";
-                        
-                        if (topicType === "Writing") {
-                            finalPercent = percentAudio;
-                        } else {
-                            finalPercent = Math.ceil((percentAudio + percentWords) / 2);
-                        }
-
                         await tx.task.update({
                             where: { id: taskId, userId },
                             data: {
                                 explanation: taskData.explanation,
-                                percent: finalPercent,
-                                percentAudio,
-                                percentWords,
+                                percent: taskData.percent
                             }
                         });
 
@@ -1833,36 +1847,25 @@ export class TaskService {
             )
             : 0;
 
-        let coveragePercent: number;
-
+        let topicPercent: number;
         if (type === "Writing") {
-            coveragePercent = 100;
+            topicPercent = Math.min(
+                100,
+                Math.ceil(averageTaskPercent / 100)
+            );
         } else {
-            const words = await tx.word.findMany({
-                where: {
-                    userId,
-                    topicId,
-                    subjectId
-                },
-                select: {
-                    totalAttemptCount: true
-                }
-            });
+            const coverageWordsPercent = await this.getTopicWordsCoverage(userId, subjectId, topicId);
+            const topicWords = await this.wordService.fetchWords(userId, subjectId, topicId, null);
 
-            const totalWords = words.length;
-            const wordsWithAttempts = words.filter(
-                w => (w.totalAttemptCount ?? 0) > 0
-            ).length;
+            console.log(averageTaskPercent);
+            console.log(coverageWordsPercent);
+            console.log(topicWords);
 
-            coveragePercent = totalWords > 0
-                ? Math.ceil((wordsWithAttempts / totalWords) * 100)
-                : 0;
+            topicPercent = Math.min(
+                100,
+                Math.ceil((averageTaskPercent * (coverageWordsPercent / 100) + topicWords.wordsPercent) / 2)
+            );
         }
-
-        const topicPercent = Math.min(
-            100,
-            Math.ceil((averageTaskPercent * coveragePercent) / 100)
-        );
 
         await tx.userTopic.updateMany({
             where: { userId, subjectId, topicId },

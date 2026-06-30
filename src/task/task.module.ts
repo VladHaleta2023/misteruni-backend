@@ -8,6 +8,7 @@ import { TimezoneModule } from '../timezone/timezone.module';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { SubjectModule } from '../subject/subject.module';
+import { WordModule } from 'src/word/word.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SubjectModule } from '../subject/subject.module';
     StorageModule,
     SubtopicModule,
     OptionsModule,
+    WordModule,
     TimezoneModule,
     forwardRef(() => SubjectModule),
   ],

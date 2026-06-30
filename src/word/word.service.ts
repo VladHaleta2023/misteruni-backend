@@ -6,6 +6,7 @@ import { VocabluaryAIGenerate, VocabluaryGuideAIGenerate } from '../task/dto/tas
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 
+type WordStatus = 'not-finished' | 'progress' | 'completed';
 type Status = 'started' | 'progress' | 'completed';
 
 @Injectable()
@@ -224,13 +225,11 @@ export class WordService {
 
                 const masteryCoef = Math.min(word.totalCorrectCount, 5) / 5;
 
-                const percent = isGlobalMode
-                    ? Math.min(100, Math.ceil(basePercent * masteryCoef * 100))
-                    : Math.min(100, Math.ceil(basePercent * 100));
+                const percent = Math.min(100, Math.ceil(basePercent * masteryCoef * 100))
 
-                let status: Status;
+                let status: WordStatus;
 
-                if (percent === 0) status = 'started';
+                if (percent === 0) status = 'not-finished';
                 else if (percent < threshold) status = 'progress';
                 else status = 'completed';
 
@@ -353,8 +352,8 @@ export class WordService {
                     ? Math.min(100, Math.ceil(word.totalCorrectCount / word.totalAttemptCount * 100))
                     : 0;
 
-                let status: Status;
-                if (percent === 0) status = 'started';
+                let status: WordStatus;
+                if (percent === 0) status = 'not-finished';
                 else if (percent < threshold) status = 'progress';
                 else status = 'completed';
 

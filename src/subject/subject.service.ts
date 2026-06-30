@@ -1049,7 +1049,7 @@ export class SubjectService {
                         COUNT(*) AS total_words,
                         CASE 
                             WHEN COUNT(*) > 0 
-                            THEN (COUNT(*) FILTER (WHERE w."totalAttemptCount" > 0) * 100.0 / COUNT(*))::float
+                            THEN ROUND((COUNT(*) FILTER (WHERE w."totalAttemptCount" > 0) * 100.0 / COUNT(*))::numeric, 2)
                             ELSE 0 
                         END AS words_coverage
                     FROM "Word" w
@@ -1169,7 +1169,7 @@ export class SubjectService {
         deltaPercent: number;
         timeSpentMinutes: number;
         plannedMinutes: number;
-        cumulativeDeltaDays: number;
+        skipped: boolean;
     }>> {
         const taskData = await this.prismaService.$queryRaw<Array<{
             taskId: number;
@@ -1213,6 +1213,8 @@ export class SubjectService {
             ORDER BY twp."taskDate" ASC
         `;
 
+        if (taskData.length === 0) return [];
+
         const dailyTasksMap = new Map<string, Array<{
             taskId: number;
             topicType: string;
@@ -1239,14 +1241,24 @@ export class SubjectService {
             });
         }
 
+        const firstDateKey = taskData[0].taskDate.toISOString().split('T')[0];
+        const firstDate = new Date(firstDateKey + 'T00:00:00.000Z');
+
+        const todayKey = new Date().toISOString().split('T')[0];
+        const lastDate = new Date(todayKey + 'T00:00:00.000Z');
+
+        const allDateKeys: string[] = [];
+        const cursor = new Date(firstDate);
+        while (cursor <= lastDate) {
+            allDateKeys.push(cursor.toISOString().split('T')[0]);
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+
         const result: Array<any> = [];
-        let cumulativeDeltaMinutes = 0;
         const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'];
 
-        const sortedDates = Array.from(dailyTasksMap.keys()).sort();
-
-        for (const dateKey of sortedDates) {
-            const tasks = dailyTasksMap.get(dateKey)!;
+        for (const dateKey of allDateKeys) {
+            const tasks = dailyTasksMap.get(dateKey) ?? [];
             let totalDailySeconds = 0;
 
             for (const task of tasks) {
@@ -1257,7 +1269,7 @@ export class SubjectService {
                     if (task.subtopicPercent !== null) {
                         percent = task.subtopicPercent;
                     }
-                    
+
                     timeSeconds = 3600 * (percent / 100);
                 }
                 else if (task.topicType === 'Stories') {
@@ -1292,20 +1304,19 @@ export class SubjectService {
                 totalDailySeconds += timeSeconds;
             }
 
-            const actualMinutes = Math.ceil(totalDailySeconds / 60);
+            const actualMinutes = tasks.length > 0 ? Math.ceil(totalDailySeconds / 60) : 0;
             const deltaMinutes = actualMinutes - dailyPlanMinutes;
-            cumulativeDeltaMinutes += deltaMinutes;
 
-            const dateObj = new Date(dateKey);
-            const dateStr = `${String(dateObj.getDate()).padStart(2, '0')}.${String(dateObj.getMonth() + 1).padStart(2, '0')}.${dateObj.getFullYear()}`;
+            const dateObj = new Date(dateKey + 'T00:00:00.000Z');
+            const dateStr = `${String(dateObj.getUTCDate()).padStart(2, '0')}.${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}.${dateObj.getUTCFullYear()}`;
 
             result.push({
                 date: dateStr,
-                dayOfWeek: dayNames[dateObj.getDay()],
+                dayOfWeek: dayNames[dateObj.getUTCDay()],
                 deltaPercent: dailyPlanMinutes > 0 ? Math.round((deltaMinutes / dailyPlanMinutes) * 100) : 0,
                 timeSpentMinutes: actualMinutes,
                 plannedMinutes: dailyPlanMinutes,
-                cumulativeDeltaDays: dailyPlanMinutes > 0 ? Math.trunc(cumulativeDeltaMinutes / dailyPlanMinutes) : 0
+                skipped: tasks.length === 0
             });
         }
 

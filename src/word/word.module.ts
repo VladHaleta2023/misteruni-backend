@@ -14,5 +14,6 @@ import { AuthModule } from '../auth/auth.module';
   ],
   controllers: [WordController],
   providers: [WordService],
+  exports: [WordService]
 })
 export class WordModule {}

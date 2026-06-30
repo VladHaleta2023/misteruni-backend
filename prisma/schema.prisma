@@ -373,8 +373,6 @@ model Task {
   answered           Boolean            @default(false)
   percent            Int                @default(0)
   explanation        String             @default("")
-  percentAudio       Int                @default(0)
-  percentWords       Int                @default(0)
   userId             Int
   chatFinished       Boolean            @default(false)
   chat               String             @default("")
