@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
 import { Prisma, SubjectDetailLevel } from '@prisma/client';
 import { TimezoneService } from '../timezone/timezone.service';
-import { WordService } from 'src/word/word.service';
+import { WordService } from '../word/word.service';
 
 type Status = 'blocked' | 'started' | 'progress' | 'completed';
 
