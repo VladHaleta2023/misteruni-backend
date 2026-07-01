@@ -981,24 +981,24 @@ export class SubjectService {
                 WITH 
                 -- Coverage percent (tak jak w findSections)
                 coverage_data AS (
-                    SELECT 
-                        CEIL(
-                            SUM(LEAST(COALESCE(avg_data.avg_pct, 0), ${threshold})) * 100.0 
-                            / (${threshold} * COUNT(*))
-                        ) AS coverage_percent
+                    SELECT
+                        CASE WHEN COUNT(*) = 0 THEN 0
+                        ELSE 
+                            CEIL(
+                                COUNT(*) FILTER (WHERE COALESCE(ut.percent, 0) >= ${threshold}) * 100.0 / COUNT(*)
+                            )
+                            +
+                            CEIL(
+                                COUNT(*) FILTER (WHERE COALESCE(ut.percent, 0) > 0 AND COALESCE(ut.percent, 0) < ${threshold}) * 100.0 / COUNT(*)
+                            )
+                        END AS coverage_percent
                     FROM "Topic" t
-                    LEFT JOIN (
-                        SELECT 
-                            st."topicId",
-                            AVG(ust.percent)::int AS avg_pct
-                        FROM "UserSubtopic" ust
-                        JOIN "Subtopic" st ON st.id = ust."subtopicId"
-                        WHERE ust."userId" = ${userId}
-                        GROUP BY st."topicId"
-                    ) avg_data ON avg_data."topicId" = t.id
+                    LEFT JOIN "UserTopic" ut 
+                        ON ut."topicId" = t.id 
+                        AND ut."userId" = ${userId}
+                        AND ut."subjectId" = ${id}
                     WHERE t."subjectId" = ${id}
                         AND t."difficulty" = ANY(${topicDifficulties}::text[])
-                        AND t.type NOT IN ('Stories', 'Writing')
                 ),
                 -- Exam stats
                 exam_data AS (
@@ -1177,6 +1177,7 @@ export class SubjectService {
             topicType: string;
             subtopicId: number | null;
             subtopicPercent: number | null;
+            taskPercent: number | null;
             importance: number | null;
             detailLevel: string | null;
             timeSpentSeconds: number;
@@ -1186,6 +1187,7 @@ export class SubjectService {
                     t.id AS "taskId",
                     DATE(t."updatedAt") AS "taskDate",
                     t."timeSpentSeconds",
+                    t.percent AS "taskPercent",
                     t."topicId",
                     tp.type AS "topicType",
                     sp."subtopicId",
@@ -1204,6 +1206,7 @@ export class SubjectService {
                 twp."taskId",
                 twp."taskDate",
                 twp."timeSpentSeconds",
+                twp."taskPercent",
                 twp."topicType",
                 twp."subtopicId",
                 twp."subtopicPercent",
@@ -1220,6 +1223,7 @@ export class SubjectService {
             topicType: string;
             subtopicId: number | null;
             subtopicPercent: number | null;
+            taskPercent: number | null;
             importance: number | null;
             detailLevel: string | null;
             timeSpentSeconds: number;
@@ -1236,6 +1240,7 @@ export class SubjectService {
                 subtopicId: task.subtopicId,
                 subtopicPercent: task.subtopicPercent,
                 importance: task.importance,
+                taskPercent: task.taskPercent,
                 detailLevel: task.detailLevel,
                 timeSpentSeconds: task.timeSpentSeconds
             });
@@ -1266,16 +1271,19 @@ export class SubjectService {
 
                 if (task.topicType === 'Writing') {
                     let percent = 0;
-                    if (task.subtopicPercent !== null) {
+                    if (task.subtopicId !== null && task.subtopicPercent !== null) {
                         percent = task.subtopicPercent;
+                    } else if (task.taskPercent !== null) {
+                        percent = task.taskPercent;
                     }
-
                     timeSeconds = 3600 * (percent / 100);
                 }
                 else if (task.topicType === 'Stories') {
                     let percent = 0;
-                    if (task.subtopicPercent !== null) {
+                    if (task.subtopicId !== null && task.subtopicPercent !== null) {
                         percent = task.subtopicPercent;
+                    } else if (task.taskPercent !== null) {
+                        percent = task.taskPercent;
                     } else {
                         percent = Math.min(100, Math.round((task.timeSpentSeconds / 600) * 100));
                     }

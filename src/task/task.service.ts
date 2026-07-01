@@ -1850,17 +1850,10 @@ export class TaskService {
 
         let topicPercent: number;
         if (type === "Writing") {
-            topicPercent = Math.min(
-                100,
-                Math.ceil(averageTaskPercent / 100)
-            );
+            topicPercent = Math.min(100, Math.ceil(averageTaskPercent));
         } else {
             const coverageWordsPercent = await this.getTopicWordsCoverage(userId, subjectId, topicId);
             const topicWords = await this.wordService.fetchWords(userId, subjectId, topicId, null);
-
-            console.log(averageTaskPercent);
-            console.log(coverageWordsPercent);
-            console.log(topicWords);
 
             topicPercent = Math.min(
                 100,
