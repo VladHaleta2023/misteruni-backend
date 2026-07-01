@@ -644,9 +644,6 @@ export class TaskService {
             const belowThreshold = subtopics.filter(s => s.percent < threshold);
             const finalSubtopics = belowThreshold.length > 0 ? belowThreshold : subtopics;
 
-            const formattedSubtopics = finalSubtopics.slice(0, 2).map(s => s.name);
-
-            data.subtopics = data.subtopics ?? formattedSubtopics;
             data.subject = data.subject ?? subject.name;
             data.information = data.information ?? topic.information;
             data.accounts = data.accounts ?? subject.accounts;
@@ -658,9 +655,13 @@ export class TaskService {
 
             let difficulty = "Podstawowy";
             if (userSubject?.detailLevel === "EXPANDED" && topic.difficulty === "Podstawowy")
-                difficulty = "Rozszerzony";
-            
+                difficulty = "Rozszerzony"; 
             data.difficulty = data.difficulty ?? difficulty;
+
+            let formattedSubtopics = finalSubtopics.slice(0, 2).map(s => s.name);
+            if (difficulty === "Podstawowy")
+                formattedSubtopics = finalSubtopics.slice(0, 1).map(s => s.name);
+            data.subtopics = data.subtopics ?? formattedSubtopics;
 
             data.prompt = subject.questionPrompt ?? "";
 
