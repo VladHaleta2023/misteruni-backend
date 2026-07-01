@@ -1976,6 +1976,9 @@ export class TaskService {
                 throw new BadRequestException('Zadanie nie zostało znalezione');
             }
 
+            if (task.answered === true)
+                userData.answered = true;
+
             const updatedTask = await this.prismaService.task.update({
                 where: { id, userId },
                 data: {
