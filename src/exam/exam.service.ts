@@ -28,11 +28,6 @@ export class ExamService {
         }
     }
 
-    private formatLocalDate(date: Date): string {
-        const local = this.timezoneService.utcToLocal(date);
-        return `${String(local.getDate()).padStart(2, '0')}.${String(local.getMonth() + 1).padStart(2, '0')}.${local.getFullYear()}`;
-    }
-
     private async getExamTotalTimeSpentByTasks(
         userId: number,
         examId: number,
@@ -563,7 +558,7 @@ export class ExamService {
                 final_subtopics AS (
                     SELECT *
                     FROM ranked_subtopics
-                    WHERE rn <= 2
+                    WHERE rn <= 3
                 ),
 
                 subtopics_calc AS (

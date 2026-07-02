@@ -654,14 +654,10 @@ export class TaskService {
             data.threshold = data.threshold ?? threshold;
 
             let difficulty = "Podstawowy";
-            if (userSubject?.detailLevel === "EXPANDED" && topic.difficulty === "Podstawowy")
+            if (userSubject?.detailLevel === "EXPANDED")
                 difficulty = "Rozszerzony"; 
             data.difficulty = data.difficulty ?? difficulty;
-
-            let formattedSubtopics = finalSubtopics.slice(0, 2).map(s => s.name);
-            if (difficulty === "Podstawowy")
-                formattedSubtopics = finalSubtopics.slice(0, 1).map(s => s.name);
-            data.subtopics = data.subtopics ?? formattedSubtopics;
+            data.subtopics = data.subtopics ?? finalSubtopics.slice(0, 3).map(s => s.name);
 
             data.prompt = subject.questionPrompt ?? "";
 
