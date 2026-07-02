@@ -1175,6 +1175,7 @@ export class SubjectService {
             taskId: number;
             taskDate: Date;
             topicType: string;
+            topicId: number; 
             subtopicId: number | null;
             subtopicPercent: number | null;
             taskPercent: number | null;
@@ -1208,6 +1209,7 @@ export class SubjectService {
                 twp."timeSpentSeconds",
                 twp."taskPercent",
                 twp."topicType",
+                twp."topicId",
                 twp."subtopicId",
                 twp."subtopicPercent",
                 twp.importance,
@@ -1221,6 +1223,7 @@ export class SubjectService {
         const dailyTasksMap = new Map<string, Array<{
             taskId: number;
             topicType: string;
+            topicId: number;
             subtopicId: number | null;
             subtopicPercent: number | null;
             taskPercent: number | null;
@@ -1236,6 +1239,7 @@ export class SubjectService {
             }
             dailyTasksMap.get(dateKey)!.push({
                 taskId: task.taskId,
+                topicId: task.topicId,
                 topicType: task.topicType,
                 subtopicId: task.subtopicId,
                 subtopicPercent: task.subtopicPercent,
@@ -1279,15 +1283,13 @@ export class SubjectService {
                     timeSeconds = 3600 * (percent / 100);
                 }
                 else if (task.topicType === 'Stories') {
-                    let percent = 0;
-                    if (task.subtopicId !== null && task.subtopicPercent !== null) {
-                        percent = task.subtopicPercent;
-                    } else if (task.taskPercent !== null) {
-                        percent = task.taskPercent;
-                    } else {
-                        percent = Math.min(100, Math.round((task.timeSpentSeconds / 600) * 100));
-                    }
-                    timeSeconds = 600 * (percent / 100);
+                    // Базовая стоимость слов, прикреплённых именно к этой задаче
+                    const baseTimeTotal = await this.getBaseTimeForTaskWords(task.taskId);
+
+                    // Масштабируем по проценту выполнения ЭТОЙ задачи —
+                    // та же логика, что и в ветке Writing/Subtopic (percent/100, без инверсии)
+                    const percent = task.taskPercent ?? 0;
+                    timeSeconds = baseTimeTotal * (percent / 100);
                 }
                 else if (task.subtopicId !== null && task.subtopicPercent !== null) {
                     const importance = task.importance ?? 100;
@@ -1329,5 +1331,20 @@ export class SubjectService {
         }
 
         return result.reverse();
+    }
+
+    private async getBaseTimeForTaskWords(taskId: number): Promise<number> {
+        const words = await this.prismaService.$queryRaw<Array<{ frequency: number | null }>>`
+            SELECT w.frequency
+            FROM "TaskWord" tw
+            JOIN "Word" w ON w.id = tw."wordId"
+            WHERE tw."taskId" = ${taskId}
+        `;
+
+        return words.reduce((sum, w) => {
+            const importance = 100 - (w.frequency ?? 0);
+            const perWordTime = (2 + 2 * (importance / 100)) * 60;
+            return sum + perWordTime;
+        }, 0);
     }
 }

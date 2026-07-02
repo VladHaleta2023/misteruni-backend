@@ -19,6 +19,8 @@ export class SectionService {
             importance?: number;
             isSubtopic?: boolean;
             isWriting?: boolean;
+            isAudio?: boolean;
+            baseTimeSeconds?: number;
             detailLevel?: SubjectDetailLevel;
         }>,
         dailyStudyMinutes: number,
@@ -60,9 +62,12 @@ export class SectionService {
                 if (item.isWriting) {
                     baseTimeSeconds = 3600;
                 }
+                else if (item.isAudio) {
+                    baseTimeSeconds = item.baseTimeSeconds ?? 0;
+                }
                 else if (item.isSubtopic) {
                     const importance = item.importance ?? 100;
-    
+
                     if (item.detailLevel === SubjectDetailLevel.BASIC) {
                         baseTimeSeconds = (10 + 10 * (importance / 100)) * 60;
                     } else if (item.detailLevel === SubjectDetailLevel.EXPANDED) {
@@ -70,9 +75,6 @@ export class SectionService {
                     } else {
                         baseTimeSeconds = 600;
                     }
-                }
-                else {
-                    baseTimeSeconds = 600;
                 }
 
                 const fractionOfFull =
@@ -227,22 +229,23 @@ export class SectionService {
         `;
     }
 
-    private async getWordsWithProgress(
-        userId: number, 
+    private async getWordsByAudioTopic(
+        userId: number,
         subjectId: number,
-        topicDifficulties: string[]  // ДОБАВИТЬ параметр
+        topicDifficulties: string[]
     ) {
         return this.prismaService.$queryRaw<any[]>`
             SELECT 
-                w.frequency, 
-                w."totalAttemptCount", 
-                w."totalCorrectCount",
-                t."difficulty" as "topicDifficulty"
+                w."topicId",
+                w.frequency,
+                w."totalAttemptCount",
+                w."totalCorrectCount"
             FROM "Word" w
             INNER JOIN "Topic" t ON t.id = w."topicId"
             WHERE 
-                w."userId" = ${userId} 
+                w."userId" = ${userId}
                 AND w."subjectId" = ${subjectId}
+                AND t.type = 'Stories'
                 AND t."difficulty" = ANY(${topicDifficulties}::text[])
         `;
     }
@@ -269,27 +272,6 @@ export class SectionService {
                 createdAt: true
             }
         });
-    }
-
-    private calculateCoveragePercent(
-        sectionsWithTopics: any[],
-        threshold: number
-    ): number {
-        let totalPercentSum = 0;
-        let topicCount = 0;
-
-        for (const section of sectionsWithTopics) {
-            for (const topic of section.topics) {
-                const cappedPercent = Math.min(topic.percent, threshold);
-                totalPercentSum += cappedPercent;
-                topicCount++;
-            }
-        }
-
-        if (topicCount === 0) return 0;
-
-        const maxPossibleSum = threshold * topicCount;
-        return Math.ceil((totalPercentSum / maxPossibleSum) * 100);
     }
 
     private flattenTopicsFromSections(sections: any[]): any[] {
@@ -362,7 +344,7 @@ export class SectionService {
                 predictionSubtopics,
                 sectionsWithTopics,
                 currentPercents,
-                words,
+                wordsForAudioTopics,
                 literatures,
                 firstTask
             ] = await Promise.all([
@@ -381,7 +363,7 @@ export class SectionService {
                     subjectId
                 ),
 
-                this.getWordsWithProgress(
+                this.getWordsByAudioTopic(
                     userId,
                     subjectId,
                     topicDifficulties
@@ -475,39 +457,32 @@ export class SectionService {
                         isWriting: true
                     }));
 
-            const pendingWords =
-                words
-                    .map(w => {
-                        const percent =
-                            w.totalAttemptCount === 0
-                                ? 0
-                                : Math.ceil(
-                                    (w.totalCorrectCount * 100)
-                                    / w.totalAttemptCount
-                                );
+            const wordsByTopicId = new Map<number, any[]>();
+            for (const w of wordsForAudioTopics) {
+                if (!wordsByTopicId.has(w.topicId)) {
+                    wordsByTopicId.set(w.topicId, []);
+                }
+                wordsByTopicId.get(w.topicId)!.push(w);
+            }
 
-                        return {
-                            percent,
-                            importance: 100 - w.frequency
-                        };
-                    })
-                    .filter(w => w.percent < threshold);
-
-            const allWords =
-                words.map(w => {
-                    const percent =
-                        w.totalAttemptCount === 0
-                            ? 0
-                            : Math.ceil(
-                                (w.totalCorrectCount * 100)
-                                / w.totalAttemptCount
-                            );
+            const audioItems = Array.from(wordsByTopicId.entries()).map(
+                ([topicId, wordsInTopic]) => {
+                    const totalBaseTimeSeconds = wordsInTopic.reduce(
+                        (sum, w) => {
+                            const importance = 100 - (w.frequency || 0);
+                            const perWordTime = (10 + 10 * (importance / 100)) * 60;
+                            return sum + perWordTime;
+                        },
+                        0
+                    );
 
                     return {
-                        percent,
-                        importance: 100 - w.frequency
+                        percent: topicCurrentPercentMap.get(topicId) || 0,
+                        isAudio: true,
+                        baseTimeSeconds: totalBaseTimeSeconds
                     };
-                });
+                }
+            );
 
             const pendingSubtopicItems = predictionSubtopics
                 .filter(subtopic => {
@@ -524,11 +499,7 @@ export class SectionService {
             const predictionItems = [
                 ...pendingSubtopicItems,
                 ...writingItems,
-                ...pendingWords.map(w => ({
-                    percent: w.percent,
-                    importance: w.importance ?? 0,
-                    isSubtopic: false
-                }))
+                ...audioItems
             ];
 
             const sectionMap =
@@ -648,14 +619,16 @@ export class SectionService {
                     percent: 0
                 }));
 
+            const initialAudioItems =
+                audioItems.map(item => ({
+                    ...item,
+                    percent: 0
+                }));
+
             const initialItems = [
                 ...initialSubtopicItems,
                 ...initialWritingItems,
-                ...allWords.map(w => ({
-                    percent: 0,
-                    importance: w.importance ?? 0,
-                    isSubtopic: false
-                }))
+                ...initialAudioItems
             ];
 
             const [
@@ -700,17 +673,11 @@ export class SectionService {
                 prediction.daysNeeded
             );
 
-            const coveragePercent = this.calculateCoveragePercent(
-                enrichedSections,
-                threshold
-            );
-
             return {
                 statusCode: 200,
                 message: 'Działy zostały pomyślnie pobrane',
                 sections: enrichedSections,
                 total: totalPercent,
-                coverage: coveragePercent,
                 prediction: prediction.date,
                 deltaDays,
                 subjectId,
@@ -719,9 +686,7 @@ export class SectionService {
                     lit => lit.name
                 )
             };
-
         } catch (error) {
-
             console.error(error);
 
             throw new InternalServerErrorException(
